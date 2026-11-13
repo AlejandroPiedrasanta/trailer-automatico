@@ -27,6 +27,7 @@ jobs:
         env:
           TRAILER_PYTHON: python3
           TRAILER_SIN_PANTALLA: '1'
+          TRAILER_CLAVE: ${{ secrets.TRAILER_CLAVE }}
         run: bash PROGRAMA/compilar/mac/construir_mac.sh
       - uses: actions/upload-artifact@v7
         with:

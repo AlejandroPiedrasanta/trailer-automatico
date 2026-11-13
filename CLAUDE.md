@@ -34,6 +34,7 @@
 - **instalador**: Instalador .exe como el de CineCaptions: banner animado (astrolabio), PASOS, % y barra; PyInstaller + C#
 - **mac**: Mac: .dmg como el de CineCaptions (fondo de 2 pasos) con .pkg; se compila en una Mac o GitHub Actions
 - **registro**: Registro en archivo (registro.log), ganchos de errores, faulthandler; donde mirar cuando algo falla
+- **ia-resolve**: IA de Resolve Studio: escuchar votos/brindis (transcripcion + clasificacion), voz sobre la musica, camara lenta Speed Warp, estabilizar, IntelliSearch al final
 <!-- MAPA:FIN -->
 
 ## Reglas que no se rompen

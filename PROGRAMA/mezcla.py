@@ -18,7 +18,7 @@ import json
 import subprocess
 
 OBJETIVOS = [("MUSICA", -18.0), ("WHOOSH", -22.0), ("CAMPANAS", -23.0), ("GRITO", -23.0),
-             ("CHISPA", -24.0), ("PUBLICO", -25.0), ("SFX", -24.0)]
+             ("CHISPA", -24.0), ("PUBLICO", -25.0), ("SFX", -24.0), ("VOZ", -15.0)]
 GANANCIA = (-18.0, 12.0)        # dB maximos que se baja / sube un clip
 MIN_SEG = 1.0                   # clips mas cortos usan la ganancia de su cancion
 import rutas

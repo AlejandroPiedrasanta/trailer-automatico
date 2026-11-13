@@ -1105,6 +1105,11 @@ def app():
                 b.setEnabled(False)
             if self.analisis is not None:
                 self._avisar("Termino de analizar el material y sigo solo…")
+            try:                                         # si IntelliSearch esta trabajando, cede el paso
+                import indexar
+                indexar.PARAR.set()
+            except Exception:
+                pass
             self.linea.editable = False
             self.trabajo = Trabajo(op)
             self.trabajo.linea.connect(self._linea)
@@ -1119,6 +1124,7 @@ def app():
                   ("Analizando ", 5, "Analizando el material nuevo", "timeline"),
                   ("Conectando con DaVinci", 12, "Abriendo DaVinci Resolve", "voz"),
                   ("Armando timelines", 16, "Plan, ritmo y color", "ia"),
+                  ("Escuchando", 21, "La IA de DaVinci escucha votos y brindis", "ia"),
                   ("Media pool", 19, "Ordenando el media pool", "ia"),
                   ("1min lista", 24, "Versión de 1 min lista", "diseno"), ("3min lista", 30, "Versión de 3 min lista", "diseno"),
                   ("15min lista", 37, "Versión de 15 min lista", "diseno"), ("30min lista", 44, "Versión de 30 min lista", "diseno"),
@@ -1261,9 +1267,31 @@ def app():
                 self._avisar("Terminado: %d videos con audio a -14 LUFS." % len(ok))
                 self.chip_videos.show()
                 self._abrir_videos()
+                QTimer.singleShot(4000, self._indexar_fondo)
             else:
                 self._sub("Armado en DaVinci · %s" % self.resultado.get("evento", ""), "ok")
                 self._avisar("Timelines armadas en DaVinci (sin render).")
+
+        def _indexar_fondo(self):
+            """Al final y sin esperar: IntelliSearch (Better, con rostros) para buscar en DaVinci por lo que se ve o por
+            persona. Va de un video a la vez y cede el paso si se pulsa ▶ otra vez."""
+            if self.trabajo is not None or getattr(self, "indexando", False):
+                return
+            import indexar
+            self.indexando = True
+            self._avisar("IntelliSearch: DaVinci está viendo cada video para que puedas buscar por contenido "
+                         "(en segundo plano; puedes seguir trabajando).")
+
+            def listo(res, error):
+                self.indexando = False
+                if self.trabajo is not None:
+                    return
+                if error is not None:
+                    self._avisar("IntelliSearch no terminó: %s" % error, "warn")
+                elif res and res.get("intellisearch"):
+                    self._avisar("IntelliSearch listo: en DaVinci busca en el media pool por lo que se ve "
+                                 "(«pastel», «anillos») o por persona.")
+            qt_kit.correr_en_hilo(self, lambda: indexar.indexar(registro.info, intellisearch=True), listo)
 
         def _fallo(self, texto):
             activa = next((k for k, e in self.pasos_go.items() if e == "activo"), None)

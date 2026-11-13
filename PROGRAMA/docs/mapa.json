@@ -505,5 +505,54 @@
   "notas": [
    "Instalado: %LOCALAPPDATA%/TrailerAutomatico/registro.log y fallo_nativo.log. Desde codigo: PROGRAMA/datos/."
   ]
+ },
+ {
+  "id": "ia-resolve",
+  "resumen": "IA de Resolve Studio: escuchar votos/brindis (transcripcion + clasificacion), voz sobre la musica, camara lenta Speed Warp, estabilizar, IntelliSearch al final",
+  "claves": [
+   "ia",
+   "intellisearch",
+   "transcripcion",
+   "votos",
+   "brindis",
+   "voz",
+   "speed warp",
+   "lento",
+   "estabilizar",
+   "clasificacion de audio",
+   "voice isolation",
+   "ducking"
+  ],
+  "archivos": [
+   "PROGRAMA/escenas_ia.py",
+   "PROGRAMA/build_trailers.py",
+   "PROGRAMA/indexar.py"
+  ],
+  "simbolos": [
+   "TIPOS_VOZ",
+   "_indexar_fondo",
+   "aplicar",
+   "bajar_musica",
+   "elegir_voces",
+   "emocion",
+   "entender",
+   "es_alucinacion",
+   "estabilizar",
+   "frases_de",
+   "intellisearch_videos",
+   "marcar_efectos",
+   "pista_voz",
+   "poner_lento",
+   "poner_voces",
+   "tipo_de"
+  ],
+  "notas": [
+   "TranscribeAudio y PerformAudioClassification devuelven False si Resolve no esta en la pagina MEDIOS (entender la abre y vuelve).",
+   "IntelliSearch (AnalyzeForIntellisearch) NO deja datos legibles por script: solo sirve para buscar a mano; va al final, por clip, cede a un nuevo ▶.",
+   "La clasificacion deja Category/Subcategory en GetMetadata(). La transcripcion alucina en musica ('¡Suscríbete!'): filtrar.",
+   "No hay keyframes de volumen por script: bajar_musica parte el clip de musica en 3 con la misma fuente.",
+   "Los Type del media pool vienen traducidos ('Video + audio'): no comparar con el ingles.",
+   "Voz sobre la musica: SOLO VOTOS/DECLARACION de la IGLESIA (TIPOS_VOZ), en la pista VOZ NATURAL de la plantilla. Pedido de la persona: nada de audios random."
+  ]
  }
 ]

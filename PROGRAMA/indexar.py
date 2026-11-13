@@ -16,9 +16,11 @@ import os
 import sys
 import json
 import time
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import motor  # noqa: E402
+import escenas_ia  # noqa: E402
 
 PASO = 0.5                # segundos por muestra de calidad
 VENTANA = 2.0             # largo de cada "mejor toma" marcada
@@ -78,10 +80,16 @@ def indexar(log=print, intellisearch=True):
                 recorrer(top)
         log("Indexando %d archivos del media pool..." % len(clips))
         n_meta = n_marc = n_band = 0
+        oido = escenas_ia.leer_cache()                 # lo que la IA de DaVinci escucho (votos, brindis...)
         for c, i in clips:
             mom = "DESCARTADO" if i.get("descartar") else i.get("momento", "")
-            meta = {"Scene": mom.capitalize(), "Keywords": ", ".join(x for x in ("XV", mom.capitalize(),
-                    "Foto" if i["tipo"] == "foto" else fuente(i).capitalize()) if x)}
+            try:
+                e = oido.get("%s|%d" % (os.path.basename(i["ruta"]), os.path.getsize(i["ruta"]))) or {}
+            except OSError:
+                e = {}
+            claves = sorted({f["tipo"].capitalize() for f in e.get("frases") or []})
+            meta = {"Scene": mom.capitalize(), "Keywords": ", ".join(x for x in [mom.capitalize(),
+                    "Foto" if i["tipo"] == "foto" else fuente(i).capitalize(), e.get("categoria", "")] + claves if x)}
             if i["tipo"] != "foto":
                 cal = i.get("calidad") or []
                 media = sum(cal) / len(cal) if cal else 0.0
@@ -101,23 +109,77 @@ def indexar(log=print, intellisearch=True):
             if c.SetMetadata(meta):
                 n_meta += 1
         log("Metadatos en %d archivos, %d marcadores MEJOR TOMA, %d banderas verdes." % (n_meta, n_marc, n_band))
-        r.GetProjectManager().SaveProject()
-        if intellisearch:
-            videos = [(c, i) for c, i in clips if i["tipo"] != "foto" and not i.get("descartar")]
-            log("IntelliSearch: analizando %d videos con reconocimiento de rostros (lento)..." % len(videos))
-            hechos = 0
-            for k, (c, i) in enumerate(videos, 1):
-                t0 = time.time()
-                try:
-                    ok = c.AnalyzeForIntellisearch(True, False)
-                except Exception as ex:
-                    ok = False
-                    log("  error en %s: %s" % (i["nombre"], ex))
-                hechos += bool(ok)
-                log("  %d/%d %s %s (%.0f s)" % (k, len(videos), i["nombre"], "ok" if ok else "fallo", time.time() - t0))
+        guardar(r, p)
+    res = {"metadatos": n_meta, "marcadores": n_marc, "banderas": n_band, "intellisearch": 0}
+    if intellisearch:
+        res["intellisearch"] = intellisearch_videos(r, p, [(c, i) for c, i in clips if i["tipo"] != "foto"
+                                                          and not i.get("descartar")], log)
+    return res
+
+
+PARAR = threading.Event()        # la ventana lo enciende si se pulsa ▶ otra vez: el indexado cede el paso
+HECHOS = os.path.join(motor.rutas.ANALISIS, "intellisearch.json")
+
+
+def guardar(r, p):
+    """Guarda el proyecto, salvo que sea uno sin nombre (Resolve sacaria «Crear proyecto» y la API se colgaria)."""
+    try:
+        if not motor._sin_titulo(p.GetName()):
             r.GetProjectManager().SaveProject()
-            log("IntelliSearch listo en %d videos. Busca en el media pool por contenido o por persona." % hechos)
-        return {"metadatos": n_meta, "marcadores": n_marc, "banderas": n_band}
+    except Exception:
+        pass
+
+
+def intellisearch_videos(r, p, videos, log=print):
+    """IntelliSearch modo Better con rostros, de un video a la vez: el candado se toma por video, asi un ▶ nuevo
+    no espera mas que un clip. Lo ya analizado (datos/analisis/intellisearch.json) no se repite."""
+    try:
+        with open(HECHOS, encoding="utf-8") as f:
+            hechos = set(json.load(f))
+    except Exception:
+        hechos = set()
+    pendientes = []
+    for c, i in videos:
+        try:
+            k = "%s|%d" % (os.path.basename(i["ruta"]), os.path.getsize(i["ruta"]))
+        except OSError:
+            continue
+        if k not in hechos:
+            pendientes.append((k, c, i))
+    if not pendientes:
+        log("IntelliSearch: todo el material ya estaba analizado.")
+        return 0
+    log("IntelliSearch (Better, con rostros): %d videos, uno a la vez…" % len(pendientes))
+    PARAR.clear()
+    n = 0
+    t_total = time.time()
+    for j, (k, c, i) in enumerate(pendientes, 1):
+        if PARAR.is_set():
+            log("IntelliSearch en pausa: sigue en el próximo armado.")
+            break
+        with motor.CANDADO:
+            if p.IsRenderingInProgress():
+                log("IntelliSearch en pausa: hay un render en curso.")
+                break
+            t0 = time.time()
+            try:
+                ok = c.AnalyzeForIntellisearch(True, True)
+            except Exception as ex:
+                ok = False
+                log("  error en %s: %s" % (i["nombre"], ex))
+        if ok:
+            n += 1
+            hechos.add(k)
+            with open(HECHOS + ".tmp", "w", encoding="utf-8") as f:
+                json.dump(sorted(hechos), f)
+            os.replace(HECHOS + ".tmp", HECHOS)
+        log("  IntelliSearch %d/%d %s %s (%.0f s)" % (j, len(pendientes), i["nombre"], "ok" if ok else "falló",
+                                                       time.time() - t0))
+    with motor.CANDADO:
+        guardar(r, p)
+    log("IntelliSearch listo en %d videos (%.0f min). En DaVinci busca en el media pool por lo que se ve "
+        "(«pastel», «anillos», «iglesia») o por persona." % (n, (time.time() - t_total) / 60.0))
+    return n
 
 
 if __name__ == "__main__":

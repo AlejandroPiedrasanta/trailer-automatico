@@ -55,6 +55,10 @@ MARGEN = 0.75                 # s que se evitan al inicio y fin de cada video (a
 SEPARACION = 0.5              # s minimos entre dos planos del mismo video
 PASO_CALIDAD = 0.5            # s por muestra de calidad (igual que analizar_material)
 BRILLO_MIN_INTRO = 0.18
+UMBRAL_LENTO = 0.55           # emocion media (0-1) para que un plano vaya en camara lenta
+UMBRAL_TEMBLOR = 0.6          # temblor medio (px en 192 de ancho) para pasar el estabilizador de Resolve
+LENTOS = {"1min": 2, "3min": 3, "15min": 6, "30min": 9}      # planos en camara lenta por version
+VOCES = {"1min": 1, "3min": 2, "15min": 3, "30min": 4}       # frases (votos, brindis...) como voz sobre la musica
 USAR_VIDEOS_VERTICALES = False    # True = tambien usa videos de celular grabados en vertical
 # Igualacion automatica por plano (CDL en el nodo del clip): exposicion, negros, balance de blancos, saturacion
 IGUALAR = globals().get("IGUALAR", True)
@@ -184,6 +188,7 @@ class Planificador:
         self.usados = {}
         self.fotos_usadas = set()
         self._pref = {}
+        self._emo = {}
 
     @staticmethod
     def _sin_repetidas(fotos):
@@ -226,13 +231,65 @@ class Planificador:
         """Puntaje de cada medio segundo: calidad (nitidez, luz, sin temblor) x emocion del audio (aplausos,
         gritos, brindis: el audio sube sobre lo normal de ese video)."""
         cal = v.get("calidad") or []
+        emo = self.emocion(v)
+        return [c * (0.85 + 0.35 * (emo[i] if i < len(emo) else 0.0)) for i, c in enumerate(cal)]
+
+    def emocion(self, v):
+        """0-1 por medio segundo: el audio sube sobre lo normal del video (aplausos, gritos) y los momentos clave que
+        entendio Resolve al escuchar (votos, "los declaro", el beso que viene despues, "te amo", brindis)."""
+        cache = self._emo.get(v["ruta"])
+        if cache is not None:
+            return cache
+        n = len(v.get("calidad") or []) or int(v.get("dur", 0) / PASO_CALIDAD)
+        emo = [0.0] * n
         aud = v.get("audio") or []
-        if not aud or len(aud) < 6:
-            return cal
-        normal = sorted(aud)[len(aud) // 2]
-        emo = [max(0.0, min(1.0, (x - normal - 4.0) / 10.0)) for x in aud]
-        suave = [(emo[max(0, i - 1)] + emo[i] + emo[min(len(emo) - 1, i + 1)]) / 3.0 for i in range(len(emo))]
-        return [c * (0.85 + 0.35 * (suave[i] if i < len(suave) else 0.0)) for i, c in enumerate(cal)]
+        if len(aud) >= 6:
+            normal = sorted(aud)[len(aud) // 2]
+            crudo = [max(0.0, min(1.0, (x - normal - 4.0) / 10.0)) for x in aud]
+            for i in range(min(n, len(crudo))):
+                emo[i] = (crudo[max(0, i - 1)] + crudo[i] + crudo[min(len(crudo) - 1, i + 1)]) / 3.0
+        for fr in v.get("frases") or []:
+            fin = fr["fin"] + (8.0 if fr["tipo"] == "DECLARACION" else 2.0)    # tras "puede besar...": el beso
+            for i in range(max(0, int((fr["ini"] - 1.0) / PASO_CALIDAD)), min(n, int(fin / PASO_CALIDAD) + 1)):
+                emo[i] = max(emo[i], 0.6 + 0.4 * fr.get("puntaje", 0.5))
+        self._emo[v["ruta"]] = emo
+        return emo
+
+    def media(self, serie, a, l):
+        if not serie:
+            return 0.0
+        i0 = min(len(serie) - 1, max(0, int(a / PASO_CALIDAD)))
+        i1 = min(len(serie), max(i0 + 1, int(math.ceil((a + l) / PASO_CALIDAD))))
+        return sum(serie[i0:i1]) / float(i1 - i0)
+
+    def marcar_efectos(self, zonas, fps, max_lentos):
+        """Despues de cortar al ritmo: camara lenta (Speed Warp de Resolve) en los planos mas emotivos y estabilizador
+        en los que tiemblan. Pone p['vel'] (0,4-0,5) y p['estabilizar']."""
+        cand = []
+        for nombre, _, _, piezas in zonas:
+            for p in piezas:
+                if p["tipo"] == "foto":
+                    continue
+                v = p["item"]
+                l = p["dur_f"] / float(fps)
+                e = self.media(self.emocion(v), p["ini"], l)
+                if nombre in ("IGLESIA", "FIESTA", "APERTURA") and e >= UMBRAL_LENTO and l >= 1.0:
+                    cand.append((e, p))
+        lentos = 0
+        for e, p in sorted(cand, key=lambda t: -t[0]):
+            if lentos >= max_lentos:
+                break
+            vf = p["item"].get("fps") or 30
+            p["vel"] = 0.4 if vf >= 48 else 0.5          # 60 fps: lento natural; 24-30 fps: Speed Warp inventa cuadros
+            lentos += 1
+        for _, _, _, piezas in zonas:
+            for p in piezas:
+                if p["tipo"] == "foto" or p["tipo"] == "dron":
+                    continue
+                l = p["dur_f"] / float(fps) * p.get("vel", 1.0)
+                if self.media(p["item"].get("temblor") or [], p["ini"], l) >= UMBRAL_TEMBLOR:
+                    p["estabilizar"] = True
+        return lentos, sum(1 for _, _, _, ps in zonas for p in ps if p.get("estabilizar"))
 
     def puntaje(self, v, a, l):
         """Puntaje medio (0-1,2) del tramo [a, a+l] del video."""
@@ -515,6 +572,8 @@ def colocar(mp, secuencia, pool, fps):
         if lote:
             r = mp.AppendToTimeline([i for i, _ in lote]) or []
             for x, (_, p) in zip(r, lote):
+                if p.get("vel", 1.0) < 1.0:
+                    p["lento_ok"] = poner_lento(x, p)
                 ajustar(x, p["dur_f"])
                 puestos.append((p, x))
             del lote[:]
@@ -533,7 +592,10 @@ def colocar(mp, secuencia, pool, fps):
                 puestos.append((p, r[0]))
         else:
             vf = p["item"]["fps"]
-            s = int(round(p["ini"] * vf))
+            vel = p.get("vel", 1.0)
+            # lento: Resolve conserva el largo en la timeline y usa menos fuente (desde el inicio); se centra la
+            # parte que se ve en el medio de la ventana elegida
+            s = int(round((p["ini"] + d / float(fps) * (1.0 - vel) / 2.0) * vf))
             n = max(1, int(math.ceil(d * vf / float(fps) - 1e-6)))
             lote.append(({"mediaPoolItem": c, "startFrame": s, "endFrame": s + n - 1,
                           "mediaType": 1, "trackIndex": pista, "recordFrame": pos}, p))
@@ -541,6 +603,181 @@ def colocar(mp, secuencia, pool, fps):
                 vaciar()
     vaciar()
     return puestos
+
+
+def poner_lento(x, p):
+    """Camara lenta de Resolve Studio: velocidad p['vel'] y, si el video es de 24-30 fps, Speed Warp (IA) para
+    inventar los cuadros que faltan; con 60 fps alcanza con los cuadros reales."""
+    try:
+        ok = bool(x.SetSpeed({"Percentage": round(p["vel"] * 100.0, 2), "PitchCorrection": False,
+                              "StretchKeyframesToFit": False, "RippleTimeline": False}))
+    except Exception:
+        ok = False
+    if ok and (p["item"].get("fps") or 30) < 48:
+        try:
+            x.SetProperty("RetimeProcess", resolve.RETIME_OPTICAL_FLOW)
+            x.SetProperty("MotionEstimation", resolve.MOTION_EST_SPEED_WARP_BETTER)
+        except Exception:
+            pass
+    return ok
+
+
+def estabilizar(puestos, limite_s=120.0):
+    """Estabilizador de Resolve Studio en los planos que tiemblan (medido por el analizador). Con tope de tiempo."""
+    t0, n = time.time(), 0
+    for p, x in puestos:
+        if not p.get("estabilizar") or time.time() - t0 > limite_s:
+            continue
+        try:
+            n += bool(x.Stabilize())
+        except Exception:
+            pass
+    return n
+
+
+TIPOS_VOZ = ("VOTOS", "DECLARACION")    # la persona: "solo el audio de la iglesia, no metas audios random"
+
+
+def elegir_voces(items, n, zonas):
+    """Las n mejores frases de la IGLESIA (los votos y "los declaro marido y mujer") para ir como voz sobre la
+    musica. Nada de otros momentos ni frases sueltas: si no hay votos claros, no hay voz."""
+    if n <= 0:
+        return []
+    nombres = {z[0] for z in zonas}
+    cand = sorted(((fr["puntaje"], fr, it) for it in items if it["tipo"] == "video" and not it.get("descartar")
+                   and it.get("momento") == "IGLESIA"
+                   for fr in it.get("frases") or [] if fr["tipo"] in TIPOS_VOZ and 1.2 <= fr["fin"] - fr["ini"] <= 9.0),
+                  key=lambda t: -t[0])
+    elegidas, tipos = [], set()
+    for ronda in (0, 1):                               # primero tipos distintos; si faltan, repite tipo
+        for _, fr, it in cand:
+            if len(elegidas) >= n:
+                break
+            if any(e[1] is fr for e in elegidas) or (ronda == 0 and fr["tipo"] in tipos):
+                continue
+            zona = "IGLESIA" if fr["tipo"] in ("VOTOS", "DECLARACION", "AMOR") else "FIESTA"
+            if zona not in nombres:
+                zona = "APERTURA" if "APERTURA" in nombres else next(iter(nombres))
+            elegidas.append((it, fr, zona))
+            tipos.add(fr["tipo"])
+    return elegidas
+
+
+def pista_voz(tl):
+    """La pista de voz de la plantilla ("VOZ NATURAL"); si no hay ninguna que empiece con VOZ, crea "VOZ"."""
+    for t in range(1, tl.GetTrackCount("audio") + 1):
+        if (tl.GetTrackName("audio", t) or "").strip().upper().startswith("VOZ"):
+            return t
+    if not tl.AddTrack("audio", "stereo"):
+        return None
+    t = tl.GetTrackCount("audio")
+    tl.SetTrackName("audio", t, "VOZ")
+    return t
+
+
+def poner_voces(tl, mp, pool, voces, zonas, fps):
+    """Pone cada frase elegida en la pista VOZ (solo el audio), con fundidos cortos, aislamiento de voz de Resolve
+    Studio y nivel medido. Devuelve [(inicio, fin)] en frames de timeline (para bajar la musica debajo)."""
+    if not voces:
+        return []
+    t = pista_voz(tl)
+    if t is None:
+        aviso("No se pudo crear la pista VOZ.")
+        return []
+    tl.SetTrackLock("audio", t, False)
+    st = tl.GetStartFrame()
+    libre = {}
+    tramos = []
+    for it, fr, zona in voces:
+        z = next((z for z in zonas if z[0] == zona), None)
+        c = pool.get(os.path.normcase(it["ruta"]))
+        if z is None or c is None:
+            continue
+        _, z0, z1, _ = z
+        largo = int(round((fr["fin"] - fr["ini"]) * fps))
+        pos = max(st + z0 + int(1.2 * fps), libre.get(zona, 0))
+        if pos + largo > st + z1 - int(0.8 * fps):
+            continue
+        vf = float(it.get("fps") or 30)
+        s = int(round(fr["ini"] * vf))
+        e = s + int(round((fr["fin"] - fr["ini"]) * vf))
+        r = mp.AppendToTimeline([{"mediaPoolItem": c, "startFrame": s, "endFrame": e, "mediaType": 2,
+                                  "trackIndex": t, "recordFrame": pos}]) or []
+        if not r:
+            continue
+        x = r[0]
+        try:
+            x.SetFades({"FadeIn": 3, "FadeOut": 8})
+        except Exception:
+            pass
+        tramos.append((x.GetStart(), x.GetEnd(), fr))
+        libre[zona] = x.GetEnd() + int(2.5 * fps)
+    try:                                               # Voice Isolation: quita musica y murmullo de fondo
+        tl.SetVoiceIsolationState(t, {"isEnabled": True, "amount": 75})
+    except Exception:
+        pass
+    return tramos
+
+
+def bajar_musica(tl, mp, tramos, fps, db=-9.0):
+    """Baja la musica debajo de cada voz (Resolve no deja poner keyframes de volumen por script): parte el clip de
+    musica en antes / debajo de la voz / despues, con la misma fuente y el tramo de en medio 9 dB mas bajo."""
+    if not tramos:
+        return 0
+    margen_a, margen_b = int(0.25 * fps), int(0.5 * fps)
+    zonas = [(a - margen_a, b + margen_b) for a, b, _ in tramos]
+    n = 0
+    for t in range(1, tl.GetTrackCount("audio") + 1):
+        if "MUSICA" not in (tl.GetTrackName("audio", t) or "").upper():
+            continue
+        tl.SetTrackLock("audio", t, False)
+        for x in list(tl.GetItemListInTrack("audio", t) or []):
+            r0, r1 = x.GetStart(), x.GetEnd()
+            tocan = [(max(a, r0), min(b, r1)) for a, b in zonas if a < r1 and b > r0]
+            if not tocan:
+                continue
+            try:
+                vol = float(x.GetProperty("AudioVolume") or 0.0)
+            except Exception:
+                vol = 0.0
+            if all(a <= r0 and b >= r1 for a, b in tocan):          # todo el clip queda bajo la voz
+                n += bool(x.SetProperty("AudioVolume", vol + db))
+                continue
+            mpi = x.GetMediaPoolItem()
+            if mpi is None:
+                continue
+            try:
+                s0 = x.GetSourceStartFrame()
+                fades = x.GetFades() or {}
+            except Exception:
+                continue
+            k = float(mpi.GetClipProperty("FPS") or fps) / float(fps)
+            cortes, cur = [], r0
+            for a, b in sorted(tocan):
+                if a > cur:
+                    cortes.append((cur, a, vol))
+                cortes.append((max(a, cur), b, vol + db))
+                cur = b
+            if cur < r1:
+                cortes.append((cur, r1, vol))
+            if not tl.DeleteClips([x], False):
+                continue
+            for j, (a, b, v) in enumerate(cortes):
+                ini = s0 + int(round((a - r0) * k))
+                fin = s0 + int(round((b - r0) * k))          # en audio el cuadro final no se incluye (probado)
+                nuevo = mp.AppendToTimeline([{"mediaPoolItem": mpi, "startFrame": ini, "endFrame": fin, "mediaType": 2,
+                                              "trackIndex": t, "recordFrame": a}]) or []
+                if not nuevo:
+                    continue
+                y = nuevo[0]
+                y.SetProperty("AudioVolume", v)
+                try:
+                    y.SetFades({"FadeIn": fades.get("FadeIn", 0) if j == 0 else 2,
+                                "FadeOut": fades.get("FadeOut", 0) if j == len(cortes) - 1 else 2})
+                except Exception:
+                    pass
+            n += 1
+    return n
 
 
 def pista(tl, tipo, nombre, defecto):
@@ -1107,44 +1344,53 @@ def main():
     intro_f = sum(INTRO_CORTES)
     ritmo = _modulo("ritmo") if CORTAR_AL_RITMO else None
 
-    # ---------- plan ----------
-    plan = Planificador(items, fps)
-    planes = []
-    for k, (ver, tpl) in enumerate(pendientes):
-        rng = random.Random(2000 + k)
-        total_f = int(ver["seg"] * fps)
-        golpes = []
-        if ritmo:
-            try:
-                golpes = ritmo.golpes(tpl, fps, BASE, log=print)
-            except Exception as ex:
-                aviso("%s: no se pudo leer el ritmo (%s)" % (ver["sufijo"], ex))
-        intro = plan.intro(k)
-        zonas, info_z, al_golpe = [], {}, 0
-        for nombre, z0, z1 in zonas_de(tpl.GetMarkers() or {}, total_f, intro_f, fps):
-            if nombre == "APERTURA":
-                # el resumen inicial muestra los mejores momentos: en las versiones largas NO los reserva,
-                # porque luego se cuentan completos en su zona (en 1 y 3 min si, para no repetir planos)
-                reservados = {k: list(v) for k, v in plan.usados.items()}
-                piezas, reusos = plan.zona(ZONAS, z1 - z0, ver["apertura"], rng, True)
-                if ver["seg"] > 180:
-                    plan.usados = reservados
-                lo = ver["apertura"][0]
-            else:
-                piezas, reusos = plan.zona([nombre], z1 - z0, ver["corte"], rng, nombre != "MAQUILLAJE")
-                lo = ver["corte"][0]
-            al_golpe += al_ritmo(piezas, z0, z1, golpes, fps, lo)
-            zonas.append((nombre, z0, z1, piezas))
-            info_z[nombre] = {"seg": round((z1 - z0) / float(fps), 1),
-                              "videos": len(piezas), "dron": sum(1 for p in piezas if p["tipo"] == "dron"),
-                              "fotos": 0, "reutilizados": reusos}
-            if reusos:
-                aviso("%s %s: %d planos repiten video ya usado (falta material)." % (ver["sufijo"], nombre, reusos))
-        planes.append((ver, tpl, intro, zonas))
-        reporte["versiones"].append({"timeline": "%s - %s" % (evento, ver["sufijo"]), "zonas": info_z,
-                                     "fotos_intro": len(intro), "cortes_al_ritmo": al_golpe})
-        print("%s: %s | %d cortes al ritmo" % (ver["sufijo"], ", ".join(
-            "%s %d" % (n, z["videos"]) for n, z in info_z.items()), al_golpe))
+    # ---------- plan (con lo que Resolve entendio de cada escena: votos, brindis, el beso...) ----------
+    ia = _modulo("escenas_ia")
+    ia.aplicar(items)                            # lo ya escuchado en otros armados (cache)
+
+    def planificar():
+        reporte["versiones"] = []
+        plan = Planificador(items, fps)
+        planes = []
+        for k, (ver, tpl) in enumerate(pendientes):
+            rng = random.Random(2000 + k)
+            total_f = int(ver["seg"] * fps)
+            golpes = []
+            if ritmo:
+                try:
+                    golpes = ritmo.golpes(tpl, fps, BASE, log=print)
+                except Exception as ex:
+                    aviso("%s: no se pudo leer el ritmo (%s)" % (ver["sufijo"], ex))
+            intro = plan.intro(k)
+            zonas, info_z, al_golpe = [], {}, 0
+            for nombre, z0, z1 in zonas_de(tpl.GetMarkers() or {}, total_f, intro_f, fps):
+                if nombre == "APERTURA":
+                    # el resumen inicial muestra los mejores momentos: en las versiones largas NO los reserva,
+                    # porque luego se cuentan completos en su zona (en 1 y 3 min si, para no repetir planos)
+                    reservados = {k: list(v) for k, v in plan.usados.items()}
+                    piezas, reusos = plan.zona(ZONAS, z1 - z0, ver["apertura"], rng, True)
+                    if ver["seg"] > 180:
+                        plan.usados = reservados
+                    lo = ver["apertura"][0]
+                else:
+                    piezas, reusos = plan.zona([nombre], z1 - z0, ver["corte"], rng, nombre != "MAQUILLAJE")
+                    lo = ver["corte"][0]
+                al_golpe += al_ritmo(piezas, z0, z1, golpes, fps, lo)
+                zonas.append((nombre, z0, z1, piezas))
+                info_z[nombre] = {"seg": round((z1 - z0) / float(fps), 1),
+                                  "videos": len(piezas), "dron": sum(1 for p in piezas if p["tipo"] == "dron"),
+                                  "fotos": 0, "reutilizados": reusos}
+                if reusos:
+                    aviso("%s %s: %d planos repiten video ya usado (falta material)." % (ver["sufijo"], nombre, reusos))
+            lentos, estab = plan.marcar_efectos(zonas, fps, LENTOS.get(ver["sufijo"], 2))
+            planes.append((ver, tpl, intro, zonas))
+            reporte["versiones"].append({"timeline": "%s - %s" % (evento, ver["sufijo"]), "zonas": info_z,
+                                         "fotos_intro": len(intro), "cortes_al_ritmo": al_golpe,
+                                         "camara_lenta": lentos, "estabilizar": estab})
+            print("%s: %s | %d cortes al ritmo | %d en camara lenta | %d a estabilizar" % (ver["sufijo"], ", ".join(
+                "%s %d" % (n, z["videos"]) for n, z in info_z.items()), al_golpe, lentos, estab))
+        return plan, planes
+    plan, planes = planificar()
     if DRY_RUN:
         return
 
@@ -1174,6 +1420,16 @@ def main():
     reporte["luz_objetivo"] = {k: round(v, 3) for k, v in objetivos.items()}
     pool = organizar_pool(mp, root, evento, items)
     print("Media pool: %d archivos en carpetas MAQUILLAJE / IGLESIA / FIESTA con colores" % len(pool))
+    try:                                         # la IA de Resolve escucha los videos: votos, brindis, discursos
+        pares = [(pool[os.path.normcase(i["ruta"])], i) for i in items
+                 if i["tipo"] == "video" and i.get("audio_pista", True) and not i.get("descartar")
+                 and os.path.normcase(i["ruta"]) in pool]
+        antes = ia.aplicar(items)
+        cache_ia = ia.entender(resolve, project, pares, print)
+        if ia.aplicar(items, cache_ia) != antes:
+            plan, planes = planificar()          # con las frases nuevas el plan cambia
+    except Exception as ex:
+        aviso("No se pudo escuchar los videos con la IA de DaVinci (%s)" % ex)
     whoosh = buscar_clip(root, WHOOSH)
     png = png_texto(mp, root)
     grupos = {g.GetName(): g for g in project.GetColorGroupsList() or []}
@@ -1265,6 +1521,8 @@ def main():
                 pass
         if grupo:
             preparar_grupo(grupo)
+        info["camara_lenta"] = sum(1 for p, _ in puestos if p.get("lento_ok"))
+        info["estabilizados"] = estabilizar(puestos)
         info["transiciones"] = transiciones(tl, pv, zonas, ver)
         info["titulos"] = titulos(tl, ver, fps, fecha_txt, perfil, f.year)
         info["textos_plantilla"] = textos_plantilla(tl, perfil)
@@ -1279,10 +1537,20 @@ def main():
                                                    [(n, a, b) for n, a, b, _ in zonas], fps, cortes, print)
         except Exception as ex:
             aviso("%s: no se pudieron colocar los SFX (%s)" % (nombre, ex))
-        try:                                     # mezcla medida: canciones y SFX a su nivel (LUFS)
+        voces = []
+        try:                                     # votos / "los declaro" / brindis como voz sobre la musica
+            voces = poner_voces(tl, mp, pool, elegir_voces(items, VOCES.get(ver["sufijo"], 1), zonas), zonas, fps)
+            info["voces"] = ["%s «%s»" % (fr["tipo"], fr["texto"][:60]) for _, _, fr in voces]
+        except Exception as ex:
+            aviso("%s: no se pudo poner la voz (%s)" % (nombre, ex))
+        try:                                     # mezcla medida: canciones, SFX y voz a su nivel (LUFS)
             info["mezcla"] = _modulo("mezcla").nivelar(tl, fps, BASE, print)
         except Exception as ex:
             aviso("%s: no se pudo nivelar el sonido (%s)" % (nombre, ex))
+        try:                                     # la musica baja debajo de cada voz
+            info["musica_bajada"] = bajar_musica(tl, mp, voces, fps)
+        except Exception as ex:
+            aviso("%s: no se pudo bajar la musica bajo la voz (%s)" % (nombre, ex))
 
         total_f = int(ver["seg"] * fps)
         tl.SetMarkInOut(st, st + total_f - 1, "all")
@@ -1298,9 +1566,12 @@ def main():
             except Exception as ex:
                 aviso("%s: no se pudo encolar el render (%s)" % (nombre, ex))
         print("%s lista: %d clips, %d igualados en color, %d transiciones, %d titulos + %d textos nuevos, %d whoosh, "
-              "%d SFX por momento, %d sonidos nivelados" % (
+              "%d SFX por momento, %d sonidos nivelados, %d en camara lenta, %d estabilizados, %d voces" % (
                   nombre, len(puestos), info.get("igualados", 0), info["transiciones"], info["titulos"],
-                  info.get("textos_nuevos", 0), info["whoosh"], len(info.get("sfx") or []), info.get("mezcla", 0)))
+                  info.get("textos_nuevos", 0), info["whoosh"], len(info.get("sfx") or []), info.get("mezcla", 0),
+                  info.get("camara_lenta", 0), info.get("estabilizados", 0), len(info.get("voces") or [])))
+        for v in info.get("voces") or []:
+            print("   voz: %s" % v)
     pm.SaveProject()
 
 

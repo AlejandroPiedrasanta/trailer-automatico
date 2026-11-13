@@ -39,7 +39,7 @@ EXT["dron"] = EXT["video"]
 MOMENTOS = ["MAQUILLAJE", "IGLESIA", "FIESTA"]
 ARCHIVO_CLASIF = os.path.basename(rutas.CLASIFICACION)
 SIN_VENTANA = rutas.SIN_VENTANA        # que ffmpeg no abra ventanas negras
-VERSION = 2                            # sube cuando cambia lo que se mide: lo viejo se completa solo
+VERSION = 3                            # sube cuando cambia lo que se mide: lo viejo se completa solo (3: temblor)
 PASO_CALIDAD = 0.5                     # segundos por muestra (calidad, color y audio)
 CONFIANZA = {"iphone": 3, "dji": 3, "exif": 2, "nombre": 1, "camara": 1, "archivo": 0}
 
@@ -199,14 +199,88 @@ def _db_audio(muestras):
     return [round(float(x), 1) for x in 20 * np.log10(rms)]
 
 
+FPS_TEMBLOR = 10            # cuadros por segundo para medir el temblor (el pulso de la mano va de 2 a 10 Hz)
+SUB = int(FPS_TEMBLOR * PASO_CALIDAD)     # 1 de cada 5 cuadros va a calidad y color (cada 0,5 s)
+
+
+def _desplazamientos(previo, g):
+    """Movimiento de camara (dx, dy en pixeles) entre cada par de cuadros seguidos, por correlacion de fase.
+    previo: el ultimo cuadro del bloque anterior (o None). g: (n, h, w) en gris."""
+    if previo is not None:
+        g = np.concatenate([previo[None], g])
+    if len(g) < 2:
+        return np.zeros((0, 2), dtype=np.float32)
+    n, h, w = g.shape
+    ventana = np.outer(np.hanning(h), np.hanning(w)).astype(np.float32)
+    F = np.fft.rfft2((g - g.mean(axis=(1, 2), keepdims=True)) * ventana)
+    R = F[1:] * np.conj(F[:-1])
+    R /= np.abs(R) + 1e-9
+    r = np.fft.irfft2(R, s=(h, w))
+    m = r.reshape(n - 1, -1).argmax(axis=1)
+    py, px = m // w, m % w
+    k = np.arange(n - 1)
+
+    def fino(c, a, b):                                # el pico entre pixeles (parabola por 3 puntos)
+        den = a - 2 * c + b
+        return np.where(np.abs(den) > 1e-9, 0.5 * (a - b) / den, 0.0)
+    cx = r[k, py, px]
+    dx = px + fino(cx, r[k, py, (px - 1) % w], r[k, py, (px + 1) % w])
+    dy = py + fino(cx, r[k, (py - 1) % h, px], r[k, (py + 1) % h, px])
+    dx = np.where(dx > w / 2, dx - w, dx)
+    dy = np.where(dy > h / 2, dy - h, dy)
+    return np.stack([dx, dy], axis=1).astype(np.float32)
+
+
+def _temblor_de(desp):
+    """Temblor de cada medio segundo: lo rapido y chico del movimiento (la mano), sin el paneo lento.
+    En pixeles de un cuadro de 192 de ancho; mas de ~0,6 ya se nota."""
+    d = np.asarray(desp, dtype=np.float32).reshape(-1, 2)
+    if len(d) < 6:
+        return []
+    k = 9
+    pad = np.pad(d, ((k // 2, k // 2), (0, 0)), mode="edge")
+    suave = np.stack([np.convolve(pad[:, j], np.ones(k) / k, mode="valid") for j in range(2)], axis=1)
+    rapido = np.linalg.norm(d - suave, axis=1)
+    n = len(rapido) // SUB + (1 if len(rapido) % SUB else 0)
+    return [round(float(np.sqrt((rapido[i * SUB:(i + 1) * SUB] ** 2).mean())), 2) for i in range(n)]
+
+
+def _solo_temblor(ruta, dur):
+    """Temblor de un video ya medido con una version anterior (solo gris, sin color ni audio)."""
+    W, H = 192, 108
+    p = subprocess.Popen(["ffmpeg", "-hide_banner", "-nostats", "-loglevel", "error", "-hwaccel", "auto", "-i", ruta,
+                          "-map", "0:v:0", "-vf", "fps=%d,scale=%d:%d,format=gray" % (FPS_TEMBLOR, W, H),
+                          "-f", "rawvideo", "pipe:1"],
+                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, creationflags=SIN_VENTANA)
+    reloj = threading.Timer(max(900.0, dur * 3.0), p.kill)
+    reloj.start()
+    desp, ultimo = [], None
+    try:
+        while True:
+            buf = _leer_exacto(p.stdout, W * H * 100)
+            n = len(buf) // (W * H)
+            if n < 1:
+                break
+            g = np.frombuffer(buf[:n * W * H], dtype=np.uint8).reshape(n, H, W).astype(np.float32) / 255.0
+            desp.append(_desplazamientos(ultimo, g))
+            ultimo = g[-1]
+        p.wait(timeout=60)
+    finally:
+        reloj.cancel()
+        if p.poll() is None:
+            p.kill()
+    return _temblor_de(np.concatenate(desp) if desp else [])
+
+
 def _medir_video(ruta, dur, con_audio=True):
-    """UNA sola lectura del video (a 2 cuadros por segundo, 192x108): calidad, color, tramos negros y audio.
-    Lee por bloques: no se llena la memoria aunque el video dure una hora."""
+    """UNA sola lectura del video (a 10 cuadros por segundo, 192x108): temblor con todos los cuadros; calidad, color
+    y tramos negros con uno de cada 5 (cada 0,5 s); y el audio. Lee por bloques: no se llena la memoria aunque el
+    video dure una hora."""
     W, H = 192, 108
     tam = W * H * 3
     tmp = None
     cmd = ["ffmpeg", "-hide_banner", "-nostats", "-loglevel", "error", "-y", "-hwaccel", "auto", "-i", ruta,
-           "-map", "0:v:0", "-vf", "fps=%g,scale=%d:%d,format=rgb24" % (1 / PASO_CALIDAD, W, H), "-f", "rawvideo", "pipe:1"]
+           "-map", "0:v:0", "-vf", "fps=%d,scale=%d:%d,format=rgb24" % (FPS_TEMBLOR, W, H), "-f", "rawvideo", "pipe:1"]
     if con_audio:
         fd, tmp = tempfile.mkstemp(suffix=".pcm")
         os.close(fd)
@@ -215,16 +289,27 @@ def _medir_video(ruta, dur, con_audio=True):
     reloj = threading.Timer(max(900.0, dur * 3.0), p.kill)           # si ffmpeg se cuelga, no se cuelga el programa
     reloj.start()
     nit, bri, mov, color, negro = [], [], [], [], []
+    desp, ultimo_g = [], None
     ultimo = None
+    cuenta = 0
     pesos = np.array((0.299, 0.587, 0.114), dtype=np.float32)
     try:
         while True:
-            buf = _leer_exacto(p.stdout, tam * 48)
+            buf = _leer_exacto(p.stdout, tam * 50)
             n = len(buf) // tam
             if n < 1:
                 break
-            f = np.frombuffer(buf[:n * tam], dtype=np.uint8).reshape(n, H, W, 3).astype(np.float32) / 255.0
-            g = f @ pesos
+            todos = np.frombuffer(buf[:n * tam], dtype=np.uint8).reshape(n, H, W, 3).astype(np.float32) / 255.0
+            gt = todos @ pesos
+            desp.append(_desplazamientos(ultimo_g, gt))
+            ultimo_g = gt[-1]
+            sel = [i for i in range(n) if (cuenta + i) % SUB == 0]
+            cuenta += n
+            if not sel:
+                continue
+            f = todos[sel]
+            n = len(sel)
+            g = gt[sel]
             lap = g[:, 1:-1, 2:] + g[:, 1:-1, :-2] + g[:, 2:, 1:-1] + g[:, :-2, 1:-1] - 4 * g[:, 1:-1, 1:-1]
             nit += lap.reshape(n, -1).var(axis=1).tolist()
             bri += g.reshape(n, -1).mean(axis=1).tolist()
@@ -248,7 +333,8 @@ def _medir_video(ruta, dur, con_audio=True):
             except OSError:
                 pass
         return _medir_video(ruta, dur, False)
-    res = {"calidad": [], "color": color, "oscuros": _tramos_negros(negro)}
+    res = {"calidad": [], "color": color, "oscuros": _tramos_negros(negro),
+           "temblor": _temblor_de(np.concatenate(desp) if desp else [])}
     if nit:
         if len(mov) > 1:
             mov[0] = mov[1]
@@ -412,11 +498,13 @@ def _analizar_archivo(tipo, ruta, previo=None):
             if previo and previo.get("calidad") is not None and previo.get("color") is not None:
                 for k in ("calidad", "color", "oscuros"):
                     d[k] = previo.get(k) or []
-                d["audio"] = _solo_audio(ruta, d["dur"]) if d["audio_pista"] else []
+                d["audio"] = previo["audio"] if previo.get("audio") is not None else \
+                    (_solo_audio(ruta, d["dur"]) if d["audio_pista"] else [])
+                d["temblor"] = previo["temblor"] if previo.get("temblor") is not None else _solo_temblor(ruta, d["dur"])
             else:
                 d.update(_medir_video(ruta, d["dur"], d["audio_pista"]))
         else:
-            d.update({"calidad": [], "color": [], "oscuros": [], "audio": []})
+            d.update({"calidad": [], "color": [], "oscuros": [], "audio": [], "temblor": []})
     if d["hora"] is None:
         d["hora"] = datetime.datetime.fromtimestamp(st.st_mtime)
     d["hora"] = d["hora"].isoformat(timespec="seconds")

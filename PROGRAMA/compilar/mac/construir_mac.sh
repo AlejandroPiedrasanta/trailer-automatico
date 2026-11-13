@@ -15,7 +15,7 @@ AQUI="$(cd "$(dirname "$0")" && pwd)"
 COMPILAR="$(dirname "$AQUI")"
 PROG="$(dirname "$COMPILAR")"
 BASE="$(dirname "$PROG")"
-OBRA="${TRAILER_OBRA:-$HOME/trailer_automatico_mac}"
+OBRA="${TRAILER_OBRA:-${GITHUB_WORKSPACE:-$HOME}/trailer_automatico_mac}"
 DIST="$OBRA/dist"
 APP="$DIST/TrailerAutomatico.app"
 VENV="$OBRA/venv"
@@ -140,8 +140,10 @@ productbuild --distribution "$OBRA/distribucion.xml" --resources "$AQUI/pkg/recu
 
 paso "Imagen de disco .dmg (ventana con los dos pasos)"
 STAGE="$OBRA/dmg"; rm -rf "$STAGE"; mkdir -p "$STAGE"
-cp "$PKG" "$STAGE/Instalar Tráiler automático.pkg"
-cp "$AQUI/Desinstalar.command" "$STAGE/Desinstalar Tráiler automático.command"; chmod +x "$STAGE/Desinstalar Tráiler automático.command"
+# nombres y volumen SIN tildes: con «Tráiler automático» el punto de montaje queda en NFD, mac_alias lo compara en NFC, sale de
+# la imagen («..») y toma IDs de APFS de 64 bits -> struct.error en backgroundImageAlias (fallo del 2026-11-13 en GitHub)
+cp "$PKG" "$STAGE/Instalar Trailer automatico.pkg"
+cp "$AQUI/Desinstalar.command" "$STAGE/Desinstalar.command"; chmod +x "$STAGE/Desinstalar.command"
 FONDO="$OBRA/fondo_dmg.tiff"
 tiffutil -cathidpicheck "$AQUI/dmg/fondo.png" "$AQUI/dmg/fondo@2x.png" -out "$FONDO" >/dev/null || falla "No pude preparar el fondo del .dmg"
 SALIDA="${TRAILER_SALIDA:-$BASE/INSTALADORES/Mac}"; mkdir -p "$SALIDA"
@@ -149,9 +151,16 @@ rm -f "$SALIDA"/Instalar_Trailer_automatico_Mac_${NOMBRE_ARQ}_*.dmg
 DMG="$SALIDA/Instalar_Trailer_automatico_Mac_${NOMBRE_ARQ}_$VERSION.dmg"
 for intento in 1 2 3 4 5; do                      # hdiutil a veces responde «Resource busy»: hasta 5 intentos
     "$VPY" -m dmgbuild -s "$AQUI/dmg/ajustes_dmg.py" -D stage="$STAGE" -D fondo="$FONDO" -D icono="$OBRA/TrailerAutomatico.icns" \
-        "Tráiler automático $VERSION" "$DMG" >/dev/null && break
-    [ "$intento" = 5 ] && falla "dmgbuild no pudo crear la imagen de disco"
-    echo "    hdiutil ocupado (intento $intento de 5): reintento en 15 s"; rm -f "$DMG"; sleep 15
+        "Trailer automatico $VERSION" "$DMG" >/dev/null && break
+    rm -f "$DMG"
+    if [ "$intento" = 5 ]; then                    # ultimo recurso: .dmg sencillo (sin fondo) para no quedarse sin instalador
+        echo "    AVISO: dmgbuild fallo 5 veces: armo un .dmg sencillo sin fondo"
+        ln -s /Applications "$STAGE/Aplicaciones"
+        hdiutil create -volname "Trailer automatico $VERSION" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$DMG" >/dev/null \
+            || falla "hdiutil no pudo crear la imagen de disco"
+        break
+    fi
+    echo "    hdiutil ocupado (intento $intento de 5): reintento en 15 s"; sleep 15
 done
 [ -n "${FIRMA_APP:-}" ] && codesign --sign "$FIRMA_APP" "$DMG"
 paso "LISTO  $DMG  ($(du -h "$DMG" | cut -f1))"

@@ -112,8 +112,8 @@ def dibujar(esc):
     p.fillRect(QRectF(0, 352, W, H - 352), QColor(232, 238, 246))
     p.setPen(QPen(QColor(214, 222, 234), 1))
     p.drawLine(QPointF(0, 352), QPointF(W, 352))
-    filas = [("¿macOS no lo deja abrir? ", "Clic derecho sobre «Instalar Tráiler automático» › Abrir.",
-              "macOS won’t open it? Right-click “Instalar Tráiler automático” › Open."),
+    filas = [("¿macOS no lo deja abrir? ", "Clic derecho sobre «Instalar Trailer automatico» › Abrir.",
+              "macOS won’t open it? Right-click “Instalar Trailer automatico” › Open."),
              ("En DaVinci Resolve: ", "Preferencias › Sistema › General › Scripting externo: Local.",
               "In DaVinci Resolve: Preferences › System › General › External scripting: Local.")]
     y = 366

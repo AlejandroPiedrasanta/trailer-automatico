@@ -7,8 +7,9 @@
 import os
 
 stage = defines['stage']                                   # noqa: F821 (lo pone dmgbuild)
-PKG = 'Instalar Tráiler automático.pkg'
-DESINSTALAR = 'Desinstalar Tráiler automático.command'
+# nombres SIN tildes (como CineCaptions): con tildes, HFS+ los guarda en NFD y mac_alias/.DS_Store no los casan
+PKG = 'Instalar Trailer automatico.pkg'
+DESINSTALAR = 'Desinstalar.command'
 
 format = 'UDZO'
 filesystem = 'HFS+'

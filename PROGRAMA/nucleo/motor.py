@@ -160,6 +160,8 @@ def copiar_material(rutas_origen, avance=None, forzar_tipo=None):
             archivos.append(r)
     pares = []
     for a in archivos:
+        if os.path.basename(a).startswith((".", "~")):     # "._DSC0001.JPG" de la Mac en discos externos, temporales
+            continue
         t = tipo_de_archivo(a)
         if t is None:
             continue
@@ -170,15 +172,41 @@ def copiar_material(rutas_origen, avance=None, forzar_tipo=None):
         pares.append((a, t))
     hechos = {t: 0 for t in CARPETAS}
     for i, (a, t) in enumerate(pares, 1):
-        destino = os.path.join(CARPETAS[t], os.path.basename(a))
         if avance:
             avance(i, len(pares), os.path.basename(a))
-        if os.path.exists(destino) and os.path.getsize(destino) == os.path.getsize(a):
+        destino = _destino_libre(CARPETAS[t], a)
+        if destino is None:                   # ya estaba (mismo nombre y tamano)
             continue
         os.makedirs(CARPETAS[t], exist_ok=True)
-        shutil.copy2(a, destino)
+        parcial = destino + ".copiando"       # si se corta (disco lleno, se desconecta), no queda un video a medias
+        try:
+            shutil.copy2(a, parcial)
+            os.replace(parcial, destino)
+        except BaseException:
+            try:
+                os.remove(parcial)
+            except OSError:
+                pass
+            raise
         hechos[t] += 1
     return hechos
+
+
+def _destino_libre(carpeta, origen):
+    """Donde copiar `origen` sin pisar nada: None si ese mismo archivo ya esta; si hay OTRO con el mismo nombre (dos
+    camaras con DSC_0001.JPG), «DSC_0001 (2).JPG»."""
+    nombre, ext = os.path.splitext(os.path.basename(origen))
+    tam = os.path.getsize(origen)
+    for k in range(1, 1000):
+        d = os.path.join(carpeta, "%s%s" % (nombre, ext) if k == 1 else "%s (%d)%s" % (nombre, k, ext))
+        if not os.path.exists(d):
+            return d
+        try:
+            if os.path.samefile(d, origen) or os.path.getsize(d) == tam:
+                return None
+        except OSError:
+            return None
+    return None
 
 
 def chequeo():
@@ -581,6 +609,13 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
         if not analisis.get("items"):
             log("No hay material para armar.")
             return None
+        usables = [i for i in analisis["items"] if i["tipo"] != "foto" and not i.get("descartar")
+                   and i.get("dur", 0) - sum(b - a for a, b in i.get("oscuros") or []) > 3]
+        if not usables:                       # todos dañados, en negro o de menos de 3 s: el trailer saldria en negro
+            raise RuntimeError("No hay videos que se puedan usar (dañados, en negro o muy cortos). Revisa 1 MATERIAL/VIDEOS: "
+                               + "; ".join(a for a in analisis.get("avisos", [])[:2]))
+        if sum(1 for i in analisis["items"] if i["tipo"] == "foto" and not i.get("descartar")) < MINIMOS["foto"]:
+            log("Aviso: hay menos de %d fotos que se puedan leer: la intro repetira fotos." % MINIMOS["foto"])
         resumen = _resumen(analisis["items"])
         log("== Conectando con DaVinci Resolve ==")
         instalar_fuentes(log)

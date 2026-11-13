@@ -225,7 +225,8 @@ def _desplazamientos(previo, g):
 
     def fino(c, a, b):                                # el pico entre pixeles (parabola por 3 puntos)
         den = a - 2 * c + b
-        return np.where(np.abs(den) > 1e-9, 0.5 * (a - b) / den, 0.0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(np.abs(den) > 1e-9, 0.5 * (a - b) / np.where(den == 0, 1.0, den), 0.0)
     cx = r[k, py, px]
     dx = px + fino(cx, r[k, py, (px - 1) % w], r[k, py, (px + 1) % w])
     dy = py + fino(cx, r[k, (py - 1) % h, px], r[k, (py + 1) % h, px])

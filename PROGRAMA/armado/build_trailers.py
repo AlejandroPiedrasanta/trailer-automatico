@@ -178,11 +178,16 @@ class Planificador:
     def __init__(self, items, fps):
         self.fps = fps
         # videos verticales (celular parado) no entran al montaje 16:9; quedan clasificados en el media pool
-        self.vids = [i for i in items if i["tipo"] != "foto" and not i.get("descartar")
-                     and (USAR_VIDEOS_VERTICALES or i.get("horizontal", True))]
-        n_vert = sum(1 for i in items if i["tipo"] != "foto" and not i.get("horizontal", True))
-        if n_vert and not USAR_VIDEOS_VERTICALES:
+        validos = [i for i in items if i["tipo"] != "foto" and not i.get("descartar")]
+        horizontales = [i for i in validos if i.get("horizontal", True)]
+        utiles_h = sum(max(0.0, i.get("dur", 0) - sum(b - a for a, b in i.get("oscuros") or [])) for i in horizontales)
+        verticales = USAR_VIDEOS_VERTICALES or len(horizontales) < 3 or utiles_h < 45
+        self.vids = validos if verticales else horizontales
+        n_vert = len(validos) - len(horizontales)
+        if n_vert and not verticales:
             print("%d videos verticales quedan fuera del montaje (estan en el media pool)." % n_vert)
+        elif n_vert and not USAR_VIDEOS_VERTICALES:      # casi todo es de celular parado: mejor recortado que en negro
+            print("Hay pocos videos horizontales: se usan tambien los %d verticales (llenando el cuadro)." % n_vert)
         self.fotos = self._sin_repetidas([i for i in items if i["tipo"] == "foto" and not i.get("descartar")
                                           and i.get("horizontal", True)])
         self.usados = {}

@@ -1,0 +1,69 @@
+# Tráiler automático · CINEMA PRODUCTIONS
+# Prueba los instaladores PUBLICADOS (trailer-automatico-releases) en varios equipos de GitHub: Windows Server 2022 y 2025,
+# Windows 11 ARM (el programa x64 emulado), Mac Apple Silicon (macOS 15 y 26), Mac Intel y el de Intel en una Mac con chip
+# Apple (Rosetta). En cada uno: instalar, abrir, autoprueba, actualizaciones, instalador con ventana y desinstalar.
+# Actions > "Pruebas en varios equipos" > Run workflow. Resultados, registros y capturas en "Artifacts".
+name: Pruebas en varios equipos
+on:
+  workflow_dispatch:
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Instalar y probar
+        shell: pwsh
+        run: pwsh -NoProfile -File PROGRAMA/compilar/windows/probar_equipo.ps1
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: prueba-${{ matrix.os }}
+          path: prueba/
+          retention-days: 5
+  mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - nombre: macos15-AppleSilicon
+            runner: macos-15
+            dmg: AppleSilicon
+          - nombre: macos26-AppleSilicon
+            runner: macos-26
+            dmg: AppleSilicon
+          - nombre: macos15-Intel
+            runner: macos-15-intel
+            dmg: Intel
+          - nombre: macos15-Intel-en-Rosetta
+            runner: macos-15
+            dmg: Intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Rosetta (el de Intel en una Mac con chip Apple)
+        if: ${{ matrix.dmg == 'Intel' && matrix.runner != 'macos-15-intel' }}
+        run: sudo softwareupdate --install-rosetta --agree-to-license || true
+      - name: Bajar el .dmg publicado
+        run: |
+          echo "equipo: $(sw_vers -productName) $(sw_vers -productVersion) · $(uname -m) · $(sysctl -n machdep.cpu.brand_string)"
+          URL=$(curl -sL https://github.com/AlejandroPiedrasanta/trailer-automatico-releases/releases/latest/download/version.json \
+            | python3 -c 'import json,sys; a=json.load(sys.stdin)["estable"]["archivos"]; print(a["${{ matrix.dmg == 'Intel' && 'mac_x86_64' || 'mac_arm64' }}"]["url"])')
+          mkdir -p "3 INSTALADORES/Mac"
+          curl -sL "$URL" -o "3 INSTALADORES/Mac/$(basename "$URL")"
+          ls -la "3 INSTALADORES/Mac"
+      - name: Instalar y probar
+        env:
+          PROBAR_EXTRA: '1'
+        run: bash PROGRAMA/compilar/mac/probar_instalacion.sh
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: prueba-${{ matrix.nombre }}
+          path: prueba/
+          retention-days: 5

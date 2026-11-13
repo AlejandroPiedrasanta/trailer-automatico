@@ -93,6 +93,35 @@ if [ "${PROBAR_ACTUALIZACION:-0}" = 1 ]; then
     sudo cat "/Library/Application Support/TrailerAutomatico/actualizar/servicio.log" > "$SAL/servicio.log" 2>/dev/null
     foto 3_despues_de_actualizar
 fi
+# 5. (PROBAR_EXTRA=1) autoprueba, servicio de actualizaciones con la version publicada y desinstalar sin dejar nada
+if [ "${PROBAR_EXTRA:-0}" = 1 ]; then
+    ETQ="com.cinemaproductions.trailerautomatico.actualizar"
+    BIN="/Applications/$APP_BIN"
+    EST_A="$SAL/autoprueba.txt"
+    TRAILER_SIN_MUSICA=1 "$BIN" --tarea verificar "$EST_A" >/dev/null 2>&1
+    FIN="$(grep -v '^PROGRESO' "$EST_A" 2>/dev/null | tail -1)"
+    case "$FIN" in OK*) ok "autoprueba: $FIN" ;; *) falla "autoprueba: $FIN" ;; esac
+    sudo launchctl print "system/$ETQ" >/dev/null 2>&1 && ok "servicio de actualizaciones cargado" || falla "el servicio no esta cargado"
+    pkill -f "$APP_BIN" 2>/dev/null; sleep 3
+    sudo launchctl kickstart -k "system/$ETQ"; sleep 25
+    sudo cat "/Library/Application Support/TrailerAutomatico/actualizar/fondo.log" > "$SAL/servicio_fondo.log" 2>/dev/null
+    tail -1 "$SAL/servicio_fondo.log" | grep -q "al_dia" && ok "el servicio lee la version publicada (al dia)" \
+        || falla "servicio: $(tail -1 "$SAL/servicio_fondo.log")"
+    REG="$(ls "$HOME/Library/Application Support/TrailerAutomatico/registro/registro.log" 2>/dev/null)"
+    [ -n "$REG" ] && cp "$REG" "$SAL/registro.log"
+    if [ -n "$REG" ] && grep -qE "Traceback|ERROR " "$REG"; then falla "errores en el registro: $(grep -m1 -E 'Traceback|ERROR ' "$REG")"
+    else ok "registro sin errores"; fi
+    # lo que hace Desinstalar.command (sin los cuadros de dialogo)
+    sudo launchctl bootout "system/$ETQ" >/dev/null 2>&1
+    sudo rm -f "/Library/LaunchDaemons/$ETQ.plist"
+    sudo rm -rf /Applications/TrailerAutomatico.app "/Library/Application Support/TrailerAutomatico"
+    sudo pkgutil --forget com.cinemaproductions.trailerautomatico >/dev/null 2>&1
+    QUEDA=""
+    [ -d /Applications/TrailerAutomatico.app ] && QUEDA="$QUEDA app"
+    sudo launchctl print "system/$ETQ" >/dev/null 2>&1 && QUEDA="$QUEDA servicio"
+    pkgutil --pkg-info com.cinemaproductions.trailerautomatico >/dev/null 2>&1 && QUEDA="$QUEDA recibo"
+    [ -z "$QUEDA" ] && ok "desinstalado sin dejar nada" || falla "al desinstalar quedo:$QUEDA"
+fi
 echo
 cat "$SAL/resultado.txt"
 exit $MAL

@@ -5,14 +5,15 @@ import glob
 
 PROG = os.environ["TRAILER_PROGRAMA"]
 FFMPEG = os.environ.get("TRAILER_FFMPEG", "")
-ICONO = os.path.join(PROG, "compilar", "icono.ico")
+ICONO = os.path.join(PROG, "compilar", "icono", "icono.ico")
 
-propios = [f for f in glob.glob(os.path.join(PROG, "*.py"))
-           if os.path.basename(f) not in ("empaquetar.py", "crear_estructura.py", "mapa_codigo.py")]
+# el codigo va en carpetas (nucleo, analisis, armado, entrega, interfaz); en el .exe / .app queda todo junto
+GRUPOS = ("nucleo", "analisis", "armado", "entrega", "interfaz")
+propios = [f for g in GRUPOS for f in glob.glob(os.path.join(PROG, g, "*.py"))]
 # los modulos tambien van como .py: build_trailers.py se ejecuta desde su archivo y carga los demas por ruta
 datas = [(f, ".") for f in propios]
 for x in ("perfiles_evento.json", "version.txt", "LEEME.txt"):
-    datas.append((os.path.join(PROG, x), "."))
+    datas.append((os.path.join(PROG, "config", x), "."))
 for carpeta in ("recursos", "dctl"):
     ruta = os.path.join(PROG, carpeta)
     if not os.path.isdir(ruta):
@@ -25,8 +26,8 @@ if FFMPEG:
 modulos = [os.path.splitext(os.path.basename(f))[0] for f in propios if not f.endswith("trailer_xv.py")]
 
 a = Analysis(
-    [os.path.join(PROG, "trailer_xv.py")],
-    pathex=[PROG],
+    [os.path.join(PROG, "interfaz", "trailer_xv.py")],
+    pathex=[os.path.join(PROG, g) for g in GRUPOS],
     binaries=[],
     datas=datas,
     hiddenimports=modulos + ["PIL.Image", "PIL.ImageOps", "numpy", "winreg", "logging.handlers", "faulthandler"],

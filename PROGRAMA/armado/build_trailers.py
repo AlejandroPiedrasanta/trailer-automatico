@@ -129,7 +129,7 @@ def cargar_perfil(tipo):
 
 
 def _modulo(nombre):
-    ruta = os.path.join(SKILL_DIR, nombre + ".py")
+    ruta = rutas.codigo(nombre + ".py")
     spec = importlib.util.spec_from_file_location(nombre, ruta)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

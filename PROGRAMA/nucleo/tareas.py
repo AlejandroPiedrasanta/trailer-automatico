@@ -43,7 +43,7 @@ def instalar(est):
     est.progreso(10, "Creando las carpetas de trabajo")
     rutas.crear_carpetas()
     leeme = os.path.join(rutas.BASE, "LEEME.txt")
-    origen = os.path.join(rutas.PROGRAMA, "LEEME.txt")
+    origen = os.path.join(rutas.CONFIG_PROG, "LEEME.txt")
     if not os.path.exists(leeme) and os.path.exists(origen):
         shutil.copy2(origen, leeme)
     est.progreso(35, "Instalando las fuentes de los titulos")
@@ -82,7 +82,7 @@ def verificar(est):
         prueba(m, lambda m=m: __import__(m))
     est.progreso(40, "Recursos")
     for r in ("build_trailers.py", "perfiles_evento.json", "LEEME.txt", "version.txt"):
-        prueba(r, lambda r=r: os.path.exists(os.path.join(rutas.PROGRAMA, r)))
+        prueba(r, lambda r=r: os.path.exists(rutas.codigo(r) if r.endswith(".py") else os.path.join(rutas.CONFIG_PROG, r)))
     prueba("plantillas .drp", lambda: os.path.exists(rutas.PLANTILLAS_DRP))
     prueba("musica y SFX", lambda: len(os.listdir(rutas.AUDIO)) >= 15)
     prueba("fuentes", lambda: len(os.listdir(rutas.FUENTES)) >= 5)

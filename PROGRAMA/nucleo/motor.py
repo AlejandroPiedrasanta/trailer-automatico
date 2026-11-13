@@ -17,9 +17,9 @@ import time
 import threading
 import subprocess
 
-SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
-if SKILL_DIR not in sys.path:
-    sys.path.insert(0, SKILL_DIR)
+SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))          # PROGRAMA (motor esta en nucleo/)
+if os.path.join(SKILL_DIR, "nucleo") not in sys.path:
+    sys.path.insert(0, os.path.join(SKILL_DIR, "nucleo"))
 import rutas  # noqa: E402
 import analizar_material as am  # noqa: E402
 
@@ -582,7 +582,7 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
         resolve = conectar_resolve(log)
         reenlazar(resolve.GetProjectManager().GetCurrentProject(), log)
         log("== %s ==" % ("Plan (prueba en seco)" if seco else "Armando timelines"))
-        ruta = os.path.join(SKILL_DIR, "build_trailers.py")
+        ruta = rutas.codigo("build_trailers.py")
         g = {"__name__": "build_trailers", "resolve": resolve, "BASE": BASE, "ANALISIS": analisis,
              "EVENTO": evento or None, "SOLO": solo or None, "REHACER": True, "DRY_RUN": seco,
              "NOMBRE_XV": nombre_xv, "FECHA_LUGAR": fecha_lugar, "FRASE": frase, "TIPO_EVENTO": tipo_evento,

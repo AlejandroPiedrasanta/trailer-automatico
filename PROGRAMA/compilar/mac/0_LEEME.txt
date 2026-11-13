@@ -9,7 +9,7 @@ Solo se puede compilar EN UNA MAC (PyInstaller no compila para Mac desde Windows
 
 1) En una Mac (con Python 3 de python.org):
      bash PROGRAMA/compilar/mac/construir_mac.sh
-   Deja INSTALADORES/Mac/Instalar_Trailer_automatico_Mac_<AppleSilicon|Intel>_<version>.dmg
+   Deja "3 INSTALADORES/Mac/Instalar_Trailer_automatico_Mac_<AppleSilicon|Intel>_<version>.dmg
 
 2) En las Mac de GitHub (sin tener Mac): subir el proyecto a un repositorio PRIVADO de GitHub y correr
    Actions > "Instaladores Mac" (.github/workflows/mac.yml). Los .dmg salen en Artifacts.

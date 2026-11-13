@@ -2,8 +2,8 @@
 """
 registro.py - Registro del programa en archivo (para encontrar bugs despues) y ganchos de errores.
 
-  datos/registro.log ....... todo lo que hace el programa (rota a 1 MB, guarda 3)
-  datos/fallo_nativo.log ... si Python o Qt se caen del todo (faulthandler)
+  datos/registro/registro.log todo lo que hace el programa (rota a 1 MB, guarda 3)
+  datos/registro/fallo_nativo.log si Python o Qt se caen del todo (faulthandler)
 Cualquier excepcion no atrapada (en la ventana o en un hilo) queda en el registro con su traza.
 """
 import os
@@ -22,7 +22,7 @@ _fallo = None
 def preparar():
     """Llamar una sola vez al arrancar."""
     global _fallo
-    os.makedirs(rutas.DATOS, exist_ok=True)
+    os.makedirs(os.path.dirname(rutas.REGISTRO), exist_ok=True)
     if sys.stdout is None:                 # .exe sin consola: print() no debe romper nada
         sys.stdout = open(os.devnull, "w", encoding="utf-8")
     if sys.stderr is None:
@@ -34,7 +34,7 @@ def preparar():
         _log.setLevel(logging.INFO)
     try:
         import faulthandler
-        _fallo = open(os.path.join(rutas.DATOS, "fallo_nativo.log"), "a", encoding="utf-8")
+        _fallo = open(os.path.join(os.path.dirname(rutas.REGISTRO), "fallo_nativo.log"), "a", encoding="utf-8")
         faulthandler.enable(_fallo, all_threads=True)
     except Exception:
         pass

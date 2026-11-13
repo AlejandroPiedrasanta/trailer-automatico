@@ -17,6 +17,9 @@ import subprocess
 OBJETIVO_LUFS = -14.0
 PICO_MAX = -1.5          # se apunta a -1.5 para quedar con margen bajo -1 dBTP
 RANGO = 11.0
+if __name__ == "__main__":                 # suelto: PROGRAMA/nucleo para encontrar rutas
+    import sys as _sys
+    _sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "nucleo"))
 try:
     import rutas
     SIN_VENTANA = rutas.SIN_VENTANA

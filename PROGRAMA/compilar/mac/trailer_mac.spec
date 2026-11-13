@@ -8,11 +8,12 @@ FFMPEG = os.environ.get("TRAILER_FFMPEG", "")
 ICNS = os.environ.get("TRAILER_ICNS") or None
 VERSION = os.environ.get("TRAILER_VERSION", "1.0.0")
 
-propios = [f for f in glob.glob(os.path.join(PROG, "*.py"))
-           if os.path.basename(f) not in ("empaquetar.py", "crear_estructura.py", "mapa_codigo.py")]
+# el codigo va en carpetas (nucleo, analisis, armado, entrega, interfaz); en el .exe / .app queda todo junto
+GRUPOS = ("nucleo", "analisis", "armado", "entrega", "interfaz")
+propios = [f for g in GRUPOS for f in glob.glob(os.path.join(PROG, g, "*.py"))]
 datas = [(f, ".") for f in propios]
 for x in ("perfiles_evento.json", "version.txt", "LEEME.txt"):
-    datas.append((os.path.join(PROG, x), "."))
+    datas.append((os.path.join(PROG, "config", x), "."))
 for carpeta in ("recursos", "dctl"):
     ruta = os.path.join(PROG, carpeta)
     if not os.path.isdir(ruta):
@@ -25,8 +26,8 @@ if FFMPEG:
 modulos = [os.path.splitext(os.path.basename(f))[0] for f in propios if not f.endswith("trailer_xv.py")]
 
 a = Analysis(
-    [os.path.join(PROG, "trailer_xv.py")],
-    pathex=[PROG],
+    [os.path.join(PROG, "interfaz", "trailer_xv.py")],
+    pathex=[os.path.join(PROG, g) for g in GRUPOS],
     datas=datas,
     hiddenimports=modulos + ["PIL.Image", "PIL.ImageOps", "numpy", "logging.handlers", "faulthandler"],
     excludes=["librosa", "numba", "llvmlite", "scipy", "sklearn", "matplotlib", "pandas", "tkinter", "IPython",

@@ -2,12 +2,12 @@ TRAILER AUTOMATICO - CINEMA PRODUCTIONS
 =======================================
 
 INSTALAR (Windows)
-Doble clic en  INSTALADORES\Instalar Trailer automatico <version>.exe  > Instalar > Abrir.
+Doble clic en  3 INSTALADORES\Windows\Instalar Trailer automatico <version>.exe  > Instalar > Abrir.
 No pide permisos de administrador. Crea "Tráiler automático" en el Escritorio y en el menú Inicio,
 instala las fuentes de los títulos y el color/ruido en DaVinci. Trae su propio ffmpeg, las
 plantillas, la música y los SFX. Para quitarlo: Configuración > Aplicaciones > Tráiler automático.
 Tus carpetas (1 MATERIAL, 2 VIDEOS TERMINADOS) nunca se borran. La carpeta de trabajo se puede
-cambiar en Ajustes. Si algo falla, el registro está en %LOCALAPPDATA%\TrailerAutomatico\registro.log.
+cambiar en Ajustes. Si algo falla, el registro está en %LOCALAPPDATA%\TrailerAutomatico\registro\registro.log.
 
 COMO SE USA (3 pasos)
 1. Abre "Tráiler automático" (o doble clic en ARMAR TRAILERS.bat / .command sin instalar).
@@ -38,7 +38,7 @@ EN MAC (la primera vez)
 1. Instala DaVinci Resolve Studio y Python 3 (python.org). Para ffmpeg instala Homebrew (brew.sh):
    el programa instala ffmpeg solo.
 2. En DaVinci: Preferencias > Sistema > General > Scripting externo = Local.
-3. Copia esta carpeta completa a la Mac (o descomprime "INSTALADORES/Trailer automatico (Mac).zip").
+3. Copia esta carpeta completa a la Mac (o usa el .dmg de "3 INSTALADORES\Mac").
 4. Doble clic en "ARMAR TRAILERS.command". Si la Mac dice que no puede abrirlo: clic derecho >
    Abrir > Abrir. La primera vez tarda unos minutos (instala lo necesario) y pide tu clave una
    vez para la carpeta de color de DaVinci.

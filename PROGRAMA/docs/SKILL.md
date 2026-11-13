@@ -5,7 +5,7 @@ description: Arma automáticamente las versiones del tráiler de XV años (1, 3,
 
 # Tráiler XV automático
 
-Todo corre en local con el programa: `ARMAR TRAILERS.bat` (Windows) o `ARMAR TRAILERS.command` (Mac) abren `PROGRAMA/trailer_xv.py`, una ventana Qt6/PySide6 con un solo botón **▶ ARMAR TODO** (`motor.armar_todo`: analizar → armar → renderizar → masterizar → abrir carpeta). Claude solo hace falta para revisar o corregir.
+Todo corre en local con el programa: `ARMAR TRAILERS.bat` (Windows) o `ARMAR TRAILERS.command` (Mac) abren `PROGRAMA/interfaz/trailer_xv.py`, una ventana Qt6/PySide6 con un solo botón **▶ ARMAR TODO** (`motor.armar_todo`: analizar → armar → renderizar → masterizar → abrir carpeta). Claude solo hace falta para revisar o corregir.
 
 ## Repositorio público y Mac
 - El repositorio público es https://github.com/AlejandroPiedrasanta/trailer-automatico (rama `main`). El `.gitignore` deja fuera `1 MATERIAL`, `2 VIDEOS TERMINADOS`, `INSTALADORES`, `PROGRAMA/datos`, `recursos/audio` y `FogtwoNo5.ttf`.
@@ -15,7 +15,7 @@ Todo corre en local con el programa: `ARMAR TRAILERS.bat` (Windows) o `ARMAR TRA
   - Si cambia la música: `python PROGRAMA/compilar/protegidos.py cifrar`, después commit y push.
 - Para compilar en Mac: Actions → «Instaladores Mac» (`gh workflow run "Instaladores Mac"`).
   - Corre en `macos-15` (Apple Silicon) y `macos-15-intel`, con `construir_mac.sh`.
-  - Los .dmg quedan en Artifacts: `gh run download <id> -D INSTALADORES/Mac`.
+  - Los .dmg quedan en Artifacts: `gh run download <id> -D "3 INSTALADORES/Mac"`.
 - Para subir workflows, `gh` necesita el permiso `workflow`: `gh auth refresh -h github.com -s workflow`. Lo autoriza la persona.
 
 ## Pantalla de Inicio = la de CineCaptions
@@ -45,12 +45,12 @@ Todo corre en local con el programa: `ARMAR TRAILERS.bat` (Windows) o `ARMAR TRA
 - **QSS:** un `QPushButton` sin borde (`border: none`) o con radio mayor que la mitad de su alto sale con esquinas rectas. Usa `border: 1px solid transparent` y radio ≤ alto/2.
 
 ## Instalador .exe (Windows) — mismo método que CineCaptions
-- `pwsh -File PROGRAMA\compilar\construir.ps1` hace todo en %TEMP%\trailer_automatico_build y deja `INSTALADORES\Instalar Trailer automatico <version>.exe`. La versión está en `PROGRAMA\version.txt`.
-  1. Ícono (`compilar\icono.py`).
-  2. PyInstaller en modo carpeta, sin consola (`compilar\trailer.spec`). Los `.py` propios van también como datos porque `build_trailers.py` se ejecuta desde su archivo. Incluye `recursos` y `dctl`, más ffmpeg y ffprobe en `ffmpeg\`. Deja fuera librosa, scipy, Qt OpenGL y las traducciones de Qt.
+- `pwsh -File PROGRAMA\compilar\windows\construir.ps1` hace todo en %TEMP%\trailer_automatico_build y deja `3 INSTALADORES\Windows\Instalar Trailer automatico <version>.exe`. La versión está en `PROGRAMA\version.txt`.
+  1. Ícono (`compilar\icono\icono.py`, que dibuja `interfaz\icono_app.py`: la imagen EXACTA que dio la persona: `recursos\icono_fuente.png`, limpiada con `python compilar\icono\icono.py limpiar <imagen>`, que recorta el cuadro y quita el fondo claro y la sombra; sin ese archivo dibuja una versión vectorial).
+  2. PyInstaller en modo carpeta, sin consola (`compilar\windows\trailer.spec`). Los `.py` propios van también como datos porque `build_trailers.py` se ejecuta desde su archivo. Incluye `recursos` y `dctl`, más ffmpeg y ffprobe en `ffmpeg\`. Deja fuera librosa, scipy, Qt OpenGL y las traducciones de Qt.
   3. Autoprueba `TrailerAutomatico.exe --tarea verificar <txt>`: si no termina en `OK|`, no se crea el instalador.
   4. Zip del programa.
-  5. `compilar\Instalador.cs` compilado con el `csc.exe` de .NET Framework 4 (C# 5: nada de `$""` ni `?.`).
+  5. `compilar\windows\Instalador.cs` compilado con el `csc.exe` de .NET Framework 4 (C# 5: nada de `$""` ni `?.`).
   6. El zip se pega al final del instalador, seguido de un pie de 8 bytes de posición + `TRAILER1`.
 - El instalador es per-user (`asInvoker`): va en `%LOCALAPPDATA%\Programs\TrailerAutomatico`.
   - Crea accesos en Inicio y Escritorio (`WScript.Shell`) y la entrada `HKCU\…\Uninstall\TrailerAutomatico`.
@@ -72,10 +72,19 @@ TRAILER XV AUTOMATICO/
   ARMAR TRAILERS.bat / .command    el botón
   1 MATERIAL/ FOTOS · VIDEOS · DRON
   2 VIDEOS TERMINADOS/<EVENTO>/    renders masterizados
-  PROGRAMA/                        código, SKILL.md, dctl/ (DCTL + LUTs de look), docs/
+  3 INSTALADORES/                  Windows/ (.exe) · Mac/ (.dmg)
+  PROGRAMA/                        SOLO carpetas (2026-11-13, pedido de la persona):
+    interfaz/ nucleo/ analisis/ armado/ entrega/ herramientas/    el código por tema
+    config/                        version.txt, perfiles_evento.json, requisitos.txt, LEEME.txt
     recursos/                      plantillas/EVENTOS CINEMA - PLANTILLAS.drp, audio/ (música y SFX), fuentes/
-    datos/                         analisis/ (cachés), respaldos/, CLASIFICACION_EVENTO.json, venv-mac/
+    recursos_protegidos/ dctl/     audio cifrado del repo · DCTL + LUTs de look
+    compilar/                      windows/ (construir.ps1, spec, C#) · mac/ · icono/ · protegidos.py
+    docs/                          SKILL.md, mapa.json, capturas/
+    datos/                         analisis/ (cachés), respaldos/, registro/, CLASIFICACION_EVENTO.json, venv-mac/
+  (ocultos: .git, .github, .gitignore, .gitattributes, CLAUDE.md)
 ```
+- El código va en carpetas pero los módulos se importan igual (`import motor`): `import rutas` agrega las carpetas a `sys.path` (`rutas.GRUPOS`); los scripts sueltos agregan antes `PROGRAMA/nucleo`. Un `.py` por ruta con `rutas.codigo()`. En el .exe/.app todo queda junto en `_MEIPASS` (los spec juntan las carpetas).
+- Los archivos ocultos de Windows no se abren con `"w"` (acceso denegado): `mapa_codigo` reescribe `CLAUDE.md` con `"r+"` y `truncate`.
 - Rutas de Resolve por sistema en `rutas.py` (`SCRIPT_API`, `SCRIPT_LIB`, `DIR_LUT`, `RESOLVE_APP`). En Mac se agrega Homebrew al PATH.
 - Caché de análisis con clave `nombre|tamaño`: sobrevive a mover carpetas o pasar a Mac.
 - `motor.conectar_resolve`: si el proyecto no existe (Mac u otra PC), hace `ImportProject` del `.drp` de `recursos/plantillas`. `motor.reenlazar` reenlaza por nombre (`RelinkClips`) los clips cuyo archivo no está, buscando en `1 MATERIAL` y `recursos`. `motor.instalar_fuentes` copia las fuentes a `~/Library/Fonts` en Mac.

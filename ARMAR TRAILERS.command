@@ -25,7 +25,7 @@ if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; 
 fi
 if [ ! -x "$VENV/bin/python" ]; then
   echo "Preparando el programa (solo la primera vez, tarda unos minutos)..."
-  python3 -m venv "$VENV" && "$VENV/bin/pip" install --upgrade pip && "$VENV/bin/pip" install -r requisitos.txt \
+  python3 -m venv "$VENV" && "$VENV/bin/pip" install --upgrade pip && "$VENV/bin/pip" install -r config/requisitos.txt \
     || { rm -rf "$VENV"; aviso "No se pudieron instalar las librerias. Revisa la ventana de Terminal."; exit 1; }
 fi
 if [ ! -w "$LUT" ]; then
@@ -33,4 +33,4 @@ if [ ! -w "$LUT" ]; then
   osascript -e "do shell script \"mkdir -p '$LUT' && chmod 777 '$LUT'\" with administrator privileges" >/dev/null 2>&1 \
     || aviso "Sin permiso para la carpeta de LUTs de DaVinci: el color y la reduccion de ruido no se instalaran."
 fi
-exec "$VENV/bin/python" trailer_xv.py
+exec "$VENV/bin/python" interfaz/trailer_xv.py

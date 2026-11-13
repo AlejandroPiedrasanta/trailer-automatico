@@ -21,8 +21,8 @@ import time
 import random
 import traceback
 
-SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, SKILL_DIR)
+SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))          # PROGRAMA (el codigo va en carpetas)
+sys.path.insert(0, os.path.join(SKILL_DIR, "nucleo"))      # rutas pone en sys.path las demas carpetas
 import rutas  # noqa: E402
 import registro  # noqa: E402
 import motor  # noqa: E402
@@ -323,19 +323,12 @@ def app():
                 p.drawEllipse(QPointF(x * w, y * h), r * 0.6, r * 0.6)
 
     def icono_app():
-        pm = QPixmap(64, 64)
-        pm.fill(Qt.transparent)
-        p = QPainter(pm)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setBrush(ORO)
-        p.setPen(Qt.NoPen)
-        p.drawEllipse(2, 2, 60, 60)
-        p.setBrush(QColor("#0E7A4E"))
-        p.drawEllipse(10, 10, 44, 44)
-        p.setBrush(QColor("#E9FFF5"))
-        p.drawPolygon(QPolygonF([QPointF(26, 20), QPointF(45, 32), QPointF(26, 44)]))
-        p.end()
-        return QIcon(pm)
+        """El icono del programa (icono_app.py) en varios tamanos: la barra de tareas elige el que le toca."""
+        import icono_app as ic
+        ico = QIcon()
+        for t in (16, 24, 32, 48, 64, 128, 256):
+            ico.addPixmap(QPixmap.fromImage(ic.dibujar(t)))
+        return ico
 
     def repulir(w, **props):
         for k, v in props.items():

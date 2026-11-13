@@ -31,9 +31,29 @@ if CONGELADO:
     else:
         DATOS = os.path.expanduser("~/." + NOMBRE_APP.lower())
 else:
-    PROGRAMA = os.path.dirname(os.path.abspath(__file__))
+    PROGRAMA = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))      # PROGRAMA/nucleo/rutas.py
     DATOS = os.path.join(PROGRAMA, "datos")
 CONFIG = os.path.join(DATOS, "config.json")
+
+# El codigo va ordenado en carpetas (en el .exe / .app todo queda junto en _MEIPASS). Importar rutas pone las carpetas en
+# sys.path, asi los modulos se importan igual que siempre: `import motor`, `import analizar_material`...
+GRUPOS = ("nucleo", "analisis", "armado", "entrega", "interfaz", "herramientas")
+CONFIG_PROG = PROGRAMA if CONGELADO else os.path.join(PROGRAMA, "config")       # version, perfiles, requisitos, LEEME
+if not CONGELADO:
+    for _g in GRUPOS:
+        _d = os.path.join(PROGRAMA, _g)
+        if os.path.isdir(_d) and _d not in sys.path:
+            sys.path.append(_d)
+
+
+def codigo(nombre):
+    """Ruta de un .py del programa: en su carpeta (codigo) o junto a todo lo demas (instalado)."""
+    if not CONGELADO:
+        for g in GRUPOS:
+            p = os.path.join(PROGRAMA, g, nombre)
+            if os.path.exists(p):
+                return p
+    return os.path.join(PROGRAMA, nombre)
 
 
 def _escritorio():
@@ -84,7 +104,7 @@ ANALISIS = os.path.join(DATOS, "analisis")
 RESPALDOS = os.path.join(DATOS, "respaldos")
 CLASIFICACION = os.path.join(DATOS, "CLASIFICACION_EVENTO.json")
 ESTADO = os.path.join(ANALISIS, "estado_programa.json")
-REGISTRO = os.path.join(DATOS, "registro.log")
+REGISTRO = os.path.join(DATOS, "registro", "registro.log")
 
 RECURSOS = os.path.join(PROGRAMA, "recursos")
 PLANTILLAS_DRP = os.path.join(RECURSOS, "plantillas", "EVENTOS CINEMA - PLANTILLAS.drp")
@@ -96,12 +116,12 @@ DCTL = os.path.join(PROGRAMA, "dctl")
 def perfiles():
     """perfiles_evento.json: el de la persona (en datos) si lo edito, si no el que trae el programa."""
     propio = os.path.join(DATOS, "perfiles_evento.json")
-    return propio if os.path.exists(propio) else os.path.join(PROGRAMA, "perfiles_evento.json")
+    return propio if os.path.exists(propio) else os.path.join(CONFIG_PROG, "perfiles_evento.json")
 
 
 def version():
     try:
-        with open(os.path.join(PROGRAMA, "version.txt"), encoding="utf-8") as f:
+        with open(os.path.join(CONFIG_PROG, "version.txt"), encoding="utf-8") as f:
             return f.read().strip()
     except Exception:
         return "dev"

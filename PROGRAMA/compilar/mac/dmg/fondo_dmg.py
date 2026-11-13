@@ -69,19 +69,16 @@ def tarjeta(p, r, n, titulo, sub):
 
 
 def icono(p, x, y, lado):
-    """El icono del programa (engranaje de bronce + play), el mismo de la app, en un cuadro claro redondeado."""
+    """El icono del programa (el mismo de la app: cuadro morado con el play), con una sombra suave."""
     import importlib.util
-    spec = importlib.util.spec_from_file_location("icono", os.path.join(AQUI, "..", "..", "icono.py"))
+    spec = importlib.util.spec_from_file_location("icono", os.path.join(AQUI, "..", "..", "icono", "icono.py"))
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     c = QPainterPath()
-    c.addRoundedRect(QRectF(x, y, lado, lado), lado * 0.24, lado * 0.24)
-    p.fillPath(c.translated(0, 2), QColor(30, 50, 80, 30))
-    p.fillPath(c, QColor(255, 255, 255))
-    p.setPen(QPen(QColor(220, 228, 238), 1))
-    p.drawPath(c)
-    img = m.dibujar(int(lado * 0.78 * 4))
-    p.drawImage(QRectF(x + lado * 0.11, y + lado * 0.11, lado * 0.78, lado * 0.78), img)
+    c.addRoundedRect(QRectF(x + lado * 0.04, y + lado * 0.06, lado * 0.92, lado * 0.92), lado * 0.22, lado * 0.22)
+    p.fillPath(c, QColor(40, 20, 90, 40))
+    img = m.dibujar(int(lado * 4))
+    p.drawImage(QRectF(x, y, lado, lado), img)
 
 
 def dibujar(esc):

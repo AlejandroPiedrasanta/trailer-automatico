@@ -5,7 +5,7 @@
 #   bash PROGRAMA/compilar/mac/construir_mac.sh                  todo de principio a fin
 #   bash PROGRAMA/compilar/mac/construir_mac.sh --solo-instalador   reusa la app ya compilada
 # Hace: venv -> ffmpeg (estatico, si se puede) -> PyInstaller (TrailerAutomatico.app) -> autoprueba -> .pkg -> .dmg con fondo.
-# Compila para la arquitectura de ESA Mac (Apple Silicon o Intel). Deja el .dmg en INSTALADORES/Mac.
+# Compila para la arquitectura de ESA Mac (Apple Silicon o Intel). Deja el .dmg en "3 INSTALADORES/Mac".
 # Variables opcionales: TRAILER_PYTHON (interprete), TRAILER_SIN_PANTALLA=1 (autoprueba sin pantalla, para GitHub Actions),
 #   FIRMA_APP / FIRMA_PKG (Developer ID de Apple; sin ellas: firma ad-hoc y la primera vez se abre con clic derecho > Abrir).
 # ============================================================================
@@ -29,7 +29,7 @@ falla() { printf '\033[31mERROR: %s\033[0m\n' "$1" >&2; exit 1; }
 [ "$(uname -s)" = "Darwin" ] || falla "Este script solo corre en una Mac (PyInstaller no compila para Mac desde Windows). Ver compilar/mac/0_LEEME.txt."
 ARQ="$(uname -m)"
 case "$ARQ" in arm64) NOMBRE_ARQ=AppleSilicon; FF_ARQ=arm64 ;; x86_64) NOMBRE_ARQ=Intel; FF_ARQ=amd64 ;; *) falla "Arquitectura no soportada: $ARQ" ;; esac
-VERSION="$(tr -d ' \r\n' < "$PROG/version.txt")"
+VERSION="$(tr -d ' \r\n' < "$PROG/config/version.txt")"
 echo "Tráiler automático $VERSION ($NOMBRE_ARQ)"
 mkdir -p "$OBRA"
 export PYTHONIOENCODING=utf-8 PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -56,7 +56,7 @@ ICONSET="$OBRA/icono.iconset"; rm -rf "$ICONSET"; mkdir -p "$ICONSET"
 import sys, importlib.util
 from PySide6.QtGui import QGuiApplication
 app = QGuiApplication(sys.argv[:1])
-spec = importlib.util.spec_from_file_location("icono", sys.argv[1] + "/icono.py"); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+spec = importlib.util.spec_from_file_location("icono", sys.argv[1] + "/icono/icono.py"); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 m.dibujar(1024).save(sys.argv[2])
 PY
 for s in 16 32 128 256 512; do
@@ -146,7 +146,7 @@ cp "$PKG" "$STAGE/Instalar Trailer automatico.pkg"
 cp "$AQUI/Desinstalar.command" "$STAGE/Desinstalar.command"; chmod +x "$STAGE/Desinstalar.command"
 FONDO="$OBRA/fondo_dmg.tiff"
 tiffutil -cathidpicheck "$AQUI/dmg/fondo.png" "$AQUI/dmg/fondo@2x.png" -out "$FONDO" >/dev/null || falla "No pude preparar el fondo del .dmg"
-SALIDA="${TRAILER_SALIDA:-$BASE/INSTALADORES/Mac}"; mkdir -p "$SALIDA"
+SALIDA="${TRAILER_SALIDA:-$BASE/3 INSTALADORES/Mac}"; mkdir -p "$SALIDA"
 rm -f "$SALIDA"/Instalar_Trailer_automatico_Mac_${NOMBRE_ARQ}_*.dmg
 DMG="$SALIDA/Instalar_Trailer_automatico_Mac_${NOMBRE_ARQ}_$VERSION.dmg"
 for intento in 1 2 3 4 5; do                      # hdiutil a veces responde «Resource busy»: hasta 5 intentos

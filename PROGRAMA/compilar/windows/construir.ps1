@@ -1,17 +1,19 @@
 # construir.ps1 - Compila el "Trailer automatico" y crea su instalador .exe para Windows.
 #   1. icono   2. PyInstaller (carpeta, sin consola, con ffmpeg y recursos)   3. autoprueba del .exe
 #   4. zip del programa   5. instalador C# (csc de Windows)   6. zip pegado al instalador + pie TRAILER1
-# Resultado: <carpeta principal>\INSTALADORES\Instalar Trailer automatico <version>.exe
-# Uso:  pwsh -File PROGRAMA\compilar\construir.ps1
+# Resultado: <carpeta principal>\3 INSTALADORES\Windows\Instalar Trailer automatico <version>.exe
+# Uso:  pwsh -File PROGRAMA\compilar\windows\construir.ps1
 param([switch]$SoloInstalador)      # -SoloInstalador: reutiliza el programa ya compilado y solo rehace el instalador
 $ErrorActionPreference = "Stop"
-$compilar = $PSScriptRoot
+$win = $PSScriptRoot                        # PROGRAMA\compilar\windows
+$compilar = Split-Path $win -Parent
 $prog = Split-Path $compilar -Parent
 $base = Split-Path $prog -Parent
-$ver = (Get-Content "$prog\version.txt" -Raw).Trim()
+$icono = Join-Path $compilar "icono"
+$ver = (Get-Content "$prog\config\version.txt" -Raw).Trim()
 $trabajo = Join-Path $env:TEMP "trailer_automatico_build"
 $dist = Join-Path $trabajo "dist"
-$salida = Join-Path $base "INSTALADORES"
+$salida = Join-Path $base "3 INSTALADORES\Windows"
 $t0 = Get-Date
 function Paso($m) { Write-Host ("[{0:mm\:ss}] {1}" -f ((Get-Date) - $t0), $m) }
 
@@ -20,14 +22,14 @@ New-Item -ItemType Directory -Force $trabajo, $salida | Out-Null
 
 if (-not $SoloInstalador) {
 Paso "Icono"
-python "$compilar\icono.py" "$compilar\icono.ico"
+python "$icono\icono.py" "$icono\icono.ico"
 
 Paso "PyInstaller (unos minutos)"
 $env:TRAILER_PROGRAMA = $prog
 $ff = Get-Command ffmpeg -ErrorAction SilentlyContinue
 $env:TRAILER_FFMPEG = if ($ff) { Split-Path $ff.Source } else { "" }
 if (Test-Path "$dist\TrailerAutomatico") { Remove-Item "$dist\TrailerAutomatico" -Recurse -Force }
-python -m PyInstaller --noconfirm --log-level WARN --distpath $dist --workpath "$trabajo\work" "$compilar\trailer.spec"
+python -m PyInstaller --noconfirm --log-level WARN --distpath $dist --workpath "$trabajo\work" "$win\trailer.spec"
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller fallo" }
 $app = Join-Path $dist "TrailerAutomatico"
 
@@ -62,13 +64,13 @@ if (-not (Test-Path $zip)) { throw "No hay programa compilado: corre sin -SoloIn
 Paso "Instalador (C#)"
 $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 $cs = Join-Path $trabajo "Instalador.cs"
-(Get-Content "$compilar\Instalador.cs" -Raw -Encoding utf8).Replace("__VERSION__", $ver) | Set-Content $cs -Encoding utf8BOM
+(Get-Content "$win\Instalador.cs" -Raw -Encoding utf8).Replace("__VERSION__", $ver) | Set-Content $cs -Encoding utf8BOM
 $base_exe = Join-Path $trabajo "instalador_base.exe"
-$b = Join-Path $compilar "banner"
-if (-not (Test-Path "$b\banner.jpg")) { python "$compilar\banner.py" "$b\banner.jpg" }
-& $csc /nologo /target:winexe /codepage:65001 /optimize+ "/out:$base_exe" "/win32icon:$compilar\icono.ico" `
-    "/win32manifest:$compilar\app.manifest" /reference:System.IO.Compression.dll /reference:System.Windows.Forms.dll `
-    /reference:System.Drawing.dll "/resource:$b\banner.jpg,banner.jpg" "/resource:$compilar\icono.png,logo.png" `
+$b = Join-Path $win "banner"
+if (-not (Test-Path "$b\banner.jpg")) { python "$win\banner.py" "$b\banner.jpg" }
+& $csc /nologo /target:winexe /codepage:65001 /optimize+ "/out:$base_exe" "/win32icon:$icono\icono.ico" `
+    "/win32manifest:$win\app.manifest" /reference:System.IO.Compression.dll /reference:System.Windows.Forms.dll `
+    /reference:System.Drawing.dll "/resource:$b\banner.jpg,banner.jpg" "/resource:$icono\icono.png,logo.png" `
     "/resource:$b\marca.png,marca.png" "/resource:$b\astro_runas.png,astro_runas.png" "/resource:$b\astro_engr.png,astro_engr.png" `
     "/resource:$b\astro_fili.png,astro_fili.png" "/resource:$b\astro_nucleo.png,astro_nucleo.png" $cs
 if ($LASTEXITCODE -ne 0) { throw "csc fallo" }

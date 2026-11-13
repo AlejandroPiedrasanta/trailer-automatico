@@ -29,6 +29,9 @@ import subprocess
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
+if __name__ == "__main__":                 # suelto: PROGRAMA/nucleo para encontrar rutas
+    import sys as _sys
+    _sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "nucleo"))
 import rutas
 
 DEF_BASE = rutas.BASE

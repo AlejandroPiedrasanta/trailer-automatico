@@ -9,7 +9,7 @@ mapa_codigo.py - Consultar el codigo POR TEMA sin leer archivos enteros (para ah
   llamadas <nombre>   quien usa esa funcion/clase (archivo:linea: codigo)
   generar             reescribe el mapa de temas de CLAUDE.md desde docs/mapa.json y avisa de simbolos que ya no existen
 
-Uso:  python PROGRAMA/mapa_codigo.py mapa color   |   simbolo cdl_para   |   donde texto   |   llamadas armar_todo
+Uso:  python PROGRAMA/herramientas/mapa_codigo.py mapa color   |   simbolo cdl_para   |   donde texto   |   llamadas armar_todo
 """
 import ast
 import json
@@ -18,12 +18,12 @@ import sys
 import unicodedata
 from pathlib import Path
 
-RAIZ = Path(__file__).resolve().parent                    # PROGRAMA
+RAIZ = Path(__file__).resolve().parent.parent             # PROGRAMA (esto esta en PROGRAMA/herramientas)
 BASE = RAIZ.parent
 MAPA = RAIZ / "docs" / "mapa.json"
 CLAUDE = BASE / "CLAUDE.md"
-SALTAR = {"datos", "__pycache__", "recursos"}
-INICIO, FIN = "<!-- MAPA:INICIO (lo escribe PROGRAMA/mapa_codigo.py generar) -->", "<!-- MAPA:FIN -->"
+SALTAR = {"datos", "__pycache__", "recursos", "recursos_protegidos"}
+INICIO, FIN = "<!-- MAPA:INICIO (lo escribe PROGRAMA/herramientas/mapa_codigo.py generar) -->", "<!-- MAPA:FIN -->"
 
 
 def _norm(t):
@@ -59,7 +59,7 @@ def indice():
                     if isinstance(n, ast.ClassDef) or prefijo == "":
                         visitar(n.body, prefijo + n.name + ".")
         visitar(arbol.body, "")
-    for p in sorted((RAIZ / "compilar").glob("*.cs")):          # metodos del instalador C#
+    for p in sorted((RAIZ / "compilar").rglob("*.cs")):          # metodos del instalador C#
         rel = p.relative_to(BASE).as_posix()
         for i, l in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
             m = re.match(r"\s*(?:public |static |private |override )+[\w<>\[\],]+ (\w+)\(", l)
@@ -165,7 +165,9 @@ def generar():
     i, j = texto.find(INICIO), texto.find(FIN)
     if i >= 0 and j > i:
         texto = texto[:i] + "\n".join(bloque) + texto[j + len(FIN):]
-        CLAUDE.write_text(texto, encoding="utf-8")
+        with open(CLAUDE, "r+", encoding="utf-8", newline="") as f:     # r+: CLAUDE.md esta oculto (Windows no deja
+            f.write(texto)                                               # abrirlo con "w")
+            f.truncate()
     return "Mapa de CLAUDE.md: %d temas.%s" % (len(temas), ("\nAVISOS:\n" + "\n".join(avisos)) if avisos else " Todo existe.")
 
 

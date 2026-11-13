@@ -32,6 +32,6 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: Trailer-automatico-Mac-${{ matrix.nombre }}
-          path: INSTALADORES/Mac/*.dmg
+          path: "3 INSTALADORES/Mac/*.dmg"
           if-no-files-found: error
           retention-days: 3

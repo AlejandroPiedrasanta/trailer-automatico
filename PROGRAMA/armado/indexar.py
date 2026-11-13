@@ -18,7 +18,7 @@ import json
 import time
 import threading
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "nucleo"))   # PROGRAMA/nucleo: rutas pone las demas carpetas
 import motor  # noqa: E402
 import escenas_ia  # noqa: E402
 

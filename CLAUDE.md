@@ -1,22 +1,23 @@
 # Tráiler automático — leer SOLO esto; lo demás se consulta por demanda
 
-- **Qué es:** app PySide6 (Python 3.14, versión en `PROGRAMA/version.txt`) que arma tráilers de eventos (XV, boda, bautizo, graduación, cumpleaños) en DaVinci Resolve Studio 21 y los renderiza. Funciona en Windows y Mac.
+- **Qué es:** app PySide6 (Python 3.14, versión en `PROGRAMA/config/version.txt`) que arma tráilers de eventos (XV, boda, bautizo, graduación, cumpleaños) en DaVinci Resolve Studio 21 y los renderiza. Funciona en Windows y Mac.
 - **En Resolve:** base `EVENTOS`, proyecto `EVENTOS CINEMA`, plantillas `TRAILER XV - 1min/3min/15min/30min`.
 - **Carpetas:**
   - `1 MATERIAL`: FOTOS · VIDEOS · DRON.
   - `2 VIDEOS TERMINADOS`.
-  - `PROGRAMA`: código; `datos/` (cachés, respaldos), `recursos/` (.drp, audio, fuentes), `dctl/`, `compilar/`, `docs/`.
-  - `INSTALADORES`.
+  - `3 INSTALADORES`: Windows (.exe) · Mac (.dmg).
+  - `PROGRAMA`: solo carpetas. Código en `interfaz/` (ventana, icono, Inicio), `nucleo/` (motor, rutas, registro, tareas), `analisis/` (material, escenas IA, ritmo), `armado/` (plantillas, SFX, mezcla, IntelliSearch), `entrega/` (render, master) y `herramientas/` (mapa_codigo, empaquetar). Además `config/` (versión, perfiles, requisitos, LEEME), `datos/` (cachés, respaldos, `registro/`), `recursos/`, `recursos_protegidos/`, `dctl/`, `compilar/` (`windows/`, `mac/`, `icono/`) y `docs/` (SKILL, mapa, capturas).
+  - Ocultos en la raíz: `.git*`, `.github` y este `CLAUDE.md`.
   - `LEEME.txt`: para la persona.
 
 ## Encontrar algo sin leer archivos (en este orden)
-1. `python PROGRAMA/mapa_codigo.py mapa <palabras>` da el tema. `mapa id=<tema>` da sus archivos, sus símbolos con la línea y sus notas.
+1. `python PROGRAMA/herramientas/mapa_codigo.py mapa <palabras>` da el tema. `mapa id=<tema>` da sus archivos, sus símbolos con la línea y sus notas.
 2. `donde <nombre>` · `simbolo <nombre>` (solo el código de esa función) · `modulo <archivo>` · `llamadas <nombre>`.
 3. Si falta algo: Grep + Read con `offset`/`limit` (~60 líneas).
 4. NUNCA leer enteros: `build_trailers.py`, `trailer_xv.py`, `escena_go.py`, `estilos_inicio.py`, `orbe_mecanica.py`, `SKILL.md`, `PROGRAMA/datos/**`, `PROGRAMA/recursos/**`.
 
 ## Mapa de temas (`mapa id=<tema>`)
-<!-- MAPA:INICIO (lo escribe PROGRAMA/mapa_codigo.py generar) -->
+<!-- MAPA:INICIO (lo escribe PROGRAMA/herramientas/mapa_codigo.py generar) -->
 - **boton-play**: El boton GO hace todo: analizar, armar en DaVinci, renderizar, masterizar, abrir carpeta
 - **inicio-escena**: Pantalla de Inicio = la de CineCaptions: esfera de particulas, astrolabio GO, cometas, explosion
 - **ventana**: Ventana sin marco: pestanas Material/Textos/Ajustes, bordes, chequeo de arranque, instancia unica
@@ -51,15 +52,19 @@
   - Entrega en MOV H.265 a -14 LUFS.
 - **Ventana:** en su hilo no se llama a la API de Resolve ni se usa `subprocess`/`sleep`: eso va en hilos (`Trabajo`, `EstadoDV`, `qt_kit.correr_en_hilo`).
 - **Escena de Inicio:** `escena_go`, `estilos_inicio`, `orbe_mecanica`, `ritmo_ui` y `boton_go` vienen de CineCaptions; ahí solo se cambian textos.
-- **Rutas:** siempre con `rutas.py`, porque en el .exe los recursos están en `sys._MEIPASS`.
+- **Rutas:** siempre con `rutas.py`, porque en el .exe todo queda junto en `sys._MEIPASS`.
+  - `import rutas` pone las carpetas de código en `sys.path`; un script suelto agrega antes `PROGRAMA/nucleo`.
+  - Un .py por ruta: `rutas.codigo("x.py")`. Versión, perfiles y LEEME: `rutas.CONFIG_PROG`.
+- **Carpetas:** nada suelto en `PROGRAMA`; cada archivo nuevo va en su carpeta.
 
 ## Al cambiar algo
-- **Tema nuevo o cambiado:** agregar su entrada en `PROGRAMA/docs/mapa.json` y correr `python PROGRAMA/mapa_codigo.py generar`, que avisa de los símbolos que ya no existen.
+- **Tema nuevo o cambiado:** agregar su entrada en `PROGRAMA/docs/mapa.json` y correr `python PROGRAMA/herramientas/mapa_codigo.py generar`, que avisa de los símbolos que ya no existen.
 - **Probar:**
   - Usar arneses en el scratchpad: motor simulado y `grab()` a PNG de la ventana real.
-  - Contra Resolve sin tocar nada: `python PROGRAMA/trailer_xv.py --seco`.
+  - Contra Resolve sin tocar nada: `python PROGRAMA/interfaz/trailer_xv.py --seco`.
 - **Compilar:** solo si la persona lo pide.
-  1. Subir `PROGRAMA/version.txt`.
-  2. Correr `pwsh -File PROGRAMA/compilar/construir.ps1`.
+  1. Subir `PROGRAMA/config/version.txt`.
+  2. Correr `pwsh -File PROGRAMA/compilar/windows/construir.ps1` (deja el .exe en `3 INSTALADORES/Windows`).
   3. Instalar con `/silencioso`.
-- **Detalle e historia:** `PROGRAMA/SKILL.md`, leído por secciones con Grep.
+- **Icono:** `PROGRAMA/interfaz/icono_app.py` (lo usan la ventana, el .ico y el .icns).
+- **Detalle e historia:** `PROGRAMA/docs/SKILL.md`, leído por secciones con Grep.

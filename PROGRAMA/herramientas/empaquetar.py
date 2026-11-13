@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-empaquetar.py - Crea "INSTALADORES/Trailer automatico (Mac).zip": el programa listo para copiar a una Mac
+empaquetar.py - Crea "3 INSTALADORES/Mac/Trailer automatico (Mac).zip": el programa listo para copiar a una Mac
 (o a otra PC), sin el material ni los videos del evento.
 
   - ARMAR TRAILERS.command con permiso de ejecucion (el doble clic funciona al descomprimir en la Mac).
@@ -15,7 +15,7 @@ import sys
 import time
 import zipfile
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "nucleo"))   # PROGRAMA/nucleo: rutas pone las demas carpetas
 import rutas  # noqa: E402
 
 NOMBRE = "Trailer automatico (Mac).zip"
@@ -24,8 +24,8 @@ SALTAR = {"datos", "__pycache__", "compilar"}
 
 
 def empaquetar(log=print):
-    os.makedirs(os.path.join(rutas.BASE, "INSTALADORES"), exist_ok=True)
-    destino = os.path.join(rutas.BASE, "INSTALADORES", NOMBRE)
+    os.makedirs(os.path.join(rutas.BASE, "3 INSTALADORES", "Mac"), exist_ok=True)
+    destino = os.path.join(rutas.BASE, "3 INSTALADORES", "Mac", NOMBRE)
     tmp = destino + ".tmp"
     n = 0
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:

@@ -179,35 +179,83 @@ class Planificador:
         n_vert = sum(1 for i in items if i["tipo"] != "foto" and not i.get("horizontal", True))
         if n_vert and not USAR_VIDEOS_VERTICALES:
             print("%d videos verticales quedan fuera del montaje (estan en el media pool)." % n_vert)
-        self.fotos = [i for i in items if i["tipo"] == "foto" and not i.get("descartar") and i.get("horizontal", True)]
+        self.fotos = self._sin_repetidas([i for i in items if i["tipo"] == "foto" and not i.get("descartar")
+                                          and i.get("horizontal", True)])
         self.usados = {}
         self.fotos_usadas = set()
         self._pref = {}
 
-    def utiles(self, v):
-        return restar([(MARGEN, v["dur"] - MARGEN)], v.get("oscuros") or [])
+    @staticmethod
+    def _sin_repetidas(fotos):
+        """Rafagas: de varias fotos casi iguales (huella dHash parecida, tomadas seguidas) queda la mas nitida."""
+        fotos = sorted(fotos, key=lambda f: f["hora"])
+        quedan = []
+        for f in fotos:
+            h = f.get("dhash")
+            gemela = None
+            if h:
+                for j in range(len(quedan) - 1, max(-1, len(quedan) - 7), -1):
+                    g = quedan[j]
+                    if g.get("dhash") and bin(int(h, 16) ^ int(g["dhash"], 16)).count("1") <= 10:
+                        gemela = j
+                        break
+            if gemela is None:
+                quedan.append(f)
+            elif f.get("nitidez", 0) > quedan[gemela].get("nitidez", 0):
+                quedan[gemela] = f
+        return quedan
 
-    def libres(self, v):
-        return restar(self.utiles(v), self.usados.get(v["ruta"], []))
+    @staticmethod
+    def momento_en(v, t):
+        """Momento del video en el segundo t (los videos largos pueden pasar de IGLESIA a FIESTA)."""
+        for a, b, m in v.get("tramos") or []:
+            if a <= t < b:
+                return m
+        return v.get("momento")
+
+    def utiles(self, v, momentos=None):
+        u = restar([(MARGEN, v["dur"] - MARGEN)], v.get("oscuros") or [])
+        if momentos and v.get("tramos"):            # solo los tramos de ese momento
+            u = restar(u, [(a, b) for a, b, m in v["tramos"] if m not in momentos])
+        return u
+
+    def libres(self, v, momentos=None):
+        return restar(self.utiles(v, momentos), self.usados.get(v["ruta"], []))
+
+    def _serie(self, v):
+        """Puntaje de cada medio segundo: calidad (nitidez, luz, sin temblor) x emocion del audio (aplausos,
+        gritos, brindis: el audio sube sobre lo normal de ese video)."""
+        cal = v.get("calidad") or []
+        aud = v.get("audio") or []
+        if not aud or len(aud) < 6:
+            return cal
+        normal = sorted(aud)[len(aud) // 2]
+        emo = [max(0.0, min(1.0, (x - normal - 4.0) / 10.0)) for x in aud]
+        suave = [(emo[max(0, i - 1)] + emo[i] + emo[min(len(emo) - 1, i + 1)]) / 3.0 for i in range(len(emo))]
+        return [c * (0.85 + 0.35 * (suave[i] if i < len(suave) else 0.0)) for i, c in enumerate(cal)]
 
     def puntaje(self, v, a, l):
-        """Calidad media (0-1) del tramo [a, a+l] del video."""
-        cal = v.get("calidad")
-        if not cal:
-            return 0.5
+        """Puntaje medio (0-1,2) del tramo [a, a+l] del video."""
         pref = self._pref.get(v["ruta"])
         if pref is None:
             pref = [0.0]
-            for x in cal:
+            for x in self._serie(v):
                 pref.append(pref[-1] + x)
             self._pref[v["ruta"]] = pref
-        i0 = min(len(cal) - 1, max(0, int(a / PASO_CALIDAD)))
-        i1 = min(len(cal), max(i0 + 1, int(math.ceil((a + l) / PASO_CALIDAD))))
+        n = len(pref) - 1
+        if n < 1:
+            return 0.5
+        i0 = min(n - 1, max(0, int(a / PASO_CALIDAD)))
+        i1 = min(n, max(i0 + 1, int(math.ceil((a + l) / PASO_CALIDAD))))
         return (pref[i1] - pref[i0]) / float(i1 - i0)
 
     def intro(self, k):
         n = len(INTRO_CORTES)
         cand = [f for f in self.fotos if f.get("brillo", 0.5) >= BRILLO_MIN_INTRO] or self.fotos
+        nit = sorted(f["nitidez"] for f in cand if f.get("nitidez") is not None)
+        if len(nit) > 3 * n:                        # fuera las movidas o desenfocadas (el 30 % menos nitido)
+            corte = nit[int(len(nit) * 0.3)]
+            cand = [f for f in cand if f.get("nitidez") is None or f["nitidez"] >= corte]
         libres = [f for f in cand if f["ruta"] not in self.fotos_usadas]
         sel = espaciadas(libres if len(libres) >= n else cand, n, 0.2 + 0.19 * k)
         for f in sel:
@@ -219,10 +267,12 @@ class Planificador:
         """Planos de video (las mejores tomas libres) para llenar dur_f frames, en orden cronologico."""
         fps = self.fps
         lo, hi = corte
-        vz = [v for v in self.vids if v.get("momento") in momentos]
+        vz = [v for v in self.vids if v.get("momento") in momentos
+              or any(m in momentos for _, _, m in v.get("tramos") or [])]
+        filtro = momentos
         if not vz:
             aviso("No hay videos de %s; se usa material de todo el evento." % "/".join(momentos))
-            vz = self.vids
+            vz, filtro = self.vids, None
         cortes, rest = [], dur_f
         while rest > 0:
             c = int(round(rng.uniform(lo, hi) * fps))
@@ -231,7 +281,7 @@ class Planificador:
             c = min(c, rest)
             cortes.append(c)
             rest -= c
-        cand = [(v, [x for x in self.libres(v) if x[1] - x[0] >= lo]) for v in vz]
+        cand = [(v, [x for x in self.libres(v, filtro) if x[1] - x[0] >= lo]) for v in vz]
         pesos, topes = [], []
         for v, ls in cand:
             largo = sum(b - a for a, b in ls)
@@ -264,7 +314,7 @@ class Planificador:
         pendientes += cola
         reusos = 0
         for d in pendientes:                    # ya no queda material sin usar: se repite la mejor toma posible
-            p = self._reusar(vz, d, rng)
+            p = self._reusar(vz, d, rng, filtro)
             if p:
                 piezas.append(p)
                 reusos += 1
@@ -303,9 +353,9 @@ class Planificador:
             libres = [x for x in restar(libres, [(s - SEPARACION, s + l + SEPARACION)]) if x[1] - x[0] >= l * 0.5]
         return res, falta
 
-    def _reusar(self, vids, lf, rng):
+    def _reusar(self, vids, lf, rng, momentos=None):
         l = lf / float(self.fps)
-        cand = [(v, u) for v in vids for u in self.utiles(v) if u[1] - u[0] >= l] or \
+        cand = [(v, u) for v in vids for u in self.utiles(v, momentos) if u[1] - u[0] >= l] or \
                [(v, u) for v in self.vids for u in self.utiles(v) if u[1] - u[0] >= l]
         if not cand:
             return None
@@ -320,7 +370,8 @@ class Planificador:
     def _pieza(self, v, ini, dur_f, marcar=True):
         if marcar:
             self.usados.setdefault(v["ruta"], []).append((ini, ini + dur_f / float(self.fps)))
-        return {"tipo": v["tipo"], "item": v, "ini": ini, "dur_f": dur_f, "orden": _hora(v, ini)}
+        return {"tipo": v["tipo"], "item": v, "ini": ini, "dur_f": dur_f, "orden": _hora(v, ini),
+                "momento": self.momento_en(v, ini + dur_f / (2.0 * self.fps))}
 
 
 def al_ritmo(piezas, z0, z1, golpes, fps, lo):
@@ -1201,13 +1252,13 @@ def main():
             except Exception:
                 pass
             try:
-                x.SetClipColor(COLORES.get(p["item"].get("momento"), "Brown"))
+                x.SetClipColor(COLORES.get((p.get("momento") or p["item"].get("momento")), "Brown"))
                 if grupo:
                     x.AssignToColorGroup(grupo)
                 if p["tipo"] != "foto":
                     rd.aplicar_a_item(x, ruido_n)
                     if IGUALAR:
-                        cdl = cdl_para(p, objetivos.get(p["item"].get("momento"), 0.42))
+                        cdl = cdl_para(p, objetivos.get((p.get("momento") or p["item"].get("momento")), 0.42))
                         if cdl and x.SetCDL(cdl):
                             info["igualados"] = info.get("igualados", 0) + 1
             except Exception:

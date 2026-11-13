@@ -73,6 +73,7 @@ def app():
                                    QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
                                    QPushButton, QSizeGrip, QSlider, QStackedWidget, QVBoxLayout, QWidget,
                                    QButtonGroup)
+    import qt_kit
 
     ORO, ORO_CLARO, ORO_OSCURO = QColor("#C9A267"), QColor("#EBCB8F"), QColor("#6E4C24")
     ESMERALDA, ESMERALDA_CLARO, ESMERALDA_OSCURO = QColor("#22C47E"), QColor("#7CF2C0"), QColor("#06301F")
@@ -208,6 +209,61 @@ def app():
                 self.fin.emit(motor.estado_davinci())
             except Exception:
                 self.fin.emit((False, ""))
+
+    # ------------------------------------------------------------------ interruptor (en vez de casilla)
+    class Interruptor(QCheckBox):
+        """Pista redonda con perilla que se desliza: se entiende de un vistazo si esta encendido."""
+        def __init__(self, texto):
+            super().__init__(texto)
+            self.setCursor(Qt.PointingHandCursor)
+            self._x = 0.0
+            self._anim = QVariantAnimation(self)
+            self._anim.setDuration(170)
+            self._anim.setEasingCurve(QEasingCurve.OutCubic)
+            self._anim.valueChanged.connect(self._mover)
+            self.toggled.connect(self._cambio)
+
+        def _mover(self, v):
+            self._x = float(v)
+            self.update()
+
+        def _cambio(self, on):
+            if not self.isVisible():
+                self._x = 1.0 if on else 0.0
+                return
+            self._anim.stop()
+            self._anim.setStartValue(self._x)
+            self._anim.setEndValue(1.0 if on else 0.0)
+            self._anim.start()
+
+        def sizeHint(self):
+            from PySide6.QtCore import QSize
+            return QSize(60 + self.fontMetrics().horizontalAdvance(self.text()), 32)
+
+        def hitButton(self, pos):
+            return self.rect().contains(pos)
+
+        def paintEvent(self, _):
+            p = QPainter(self)
+            p.setRenderHint(QPainter.Antialiasing)
+            h, w = 24.0, 44.0
+            y = (self.height() - h) / 2
+            apagado, encendido = QColor(255, 255, 255, 38), QColor("#22C47E")
+            t = self._x
+            mezcla = QColor(int(apagado.red() + (encendido.red() - apagado.red()) * t),
+                            int(apagado.green() + (encendido.green() - apagado.green()) * t),
+                            int(apagado.blue() + (encendido.blue() - apagado.blue()) * t),
+                            int(apagado.alpha() + (255 - apagado.alpha()) * t))
+            p.setPen(QPen(QColor(255, 255, 255, 50), 1) if t < 0.5 else Qt.NoPen)
+            p.setBrush(mezcla)
+            p.drawRoundedRect(QRectF(1, y, w, h), h / 2, h / 2)
+            r = h - 6
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor("#FFFFFF") if self.isEnabled() else QColor("#8FA3A8"))
+            p.drawEllipse(QRectF(4 + t * (w - 6 - r), y + 3, r, r))
+            p.setPen(QColor(TEXTO if self.isEnabled() else TENUE))
+            p.drawText(QRectF(w + 14, 0, self.width() - w - 14, self.height()), Qt.AlignVCenter | Qt.AlignLeft,
+                       self.text())
 
     # ------------------------------------------------------------------ fondo: cielo con estrellas
     class Cielo(QWidget):
@@ -488,72 +544,225 @@ def app():
 
         def _tarjeta_carpeta(self, tipo, titulo, ayuda):
             t = QFrame(objectName="carpeta")
-            g = QVBoxLayout(t)
-            g.setContentsMargins(22, 20, 22, 20)
-            g.setSpacing(8)
-            g.addWidget(QLabel(titulo, objectName="etq"))
+            t.setToolTip(ayuda)
+            g = QGridLayout(t)
+            g.setContentsMargins(20, 14, 16, 14)
+            g.setHorizontalSpacing(12)
+            g.setVerticalSpacing(2)
+            g.addWidget(QLabel(titulo, objectName="etq"), 0, 0)
             n = QLabel("0", objectName="grande")
-            g.addWidget(n)
+            g.addWidget(n, 1, 0)
             e = QLabel("", objectName="estado_c")
-            e.setWordWrap(True)
-            g.addWidget(e)
-            a = QLabel(ayuda)
-            a.setStyleSheet("color:%s;" % TENUE)
-            a.setWordWrap(True)
-            g.addWidget(a)
-            g.addStretch(1)
-            fila = QHBoxLayout()
+            g.addWidget(e, 2, 0)
+            col = QVBoxLayout()
+            col.setSpacing(6)
             b1 = QPushButton("Agregar…", objectName="boton")
             b1.clicked.connect(lambda: self._agregar(tipo))
-            b2 = QPushButton("Abrir carpeta", objectName="borde")
+            b2 = QPushButton("Abrir", objectName="borde")
             b2.clicked.connect(lambda: rutas.abrir(rutas.CARPETAS[tipo]))
-            fila.addWidget(b1)
-            fila.addWidget(b2)
-            fila.addStretch(1)
-            g.addLayout(fila)
+            for b in (b1, b2):
+                b.setCursor(Qt.PointingHandCursor)
+                col.addWidget(b)
+            g.addLayout(col, 0, 1, 3, 1, Qt.AlignRight | Qt.AlignVCenter)
+            g.setColumnStretch(0, 1)
             self.tarjetas[tipo] = (t, n, e)
             return t
 
         def _pagina_material(self):
+            import linea_dia
             w = QWidget()
             v = QVBoxLayout(w)
-            v.setContentsMargins(40, 20, 40, 10)
-            v.setSpacing(16)
+            v.setContentsMargins(40, 14, 40, 6)
+            v.setSpacing(12)
+            cab = QHBoxLayout()
             tit = QLabel("Material del evento", objectName="titulo")
             tit.setStyleSheet("font-size: 30px;")
-            v.addWidget(tit)
-            exp = QLabel("Arrastra fotos, videos o carpetas a esta ventana: se copian solos a la carpeta correcta "
-                         "(los archivos DJI van a DRON). También puedes usar «Agregar…».")
-            exp.setStyleSheet("color:%s;" % TENUE)
-            exp.setWordWrap(True)
-            v.addWidget(exp)
+            cab.addWidget(tit)
+            cab.addStretch(1)
+            self.l_copia = QLabel("⤓  Arrastra fotos, videos o carpetas a la ventana: se ordenan solos")
+            self.l_copia.setStyleSheet("color:%s;" % TENUE)
+            cab.addWidget(self.l_copia)
+            v.addLayout(cab)
             fila = QHBoxLayout()
-            fila.setSpacing(16)
+            fila.setSpacing(14)
             self.tarjetas = {}
             fila.addWidget(self._tarjeta_carpeta("foto", "FOTOS", "Se usan 8 para los destellos de la intro: "
-                                                 "pon al menos 8 (mejor muchas, el programa elige las mejores)."))
+                                                 "pon al menos 8 (mejor muchas: el programa elige las más nítidas "
+                                                 "y no repite fotos de una ráfaga)."))
             fila.addWidget(self._tarjeta_carpeta("video", "VIDEOS", "Videos de cámara y celular de todo el evento: "
                                                  "maquillaje, iglesia y fiesta."))
             fila.addWidget(self._tarjeta_carpeta("dron", "DRON", "Tomas aéreas (opcional). Abren el tráiler "
                                                  "y las versiones largas."))
             v.addLayout(fila)
-            zona = QFrame(objectName="soltar")
-            zv = QVBoxLayout(zona)
-            z1 = QLabel("⤓")
-            z1.setAlignment(Qt.AlignCenter)
-            z1.setStyleSheet("font-size: 44px; color: #22C47E;")
-            z2 = QLabel("Suelta aquí tus fotos, videos o carpetas completas")
-            z2.setAlignment(Qt.AlignCenter)
-            z2.setStyleSheet("font-size: 18px; font-weight: 700;")
-            self.l_copia = QLabel("Se ordenan solos en FOTOS, VIDEOS y DRON")
-            self.l_copia.setAlignment(Qt.AlignCenter)
-            self.l_copia.setStyleSheet("color:%s;" % TENUE)
-            zv.addStretch(1)
-            for x in (z1, z2, self.l_copia):
-                zv.addWidget(x)
-            zv.addStretch(1)
-            v.addWidget(zona, 1)
+            # --- como quedo organizado (el analisis)
+            org = QFrame(objectName="vidrio")
+            go = QVBoxLayout(org)
+            go.setContentsMargins(22, 16, 22, 14)
+            go.setSpacing(10)
+            fila_t = QHBoxLayout()
+            t2 = QLabel("Cómo quedó organizado")
+            t2.setStyleSheet("font-size: 18px; font-weight: 800;")
+            fila_t.addWidget(t2)
+            self.l_org = QLabel("")
+            self.l_org.setStyleSheet("color:%s;" % TENUE)
+            fila_t.addWidget(self.l_org, 1)
+            self.b_analizar = QPushButton("Analizar ahora", objectName="boton")
+            self.b_analizar.setCursor(Qt.PointingHandCursor)
+            self.b_analizar.setToolTip("Revisa hora, nitidez, luz, color y audio de cada archivo y los ordena por "
+                                       "momento. Lo ya analizado no se repite: después ▶ va directo.")
+            self.b_analizar.clicked.connect(self._analizar_ahora)
+            fila_t.addWidget(self.b_analizar)
+            go.addLayout(fila_t)
+            self.linea = linea_dia.LineaDia()
+            self.linea.limites_cambiados.connect(self._limites_cambiados)
+            self.linea.cuentas_vivas.connect(self._pintar_cuentas)
+            go.addWidget(self.linea, 1)
+            fila_m = QHBoxLayout()
+            fila_m.setSpacing(10)
+            self.l_momentos = {}
+            for mom in linea_dia.MOMENTOS:
+                l = QLabel("")
+                l.setStyleSheet("background: rgba(4,14,20,0.6); border: 1px solid %s; border-radius: 10px; "
+                                "padding: 8px 12px;" % linea_dia.COLOR[mom].name())
+                l.setTextFormat(Qt.RichText)
+                fila_m.addWidget(l, 1)
+                self.l_momentos[mom] = l
+            go.addLayout(fila_m)
+            self.l_avisos = QLabel("")
+            self.l_avisos.setWordWrap(True)
+            self.l_avisos.setTextFormat(Qt.RichText)
+            self.l_avisos.setStyleSheet("color:%s;" % AMBAR)
+            go.addWidget(self.l_avisos)
+            ayuda = QLabel("¿Algo cayó en el momento equivocado? Arrastra las etiquetas <b>Iglesia</b> y <b>Fiesta</b> "
+                           "a la hora en que empezó cada una. Lo hueco se ordenó por lo que se ve (su cámara no tenía "
+                           "buena hora).")
+            ayuda.setWordWrap(True)
+            ayuda.setStyleSheet("color:%s; font-size: 12px;" % TENUE)
+            go.addWidget(ayuda)
+            v.addWidget(org, 1)
+            self.analisis = None
             return w
+
+        # ============================================================== organizacion (analisis del material)
+        def _cargar_organizacion(self):
+            """Pinta el ultimo analisis guardado y dice si sigue al dia con lo que hay en 1 MATERIAL."""
+            import analizar_material as am
+
+            def leer():
+                ult = am.leer_ultimo()
+                return ult, bool(ult.get("items")) and ult.get("huella") == am.huella(rutas.BASE), am.no_compatibles()
+            qt_kit.correr_en_hilo(self, leer, lambda r, e: self._pintar_organizacion(*r) if r else None)
+
+        def _pintar_organizacion(self, res, al_dia, raros=()):
+            import linea_dia
+            items = res.get("items") or []
+            self.linea.poner(items, res.get("fecha"), res.get("momentos"))
+            self.linea.editable = bool(items) and self.trabajo is None and self.analisis is None
+            nota_raros = ""
+            if raros:
+                nota_raros = "%d archivo%s no se usa%s (formato no compatible o vacío): %s" % (
+                    len(raros), "s" if len(raros) > 1 else "", "n" if len(raros) > 1 else "",
+                    ", ".join("%s/%s" % c for c in raros[:3]) + ("…" if len(raros) > 3 else ""))
+            if not items:
+                self.l_org.setText("  ·  todavía sin analizar: pulsa «Analizar ahora» o ▶")
+                self.b_analizar.setText("Analizar ahora")
+                for l in self.l_momentos.values():
+                    l.setText("")
+                self.l_avisos.setText("⚠  " + nota_raros if nota_raros else "")
+                return
+            try:
+                import datetime as _dt
+                f = _dt.date.fromisoformat(res["fecha"])
+                dias = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+                meses = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre",
+                         "octubre", "noviembre", "diciembre")
+                fecha = "%s %d de %s de %d" % (dias[f.weekday()], f.day, meses[f.month - 1], f.year)
+            except Exception:
+                fecha = res.get("fecha") or ""
+            camaras = res.get("camaras") or []
+            self.l_org.setText("  ·  %s  ·  %d archivos  ·  %d cámara%s%s" % (
+                fecha, len(items), len(camaras), "" if len(camaras) == 1 else "s",
+                "" if al_dia else "  ·  hay material nuevo: pulsa «Analizar ahora»"))
+            self.b_analizar.setText("Analizar ahora" if not al_dia else "Volver a analizar")
+            self._pintar_cuentas(self.linea.cuentas())
+            av = list(res.get("avisos") or [])
+            if nota_raros:
+                av.append(nota_raros)
+            vert = sum(1 for i in items if i["tipo"] != "foto" and not i.get("horizontal", True))
+            if vert:
+                av.append("%d video%s vertical%s (celular parado) queda%s fuera del montaje 16:9." % (
+                    vert, "s" if vert > 1 else "", "es" if vert > 1 else "", "n" if vert > 1 else ""))
+            for mom in linea_dia.MOMENTOS:
+                if not any(i["tipo"] != "foto" and i.get("momento") == mom and not i.get("descartar") for i in items):
+                    av.append("%s no tiene videos: esa parte se llena con material de todo el evento." %
+                              linea_dia.NOMBRE[mom])
+            self.l_avisos.setText("<br>".join("⚠  " + a.replace("&", "&amp;").replace("<", "&lt;") for a in av[:6]))
+
+        def _pintar_cuentas(self, cuentas):
+            import linea_dia
+            for mom, l in self.l_momentos.items():
+                fotos, vids, mins = cuentas.get(mom, (0, 0, 0.0))
+                l.setText("<span style='color:%s; font-weight:800;'>●  %s</span><br>"
+                          "<span style='color:#EAF2F0;'>%d fotos · %d videos · %.0f min</span>" % (
+                              linea_dia.COLOR[mom].name(), linea_dia.NOMBRE[mom], fotos, vids, mins))
+
+        def _analizar_ahora(self):
+            if self.trabajo is not None or self.analisis is not None:
+                return
+            if self.copia is not None:
+                self._avisar("Espera a que termine de copiar el material.", "warn")
+                return
+            import analizar_material as am
+            self.analisis = True
+            self.linea.editable = False
+            self.b_analizar.setEnabled(False)
+            self.b_analizar.setText("Analizando…")
+            self._avisar("Analizando el material (la primera vez tarda unos minutos; después ▶ va directo)…")
+            ultima = {"t": ""}
+
+            def log(m):
+                ultima["t"] = str(m)
+                registro.info(m)
+
+            def correr():
+                if not motor.CANDADO.acquire(timeout=1):
+                    raise RuntimeError("ya hay un trabajo en marcha")
+                try:
+                    return am.analizar(rutas.BASE, log=log)
+                finally:
+                    motor.CANDADO.release()
+            self.t_analisis = QTimer(self)
+            self.t_analisis.timeout.connect(lambda: self.l_org.setText("  ·  " + ultima["t"][:90]) if ultima["t"] else None)
+            self.t_analisis.start(400)
+            qt_kit.correr_en_hilo(self, correr, self._fin_analisis)
+
+        def _fin_analisis(self, res, error):
+            self.t_analisis.stop()
+            self.analisis = None
+            self.b_analizar.setEnabled(True)
+            if error is not None:
+                self._avisar("No se pudo analizar: %s" % error, "error")
+                self._cargar_organizacion()
+                return
+            self._avisar("Material analizado y ordenado por momento.")
+            self._cargar_organizacion()
+
+        def _limites_cambiados(self, limites):
+            import analizar_material as am
+            self.linea.editable = False
+
+            def correr():
+                am.guardar_momentos(limites)
+                return am.reclasificar(rutas.BASE, log=registro.info)
+
+            def listo(res, error):
+                if error is not None:
+                    self._avisar("No pude guardar los límites: %s" % error, "error")
+                else:
+                    self._avisar("Listo: Iglesia empieza a las %s y Fiesta a las %s. Se usa en el próximo ▶." % (
+                        limites.get("IGLESIA", "?"), limites.get("FIESTA", "?")))
+                self._cargar_organizacion()
+            qt_kit.correr_en_hilo(self, correr, listo)
 
         def _pagina_textos(self):
             w = QWidget()
@@ -607,9 +816,9 @@ def app():
             g = QGridLayout(caja)
             g.setContentsMargins(26, 24, 26, 24)
             g.setVerticalSpacing(16)
-            self.ch_render = QCheckBox("Renderizar al terminar (si no, solo arma las timelines en DaVinci)")
+            self.ch_render = Interruptor("Renderizar al terminar (si no, solo arma las timelines en DaVinci)")
             self.ch_render.setChecked(self.est.get("renderizar", True))
-            self.ch_igualar = QCheckBox("Igualar luz y balance de blancos de cada toma")
+            self.ch_igualar = Interruptor("Igualar luz y balance de blancos de cada toma")
             self.ch_igualar.setChecked(self.est.get("igualar", True))
             g.addWidget(self.ch_render, 0, 0, 1, 3)
             g.addWidget(self.ch_igualar, 1, 0, 1, 3)
@@ -732,6 +941,8 @@ def app():
                 if os.path.isdir(d) and d not in self.vigia.directories():
                     self.vigia.addPath(d)
             self._sub_material()
+            if self.analisis is None and self.trabajo is None:
+                self._cargar_organizacion()
 
         def _arranque(self):
             rutas.crear_carpetas()
@@ -855,6 +1066,24 @@ def app():
                 self._pedir_material()
                 return
             op = self._guardar()
+            if op.get("render", True):
+                try:
+                    libre, necesita = motor.espacio_para_render(op.get("solo") or list(motor.VERSIONES))
+                except Exception:
+                    libre, necesita = 1e9, 0.0
+                if libre < necesita:
+                    caja = QMessageBox(self)
+                    caja.setWindowTitle(TITULO_APP)
+                    caja.setIcon(QMessageBox.Warning)
+                    caja.setText("Quedan %.1f GB libres en el disco de 2 VIDEOS TERMINADOS y el render necesita unos "
+                                 "%.1f GB.\n\nLibera espacio, o arma solo en DaVinci y renderiza después." % (libre, necesita))
+                    b_sin = caja.addButton("Armar sin renderizar", QMessageBox.AcceptRole)
+                    caja.addButton("Cancelar", QMessageBox.RejectRole)
+                    caja.exec()
+                    if caja.clickedButton() is not b_sin:
+                        self._avisar("Sin espacio para renderizar: libera espacio y vuelve a pulsar ▶.", "warn")
+                        return
+                    op["render"] = False
             self.registro.clear()
             self.chip_videos.hide()
             self._con_render = bool(op.get("render", True))
@@ -874,6 +1103,9 @@ def app():
             self._avisar("Armando %s…" % ", ".join(VERSION_TEXTO[v] for v in self._versiones()))
             for b in list(self.pills.values()) + [self.b_todas]:
                 b.setEnabled(False)
+            if self.analisis is not None:
+                self._avisar("Termino de analizar el material y sigo solo…")
+            self.linea.editable = False
             self.trabajo = Trabajo(op)
             self.trabajo.linea.connect(self._linea)
             self.trabajo.avance.connect(self._avance)
@@ -1046,6 +1278,7 @@ def app():
 
         def _liberar(self):
             self.trabajo = None
+            self._cargar_organizacion()
             for b in list(self.pills.values()) + [self.b_todas]:
                 b.setEnabled(True)
             QTimer.singleShot(6000, lambda: self.titulo.setText("Un clic y listo") if self.trabajo is None else None)

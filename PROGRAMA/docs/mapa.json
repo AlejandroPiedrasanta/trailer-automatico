@@ -14,15 +14,19 @@
    "PROGRAMA/trailer_xv.py"
   ],
   "simbolos": [
-   "armar_todo",
-   "armar",
-   "_play",
+   "SinDormir",
    "Trabajo",
-   "cli"
+   "_play",
+   "armar",
+   "armar_todo",
+   "cli",
+   "espacio_para_render",
+   "esperar_copias"
   ],
   "notas": [
    "armar() ejecuta build_trailers.py con exec y globals (EVENTO, SOLO, NOMBRE_XV, TIPO_EVENTO, RUIDO, IGUALAR...).",
-   "CLI: --todo (arma+render), --una-vez (solo arma), --seco (plan), --tarea instalar|verificar <txt>."
+   "CLI: --todo (arma+render), --una-vez (solo arma), --seco (plan), --tarea instalar|verificar <txt>.",
+   "Antes de renderizar: espacio en disco (~71 MB/min x2); la PC no se suspende mientras trabaja; espera copias en curso."
   ]
  },
  {
@@ -92,18 +96,24 @@
  },
  {
   "id": "material",
-  "resumen": "1 MATERIAL: minimos (8 fotos, 1 video), pedir lo que falta, arrastrar/agregar y copiar ordenado",
+  "resumen": "1 MATERIAL: minimos, pedir lo que falta, arrastrar/agregar, y el panel 'Como quedo organizado' (linea del dia)",
   "claves": [
    "fotos",
    "videos",
    "dron",
    "carpetas",
    "arrastrar",
-   "falta"
+   "falta",
+   "organizado",
+   "linea",
+   "limites",
+   "iglesia",
+   "fiesta"
   ],
   "archivos": [
    "PROGRAMA/motor.py",
-   "PROGRAMA/trailer_xv.py"
+   "PROGRAMA/trailer_xv.py",
+   "PROGRAMA/linea_dia.py"
   ],
   "simbolos": [
    "revisar_material",
@@ -112,7 +122,15 @@
    "MINIMOS",
    "_pedir_material",
    "dropEvent",
-   "_agregar"
+   "_agregar",
+   "LineaDia",
+   "_cargar_organizacion",
+   "_pintar_organizacion",
+   "_analizar_ahora",
+   "_limites_cambiados"
+  ],
+  "notas": [
+   "Arrastrar Iglesia/Fiesta en la linea guarda CLASIFICACION (revisado) y reclasifica sin volver a medir."
   ]
  },
  {
@@ -143,28 +161,48 @@
  },
  {
   "id": "analisis",
-  "resumen": "Analisis del material: hora real, calidad cada 0,5 s, color, tramos negros, clasificacion por momento",
+  "resumen": "Analisis del material: relojes por camara (UTC, fecha mala), contenido, calidad/color/audio en 1 lectura, tramos",
   "claves": [
    "analizar",
    "exif",
    "calidad",
    "clasificacion",
    "momento",
-   "cache"
+   "cache",
+   "reloj",
+   "utc",
+   "camara",
+   "contenido",
+   "audio",
+   "rafaga",
+   "tramos"
   ],
   "archivos": [
    "PROGRAMA/analizar_material.py"
   ],
   "simbolos": [
    "analizar",
+   "reclasificar",
    "clasificar",
-   "_calidad",
-   "_color",
+   "_relojes_basicos",
+   "_alinear_horas",
+   "_desfase_archivo",
+   "_probs_contenido",
+   "_prob_prototipo",
+   "_cortes_en_orden",
+   "_medir_video",
+   "_info_foto",
    "_info_video",
+   "guardar_momentos",
+   "leer_ultimo",
+   "no_compatibles",
    "listar"
   ],
   "notas": [
-   "Cache material.json con clave nombre|tamano (sobrevive a mover carpetas)."
+   "Cache material.json con clave nombre|tamano (sobrevive a mover carpetas); VERSION sube y lo viejo se completa solo.",
+   "Relojes: UTC se detecta comparando la fecha del ARCHIVO (hora local de la camara) con creation_time; fecha mala con hora buena se pasa al dia del evento; lo demas se ordena por contenido.",
+   "Contenido: luz/negro/saturacion/calidez/grises en la escala de CADA camara + orden de sus archivos (DP MAQUILLAJE->IGLESIA->FIESTA). Los vecinos de otras camaras empeoraban (MEZCLA_VECINOS=0).",
+   "Medido rompiendo relojes a proposito: UTC 100%, fecha mala 100%, fotos sin hora 97%, todo sin hora 92%, material real sin falsos positivos."
   ]
  },
  {
@@ -215,16 +253,20 @@
    "PROGRAMA/build_trailers.py"
   ],
   "simbolos": [
-   "main",
    "Planificador",
-   "zonas_de",
+   "VERSIONES",
+   "_serie",
+   "_sin_repetidas",
    "al_ritmo",
    "colocar",
+   "main",
+   "momento_en",
    "transiciones",
-   "VERSIONES"
+   "zonas_de"
   ],
   "notas": [
-   "zonas_de: si el marcador ACTO esta a menos de 5 s, el momento empieza en el cambio de cancion."
+   "zonas_de: si el marcador ACTO esta a menos de 5 s, el momento empieza en el cambio de cancion.",
+   "Planificador: fotos sin rafagas (dHash) y el 70% mas nitido; videos solo en su tramo del momento; puntaje = calidad x emocion del audio."
   ]
  },
  {

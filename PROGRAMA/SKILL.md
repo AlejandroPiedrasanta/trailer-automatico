@@ -106,7 +106,10 @@ La firma «CINEMA PRODUCTIONS / UN FILM DE» no se toca. El tipo se elige en la 
 - Entrega en MOV H.265 (la cola de render ya está configurada así).
 
 ## Scripts
-- `analizar_material.py`: lee la hora real de cada archivo (EXIF, iPhone, nombre DJI, cámara), la duración, los tramos negros y la **calidad por medio segundo** (nitidez, luz, temblor). Clasifica con `CLASIFICACION_EVENTO.json`.
+- `analizar_material.py`: lee la hora real de cada archivo (EXIF, iPhone, nombre DJI/Pixel/Samsung, cámara), la duración y, en **una sola lectura** del video, la calidad por medio segundo (nitidez, luz, temblor), el color, los tramos negros y el nivel del audio. En las fotos mide nitidez y huella dHash (ráfagas). Clasifica con `CLASIFICACION_EVENTO.json`.
+  - **Relojes por cámara**: si la fecha del archivo y `creation_time` difieren en un múltiplo constante de media hora, los metadatos venían en UTC y se corrigen. Si la fecha está mal pero la hora del día cuadra con las demás cámaras, se pasa al día del evento. Si no hay forma (copiados sin hora, otro día), se ordena **por contenido** (luz, negro, saturación, calidez y grises en la escala de su cámara) y por el orden de sus archivos, siempre MAQUILLAJE → IGLESIA → FIESTA.
+  - Los videos largos que cruzan un límite llevan `tramos` y el planificador usa solo el tramo del momento.
+  - Ventana: el panel «Cómo quedó organizado» (`linea_dia.py`) muestra el día; arrastrar Iglesia o Fiesta guarda la hora (`guardar_momentos`) y reclasifica sin volver a medir (`reclasificar`).
 - `ritmo.py`: detecta los golpes de la música de la plantilla con librosa, para cortar al ritmo.
 - `build_trailers.py`: duplica cada plantilla y la llena.
   - Intro de 8 fotos en V2.

@@ -43,9 +43,75 @@ def leer_estado():
 
 
 def guardar_estado(d):
-    os.makedirs(os.path.dirname(ESTADO), exist_ok=True)
-    with open(ESTADO, "w", encoding="utf-8") as f:
-        json.dump(d, f, ensure_ascii=False, indent=2)
+    am._guardar_json(ESTADO, d)            # escritura segura: si se corta la luz, el estado anterior queda entero
+
+
+# ------------------------------------------------------------------ prevenir errores
+class SinDormir:
+    """Mientras arma y renderiza, que la PC no se suspenda (la pantalla si se puede apagar). Va en el hilo que
+    trabaja: en Windows el pedido vale mientras ese hilo lo mantenga; en Mac lo sostiene `caffeinate`."""
+    def __enter__(self):
+        self.proc = None
+        try:
+            if rutas.ES_WIN:
+                import ctypes
+                ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)   # CONTINUOUS | SYSTEM
+            elif sys.platform == "darwin":
+                self.proc = subprocess.Popen(["caffeinate", "-i", "-w", str(os.getpid())])
+        except Exception:
+            pass
+        return self
+
+    def __exit__(self, *_):
+        try:
+            if rutas.ES_WIN:
+                import ctypes
+                ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
+            elif self.proc is not None:
+                self.proc.terminate()
+        except Exception:
+            pass
+
+
+GB_POR_VERSION = {"1min": 0.1, "3min": 0.25, "15min": 1.1, "30min": 2.2}     # MOV H.265 medido: ~71 MB por minuto
+
+
+def espacio_para_render(versiones):
+    """(libre_gb, necesita_gb) en el disco de 2 VIDEOS TERMINADOS (con margen para el masterizado)."""
+    import shutil
+    d = rutas.TERMINADOS
+    while d and not os.path.isdir(d):
+        d = os.path.dirname(d)
+    libre = shutil.disk_usage(d or rutas.BASE).free / 1e9
+    return libre, sum(GB_POR_VERSION.get(v, 2.2) for v in versiones or VERSIONES) * 2 + 1.0
+
+
+def esperar_copias(log, max_s=180):
+    """Si algo de 1 MATERIAL se esta copiando todavia (el Explorador / Finder), espera a que termine: un video a medio
+    copiar se leeria cortado."""
+    limite = time.time() + max_s
+    avisado = False
+    while time.time() < limite:
+        ahora = time.time()
+        recientes = []
+        for _, ruta in am.listar(BASE):
+            try:
+                if ahora - os.path.getmtime(ruta) < 15:
+                    recientes.append(ruta)
+            except OSError:
+                pass
+        if not recientes:
+            return True
+        tam = {r: os.path.getsize(r) for r in recientes if os.path.exists(r)}
+        time.sleep(3)
+        if all(os.path.exists(r) and os.path.getsize(r) == t for r, t in tam.items()) and \
+                all(time.time() - os.path.getmtime(r) >= 6 for r in tam if os.path.exists(r)):
+            return True
+        if not avisado:
+            log("Esperando a que termine de copiarse el material (%s…)." % os.path.basename(recientes[0]))
+            avisado = True
+    log("Aviso: hay archivos que siguen cambiando; sigo con lo que hay.")
+    return False
 
 
 def huella():
@@ -505,6 +571,7 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
     with CANDADO:
         t0 = time.time()
         log("== Analizando material ==")
+        esperar_copias(log)
         analisis = am.analizar(BASE, log=log)
         if not analisis.get("items"):
             log("No hay material para armar.")
@@ -543,18 +610,23 @@ def armar_todo(log, avance=None, render=True, **op):
     def paso(pct, texto):
         if avance:
             avance(pct, texto)
-    paso(3, "Revisando el material")
-    rep = armar(log, **op)
-    if not rep or not rep.get("versiones"):
-        raise RuntimeError("No se armo ninguna version (revisa que haya fotos y videos en 1 MATERIAL).")
-    evento = rep.get("evento")
-    salida = {"evento": evento, "videos": [], "carpeta": os.path.join(rutas.TERMINADOS, evento or "")}
-    if not render:
-        paso(100, "Armado en DaVinci")
+    with SinDormir():                        # una suspension a media render deja el trabajo colgado
+        paso(3, "Revisando el material")
+        rep = armar(log, **op)
+        if not rep or not rep.get("versiones"):
+            raise RuntimeError("No se armo ninguna version (revisa que haya fotos y videos en 1 MATERIAL).")
+        evento = rep.get("evento")
+        salida = {"evento": evento, "videos": [], "carpeta": os.path.join(rutas.TERMINADOS, evento or "")}
+        if not render:
+            paso(100, "Armado en DaVinci")
+            return salida
+        libre, necesita = espacio_para_render(op.get("solo"))
+        if libre < necesita:
+            raise RuntimeError("No hay espacio para renderizar: quedan %.1f GB libres y hacen falta unos %.1f GB. "
+                               "Las timelines ya quedaron armadas en DaVinci." % (libre, necesita))
+        paso(45, "Renderizando")
+        import renderizar
+        salida["videos"] = renderizar.renderizar(
+            log, evento, lambda pct, texto: paso(45 + int(pct * 0.5), texto))
+        paso(100, "Listo")
         return salida
-    paso(45, "Renderizando")
-    import renderizar
-    salida["videos"] = renderizar.renderizar(
-        log, evento, lambda pct, texto: paso(45 + int(pct * 0.5), texto))
-    paso(100, "Listo")
-    return salida

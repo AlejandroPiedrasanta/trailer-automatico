@@ -7,6 +7,17 @@ description: Arma automáticamente las versiones del tráiler de XV años (1, 3,
 
 Todo corre en local con el programa: `ARMAR TRAILERS.bat` (Windows) o `ARMAR TRAILERS.command` (Mac) abren `PROGRAMA/trailer_xv.py`, una ventana Qt6/PySide6 con un solo botón **▶ ARMAR TODO** (`motor.armar_todo`: analizar → armar → renderizar → masterizar → abrir carpeta). Claude solo hace falta para revisar o corregir.
 
+## Repositorio público y Mac
+- El repositorio público es https://github.com/AlejandroPiedrasanta/trailer-automatico (rama `main`). El `.gitignore` deja fuera `1 MATERIAL`, `2 VIDEOS TERMINADOS`, `INSTALADORES`, `PROGRAMA/datos`, `recursos/audio` y `FogtwoNo5.ttf`.
+- La música, los SFX y las fuentes con licencia **no se publican en claro**. Van cifrados con AES-256-GCM en `PROGRAMA/recursos_protegidos/protegidos.bin.parteNN` (menos de 90 MB cada uno, por el límite de GitHub).
+  - Script: `compilar/protegidos.py cifrar|descifrar`.
+  - La clave solo está en `PROGRAMA/datos/clave_recursos.txt` y en el secreto `TRAILER_CLAVE` del repositorio.
+  - Si cambia la música: `python PROGRAMA/compilar/protegidos.py cifrar`, después commit y push.
+- Para compilar en Mac: Actions → «Instaladores Mac» (`gh workflow run "Instaladores Mac"`).
+  - Corre en `macos-15` (Apple Silicon) y `macos-15-intel`, con `construir_mac.sh`.
+  - Los .dmg quedan en Artifacts: `gh run download <id> -D INSTALADORES/Mac`.
+- Para subir workflows, `gh` necesita el permiso `workflow`: `gh auth refresh -h github.com -s workflow`. Lo autoriza la persona.
+
 ## Pantalla de Inicio = la de CineCaptions
 - Librerías: solo PySide6 (QPainter) + numpy, sin web ni OpenGL. Son los módulos de CineCaptions copiados tal cual:
   - `escena_go.py`: esfera de unas 7000 partículas proyectada con numpy, con resplandor (bloom), objetos absorbidos, cometas por paso, barra de avance abajo y explosión al 100 %.

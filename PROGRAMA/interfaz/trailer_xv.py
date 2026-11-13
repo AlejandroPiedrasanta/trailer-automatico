@@ -71,7 +71,7 @@ def app():
                                QRadialGradient, QLinearGradient, QConicalGradient)
     from PySide6.QtWidgets import (QAbstractButton, QApplication, QCheckBox, QComboBox, QFileDialog, QFrame,
                                    QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
-                                   QPushButton, QSizeGrip, QSlider, QStackedWidget, QVBoxLayout, QWidget,
+                                   QPushButton, QSizeGrip, QSlider, QStackedWidget, QVBoxLayout, QWidget, QScrollArea, QSizePolicy,
                                    QButtonGroup)
     import qt_kit
 
@@ -344,7 +344,7 @@ def app():
             self.setWindowTitle(TITULO_APP)
             self.setWindowIcon(icono_app())
             self.setAcceptDrops(True)
-            self.setMinimumSize(980, 720)
+            self.setMinimumSize(880, 580)                 # cabe en una laptop de 1366 x 768 al 125 %
             self.resize(1240, 860)
             self.trabajo = self.copia = self.cheq = None
             self.resultado = None
@@ -374,6 +374,7 @@ def app():
             self.tabs = {}
             for i, txt in enumerate(("Inicio", "Material", "Textos", "Ajustes")):
                 b = QPushButton(txt, objectName="tab", checkable=True)
+                b.setMinimumWidth(b.sizeHint().width())        # que no se corte el texto en una ventana angosta
                 b.setCursor(Qt.PointingHandCursor)
                 self.grupo_tabs.addButton(b, i)
                 self.tabs[txt] = b
@@ -433,9 +434,16 @@ def app():
             medio.addWidget(self.registro)
             raiz.addLayout(medio, 1)
             self.paginas.addWidget(self._pagina_inicio())
-            self.paginas.addWidget(self._pagina_material())
-            self.paginas.addWidget(self._pagina_textos())
-            self.paginas.addWidget(self._pagina_ajustes())
+            for pag in (self._pagina_material(), self._pagina_textos(), self._pagina_ajustes()):
+                sa = QScrollArea()                       # en una pantalla chica se desplazan en vez de agrandar la ventana
+                sa.setWidgetResizable(True)
+                sa.setFrameShape(QFrame.NoFrame)
+                sa.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+                sa.viewport().setAutoFillBackground(False)
+                sa.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+                sa.setWidget(pag)
+                pag.setAutoFillBackground(False)        # setWidget lo enciende: el cielo debe verse detras
+                self.paginas.addWidget(sa)
             self.grupo_tabs.idClicked.connect(self.paginas.setCurrentIndex)
             import escena_go                         # la escena de Inicio de CineCaptions (esfera de particulas)
             self.escena = escena_go.EscenaGo(self.cielo)
@@ -473,14 +481,15 @@ def app():
             v.setContentsMargins(0, 0, 0, 0)
             v.setSpacing(6)
             import boton_go
+            # el astrolabio va en un hueco que toma el espacio libre y NO esta en el layout: asi su tamano fijo no impide
+            # achicar la ventana (en una laptop de 768 px de alto no cabia); _centrar_boton lo pone en medio
+            self.hueco_boton = QWidget()
+            self.hueco_boton.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            self.hueco_boton.setMinimumHeight(200)
             self.boton = boton_go.BotonGo(lado=380)
+            self.boton.setParent(self.hueco_boton)
             self.boton.clicked.connect(self._play)
-            v.addStretch(1)
-            fila_b = QHBoxLayout()
-            fila_b.addStretch(1)
-            fila_b.addWidget(self.boton)
-            fila_b.addStretch(1)
-            v.addLayout(fila_b)
+            v.addWidget(self.hueco_boton, 1)
             self.titulo = QLabel("Un clic y listo", objectName="titulo")
             self.titulo.setAlignment(Qt.AlignCenter)
             v.addWidget(self.titulo)
@@ -572,7 +581,7 @@ def app():
             import linea_dia
             w = QWidget()
             v = QVBoxLayout(w)
-            v.setContentsMargins(40, 14, 40, 6)
+            v.setContentsMargins(26, 14, 26, 6)
             v.setSpacing(12)
             cab = QHBoxLayout()
             tit = QLabel("Material del evento", objectName="titulo")
@@ -580,6 +589,8 @@ def app():
             cab.addWidget(tit)
             cab.addStretch(1)
             self.l_copia = QLabel("⤓  Arrastra fotos, videos o carpetas a la ventana: se ordenan solos")
+            self.l_copia.setWordWrap(True)
+            self.l_copia.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.l_copia.setStyleSheet("color:%s;" % TENUE)
             cab.addWidget(self.l_copia)
             v.addLayout(cab)
@@ -767,7 +778,7 @@ def app():
         def _pagina_textos(self):
             w = QWidget()
             v = QVBoxLayout(w)
-            v.setContentsMargins(40, 20, 40, 10)
+            v.setContentsMargins(26, 20, 26, 10)
             tit = QLabel("Textos del video", objectName="titulo")
             tit.setStyleSheet("font-size: 30px;")
             v.addWidget(tit)
@@ -808,7 +819,7 @@ def app():
         def _pagina_ajustes(self):
             w = QWidget()
             v = QVBoxLayout(w)
-            v.setContentsMargins(40, 20, 40, 10)
+            v.setContentsMargins(26, 20, 26, 10)
             tit = QLabel("Ajustes", objectName="titulo")
             tit.setStyleSheet("font-size: 30px;")
             v.addWidget(tit)
@@ -1339,8 +1350,13 @@ def app():
             if hasattr(self, "escena"):
                 self.escena.setGeometry(self.cielo.rect())
             pag = self.paginas.widget(0)
-            libre = pag.height() - (self.reserva.height() + 150 if self.boton.estado == "trabajando" else 250)
-            self.boton.poner_lado(int(max(240, min(libre, pag.width() * 0.5))))
+            libre = self.hueco_boton.height() - 8
+            self.boton.poner_lado(int(max(200, min(libre, pag.width() * 0.5))))
+            self._centrar_boton()
+
+        def _centrar_boton(self):
+            h = self.hueco_boton
+            self.boton.move(max(0, (h.width() - self.boton.width()) // 2), max(0, (h.height() - self.boton.height()) // 2))
 
         def _pagina(self, i):
             en_inicio = i == 0
@@ -1454,6 +1470,11 @@ def app():
 
         def eventFilter(self, obj, ev):
             t = ev.type()
+            if t == QEvent.Resize and (obj is getattr(self, "boton", None) or obj is getattr(self, "hueco_boton", None)):
+                if obj is self.hueco_boton:
+                    QTimer.singleShot(0, self._acomodar)
+                else:
+                    self._centrar_boton()               # el astrolabio crece o se achica con suavidad: siempre al medio
             if t in (QEvent.MouseMove, QEvent.MouseButtonPress) and isinstance(obj, QWidget) and obj.window() is self:
                 b = self._bordes(ev.globalPosition().toPoint())
                 if t == QEvent.MouseMove and not ev.buttons():

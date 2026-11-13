@@ -340,10 +340,24 @@ def asegurar_programada(exe=None):
     exe = exe or sys.executable
     if not rutas.CONGELADO and exe == sys.executable:
         return "solo instalado"
-    r = subprocess.run(["schtasks", "/Query", "/TN", NOMBRE_TAREA, "/XML"], capture_output=True, text=True, errors="replace",
-                       timeout=30, creationflags=SIN_VENTANA)
-    if r.returncode == 0 and exe.lower() in r.stdout.lower():
-        return "ya estaba"
+    try:
+        r = subprocess.run(["schtasks", "/Query", "/TN", NOMBRE_TAREA, "/XML"], capture_output=True, text=True,
+                           errors="replace", timeout=90, creationflags=SIN_VENTANA)
+        if r.returncode == 0 and exe.lower() in r.stdout.lower():
+            return "ya estaba"
+    except subprocess.TimeoutExpired:
+        pass
+    ultimo = None
+    for intento in range(3):                 # Windows ARM (x64 emulado) o un antivirus revisando: schtasks puede tardar
+        try:
+            return _crear_tarea(exe)
+        except Exception as ex:
+            ultimo = ex
+            time.sleep(4)
+    raise RuntimeError("no se pudo programar la tarea: %s" % ultimo)
+
+
+def _crear_tarea(exe):
     usuario = "%s\\%s" % (os.environ.get("USERDOMAIN", ""), os.environ.get("USERNAME", "")) if os.environ.get("USERDOMAIN") \
         else os.environ.get("USERNAME", "")
     fd, xml = tempfile.mkstemp(suffix=".xml")
@@ -352,7 +366,7 @@ def asegurar_programada(exe=None):
         with open(xml, "w", encoding="utf-16") as f:
             f.write(_xml_tarea(exe, usuario))
         r = subprocess.run(["schtasks", "/Create", "/TN", NOMBRE_TAREA, "/XML", xml, "/F"], capture_output=True, text=True,
-                           errors="replace", timeout=30, creationflags=SIN_VENTANA)
+                           errors="replace", timeout=90, creationflags=SIN_VENTANA)
     finally:
         try:
             os.remove(xml)

@@ -277,9 +277,16 @@ def _dvr():
             except Exception:
                 pass
     mods = os.path.join(api, "Modules")
+    if not os.path.exists(lib) or not os.path.isdir(mods):
+        raise RuntimeError("No encuentro DaVinci Resolve Studio en esta computadora. Instálalo (la versión Studio: la "
+                           "gratuita no deja que otros programas la controlen), ábrelo una vez y vuelve a pulsar ▶.")
     if mods not in sys.path:
         sys.path.append(mods)
-    import DaVinciResolveScript
+    try:
+        import DaVinciResolveScript
+    except ImportError as ex:
+        raise RuntimeError("DaVinci Resolve está instalado pero no se pudo cargar su conexión (%s). Reinstala DaVinci "
+                           "Resolve Studio o actualízalo." % ex)
     return DaVinciResolveScript
 
 

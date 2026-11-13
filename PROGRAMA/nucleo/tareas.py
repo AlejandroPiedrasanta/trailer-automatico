@@ -71,10 +71,16 @@ def instalar(est):
         try:
             import actualizar_fondo
             n_t = " · actualizaciones: " + actualizar_fondo.asegurar_programada()
-        except Exception as ex:
-            n_t = " · aviso: sin tarea de actualizaciones (%s)" % str(ex)[:80]
-    est.fin(True, "Listo: carpeta %s · %d de musica guardados · %d fuentes · %d archivos de color · %d datos%s"
-            % (rutas.BASE, n_p, n_f, n_l, n_m, n_t))
+        except Exception as ex:                    # el programa la vuelve a intentar al abrirse
+            n_t = " · aviso: sin tarea de actualizaciones (%s)" % str(ex)[:160]
+    texto = "Listo: carpeta %s · %d de musica guardados · %d fuentes · %d archivos de color · %d datos%s" % (
+        rutas.BASE, n_p, n_f, n_l, n_m, n_t)
+    try:
+        import registro                            # main() ya lo preparo: queda en registro.log para revisar
+        registro.info("Instalacion: " + texto)
+    except Exception:
+        pass
+    est.fin(True, texto)
 
 
 def verificar(est):

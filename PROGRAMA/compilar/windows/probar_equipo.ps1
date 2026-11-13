@@ -48,7 +48,11 @@ Remove-Item Env:TRAILER_SIN_MUSICA
 
 # 3. tarea programada de actualizaciones (la crea la instalacion)
 $q = schtasks /Query /TN "Trailer automatico Actualizaciones" /XML 2>$null
-if ($LASTEXITCODE -eq 0 -and ($q -join "") -match "actualizar_fondo") { Ok "tarea programada de actualizaciones" } else { Falla "no esta la tarea programada" }
+if ($LASTEXITCODE -eq 0 -and ($q -join "") -match "actualizar_fondo") { Ok "tarea programada de actualizaciones" }
+else {
+    $inst = Select-String -Path "$DAT\registro\registro.log" -Pattern "Instalacion:" -ErrorAction SilentlyContinue | Select-Object -Last 1
+    Falla ("no esta la tarea programada al instalar (" + ($inst.Line ?? "sin registro") + ")")
+}
 
 # 4. abrir el programa (ventana real)
 $app = Start-Process "$DIR\TrailerAutomatico.exe" -PassThru

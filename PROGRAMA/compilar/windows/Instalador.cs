@@ -6,7 +6,7 @@
 // (Int64) + "TRAILER1". El mismo .exe SIN el zip es el desinstalador (<instalacion>\Desinstalar.exe /desinstalar).
 // Se instala SOLO para el usuario (sin UAC): %LOCALAPPDATA%\Programs\TrailerAutomatico. Lo que sabe hacer el programa (fuentes,
 // color en DaVinci, carpetas, autoprueba) se lo pide al .exe recien instalado con "--tarea <nombre> <estado.txt>".
-// Doble clic = instala solo (como CineCaptions). Opciones: /silencioso  /desinstalar  /dir=<carpeta>  /sinescritorio  /noabrir
+// Doble clic = instala solo y al terminar abre el programa y se cierra (como CineCaptions). Opciones: /silencioso  /desinstalar  /dir=<carpeta>  /sinescritorio  /noabrir
 // Lo compila construir.ps1 con el csc.exe de .NET Framework 4 (C# 5: nada de $"" ni ?.).
 // ---------------------------------------------------------------------------
 using System;
@@ -658,6 +658,20 @@ class Ventana : Form, IVista
                                   : "Ya está en el Escritorio y en el menú Inicio. Abre el programa, sube tu material y pulsa el botón del centro.";
             boton.Text = "ABRIR";
             if (Instalador.NoAbrir) boton.Text = "CERRAR";
+            else
+            {   // la persona: "cuando se termine de instalar se abre automaticamente y se cierra el instalador"
+                lblInfo.Text = (avisos ? "Se instaló con avisos (el programa te los muestra). " : "") +
+                               "Abriendo " + Instalador.NOMBRE + "...";
+                System.Windows.Forms.Timer reloj = new System.Windows.Forms.Timer();
+                reloj.Interval = avisos ? 3000 : 1500;      // un momento para ver el "¡Listo!"
+                reloj.Tick += delegate
+                {
+                    reloj.Stop();
+                    try { Instalador.Abrir(); } catch { }
+                    Close();
+                };
+                reloj.Start();
+            }
         }
     }
 

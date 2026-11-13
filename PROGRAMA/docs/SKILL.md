@@ -50,7 +50,8 @@ Todo corre en local con el programa: `ARMAR TRAILERS.bat` (Windows) o `ARMAR TRA
   2. PyInstaller en modo carpeta, sin consola (`compilar\windows\trailer.spec`). Los `.py` propios van también como datos porque `build_trailers.py` se ejecuta desde su archivo. Incluye `recursos` y `dctl`, más ffmpeg y ffprobe en `ffmpeg\`. Deja fuera librosa, scipy, Qt OpenGL y las traducciones de Qt.
   3. Autoprueba `TrailerAutomatico.exe --tarea verificar <txt>`: si no termina en `OK|`, no se crea el instalador.
   4. Zip del programa.
-  5. `compilar\windows\Instalador.cs` compilado con el `csc.exe` de .NET Framework 4 (C# 5: nada de `$""` ni `?.`).
+  5. Al terminar bien (con ventana, sin `/noabrir` ni `/silencioso`) el instalador **abre el programa y se cierra solo** a los 1,5 s (3 s si hubo avisos), pedido por la persona. En la Mac lo hace el `postinstall` en segundo plano: espera el recibo del paquete, abre la app, cierra el Instalador y expulsa el .dmg.
+6. `compilar\windows\Instalador.cs` compilado con el `csc.exe` de .NET Framework 4 (C# 5: nada de `$""` ni `?.`).
   6. El zip se pega al final del instalador, seguido de un pie de 8 bytes de posición + `TRAILER1`.
 - El instalador es per-user (`asInvoker`): va en `%LOCALAPPDATA%\Programs\TrailerAutomatico`.
   - Crea accesos en Inicio y Escritorio (`WScript.Shell`) y la entrada `HKCU\…\Uninstall\TrailerAutomatico`.

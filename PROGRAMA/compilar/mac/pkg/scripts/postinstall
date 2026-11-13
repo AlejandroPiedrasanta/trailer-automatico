@@ -48,4 +48,29 @@ kill -9 "$P" 2>/dev/null
 grep -v '^PROGRESO' "$ESTADO" >> "$LOG" 2>/dev/null
 rm -f "$ESTADO"
 chown "$USUARIO" "$LOG" 2>/dev/null
+
+# Al terminar: se abre el programa y se cierra el Instalador (la persona: "cuando se termine de instalar se abre
+# automaticamente y se cierra el instalador"). Va en segundo plano y espera a que el Instalador escriba el recibo del
+# paquete (lo hace despues de este script), asi la instalacion queda completa antes de cerrarlo. Tambien expulsa el .dmg.
+RECIBO="/var/db/receipts/com.cinemaproductions.trailerautomatico.plist"
+INICIO=$(date +%s)
+ORIGEN="${PACKAGE_PATH:-$1}"
+VOL=""
+case "$ORIGEN" in /Volumes/*) VOL="/Volumes/$(echo "${ORIGEN#/Volumes/}" | cut -d/ -f1)" ;; esac
+(
+    for i in $(seq 1 60); do
+        [ -f "$RECIBO" ] && [ "$(stat -f %m "$RECIBO" 2>/dev/null || echo 0)" -ge "$INICIO" ] && break
+        sleep 1
+    done
+    sleep 2
+    como_usuario /usr/bin/open "$APP"
+    sleep 2
+    como_usuario /usr/bin/osascript -e 'tell application "Installer" to quit'
+    if [ -n "$VOL" ] && [ -d "$VOL" ]; then
+        sleep 2
+        hdiutil detach "$VOL" -quiet 2>/dev/null || hdiutil detach "$VOL" -force -quiet 2>/dev/null
+    fi
+    echo "-- abierto el programa y cerrado el Instalador" >> "$LOG"
+) </dev/null >/dev/null 2>&1 &
+disown 2>/dev/null
 exit 0

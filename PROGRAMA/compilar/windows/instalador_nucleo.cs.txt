@@ -1,4 +1,4 @@
-// Tráiler automático · CINEMA PRODUCTIONS
+﻿// Tráiler automático · CINEMA PRODUCTIONS
 // compilar/Instalador.cs — el instalador y desinstalador (C#, .NET Framework 4), con el mismo diseño que el de CineCaptions:
 // ventana sin marco, banner animado con el astrolabio que gira, lista de PASOS, % grande, barra moderna y botón píldora.
 // ---------------------------------------------------------------------------
@@ -658,6 +658,20 @@ class Ventana : Form, IVista
                                   : "Ya está en el Escritorio y en el menú Inicio. Abre el programa, sube tu material y pulsa el botón del centro.";
             boton.Text = "ABRIR";
             if (Instalador.NoAbrir) boton.Text = "CERRAR";
+            else
+            {   // la persona: "cuando se termine de instalar se abre automaticamente y se cierra el instalador"
+                lblInfo.Text = (avisos ? "Se instaló con avisos (el programa te los muestra). " : "") +
+                               "Abriendo " + Instalador.NOMBRE + "...";
+                System.Windows.Forms.Timer reloj = new System.Windows.Forms.Timer();
+                reloj.Interval = avisos ? 3000 : 1500;      // un momento para ver el "¡Listo!"
+                reloj.Tick += delegate
+                {
+                    reloj.Stop();
+                    try { Instalador.Abrir(); } catch { }
+                    Close();
+                };
+                reloj.Start();
+            }
         }
     }
 

@@ -1,0 +1,31 @@
+# Tráiler automático · CINEMA PRODUCTIONS
+# Prueba en una Mac de GitHub que al instalar el .dmg el programa se abre solo y el Instalador se cierra solo.
+# Actions > "Probar instalador Mac" > Run workflow. Capturas y registros en "Artifacts".
+name: Probar instalador Mac
+on:
+  workflow_dispatch:
+jobs:
+  probar:
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: ffmpeg de respaldo
+        run: brew install ffmpeg || true
+      - name: Compilar el .dmg
+        env:
+          TRAILER_PYTHON: python3
+          TRAILER_SIN_PANTALLA: '1'
+          TRAILER_CLAVE: ${{ secrets.TRAILER_CLAVE }}
+        run: bash PROGRAMA/compilar/mac/construir_mac.sh
+      - name: Instalar y comprobar
+        run: bash PROGRAMA/compilar/mac/probar_instalacion.sh
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: prueba-instalador-mac
+          path: prueba/
+          retention-days: 3

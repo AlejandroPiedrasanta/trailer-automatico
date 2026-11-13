@@ -100,6 +100,25 @@ def programa_abierto():
     return False
 
 
+def instalando():
+    """True si hay una instalacion del programa en marcha (el Instalador de macOS / installer, o el instalador de Windows):
+    no se instala otra encima (paso de verdad: el servicio arrancaba al cargarse dentro del postinstall)."""
+    try:
+        if rutas.ES_MAC:
+            for nombre in ("installer", "Installer"):
+                if subprocess.run(["pgrep", "-x", nombre], capture_output=True, timeout=10).returncode == 0:
+                    return True
+            return False
+        if rutas.ES_WIN:
+            r = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, errors="replace",
+                               timeout=30, creationflags=SIN_VENTANA)
+            return any(n.startswith(('"instalar trailer', '"actualizar_trailer', '"desinstalar'))
+                       for n in r.stdout.lower().splitlines())
+    except Exception:
+        pass
+    return False
+
+
 def usuario_mac():
     """(nombre, uid) de quien esta frente a la Mac, o None."""
     try:
@@ -241,6 +260,9 @@ def _correr_windows():
     if programa_abierto():
         _log("el programa esta abierto: el se encarga")
         return 0
+    if instalando():
+        _log("hay una instalacion en marcha: se revisa la proxima vez")
+        return 0
     r = act.comprobar()
     if r["estado"] != "nueva":
         _log("%s %s" % (r["estado"], r.get("mensaje", r.get("version", ""))))
@@ -286,6 +308,9 @@ def _correr_mac():
     if programa_abierto():
         _log("el programa esta abierto: el se encarga")
         return 0
+    if instalando():                                     # p. ej. el servicio arranca dentro del postinstall
+        _log("hay una instalacion en marcha: se revisa la proxima vez")
+        return 0
     r = act.comprobar()
     if r["estado"] != "nueva":
         _log("%s %s" % (r["estado"], r.get("mensaje", r.get("version", ""))))
@@ -303,7 +328,7 @@ def _correr_mac():
 
 # ------------------------------------------------------------------ la tarea programada de Windows
 def _xml_tarea(exe, usuario):
-    inicio = time.strftime("%Y-%m-%dT%H:%M:%S")
+    inicio = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() + 1800))   # no justo al instalar
     return """<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo><Description>Busca e instala las versiones nuevas de Tráiler automático (CINEMA PRODUCTIONS).</Description></RegistrationInfo>

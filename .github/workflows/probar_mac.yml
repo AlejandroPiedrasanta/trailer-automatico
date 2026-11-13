@@ -34,6 +34,7 @@ jobs:
       - name: Instalar y comprobar
         env:
           PROBAR_ACTUALIZACION: ${{ inputs.vieja != '' && '1' || '0' }}
+          VIEJA: ${{ inputs.vieja }}
         run: bash PROGRAMA/compilar/mac/probar_instalacion.sh
       - uses: actions/upload-artifact@v7
         if: always()

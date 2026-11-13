@@ -66,8 +66,13 @@ pkgutil --pkg-info com.cinemaproductions.trailerautomatico >> "$SAL/procesos.txt
 #    trailer-automatico-releases, sin contrasena, y la musica guardada aparte sigue ahi
 if [ "${PROBAR_ACTUALIZACION:-0}" = 1 ]; then
     ETQ="com.cinemaproductions.trailerautomatico.actualizar"
-    VER_TXT() { cat "$(find /Applications/TrailerAutomatico.app/Contents -name version.txt -not -path '*/recursos/*' 2>/dev/null | head -1)" 2>/dev/null | tr -d ' \r\n'; }
+    VER_TXT() { cat "$(find /Applications/TrailerAutomatico.app/Contents/Resources /Applications/TrailerAutomatico.app/Contents/Frameworks \
+        -maxdepth 1 -name version.txt 2>/dev/null | head -1)" 2>/dev/null | tr -d ' \r\n'; }
     V0="$(VER_TXT)"
+    if [ -n "${VIEJA:-}" ]; then          # el servicio NO debe instalar encima mientras la primera instalacion sigue en marcha
+        [ "$V0" = "$VIEJA" ] && ok "sigue instalada la $VIEJA: el servicio no se metio durante la instalacion" \
+            || falla "la version instalada es $V0 y no $VIEJA: el servicio instalo durante la instalacion"
+    fi
     PUBLICADA="$(curl -sL https://github.com/AlejandroPiedrasanta/trailer-automatico-releases/releases/latest/download/version.json \
         | python3 -c 'import json,sys; print(json.load(sys.stdin)["estable"]["version"])' 2>/dev/null)"
     echo "instalada $V0 · publicada $PUBLICADA"

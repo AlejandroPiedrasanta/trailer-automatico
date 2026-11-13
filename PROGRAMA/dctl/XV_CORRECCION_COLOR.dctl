@@ -1,0 +1,37 @@
+// XV - CORRECCION DE COLOR (universal, va en el nodo PRE-CLIP del grupo de color)
+// Base suave para igualar camara, celular y dron antes del LOOK de cada version:
+// limpia negros lechosos, da un poco de contraste, cuida las altas luces y
+// sube la saturacion sin tocar los tonos de piel.
+
+__CONSTANT__ float NEGROS = 0.012f;        // limpia el velo en negros
+__CONSTANT__ float CONTRASTE = 1.06f;      // contraste alrededor del gris medio
+__CONSTANT__ float PIVOTE = 0.42f;
+__CONSTANT__ float SATURACION = 1.04f;     // saturacion general
+__CONSTANT__ float RODILLA = 0.86f;        // desde aqui se suavizan las altas luces
+
+__DEVICE__ float suave(float v)
+{
+    v = (v - NEGROS) / (1.0f - NEGROS);
+    v = PIVOTE + (v - PIVOTE) * CONTRASTE;
+    if (v > RODILLA)
+    {
+        float k = 1.0f - RODILLA;
+        v = RODILLA + k * _tanhf((v - RODILLA) / k);
+    }
+    return _clampf(v, 0.0f, 1.0f);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    float r = suave(p_R);
+    float g = suave(p_G);
+    float b = suave(p_B);
+    float y = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+    // tonos de piel: rojo > verde > azul con poca distancia entre ellos -> menos saturacion extra
+    float piel = _saturatef((r - b) * 4.0f) * _saturatef(1.0f - _fabs((g - b) / (r - b + 0.0001f) - 0.5f) * 2.0f);
+    float s = 1.0f + (SATURACION - 1.0f) * (1.0f - 0.7f * piel);
+    r = _clampf(y + (r - y) * s, 0.0f, 1.0f);
+    g = _clampf(y + (g - y) * s, 0.0f, 1.0f);
+    b = _clampf(y + (b - y) * s, 0.0f, 1.0f);
+    return make_float3(r, g, b);
+}

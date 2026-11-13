@@ -1,0 +1,36 @@
+# Tráiler automático · CINEMA PRODUCTIONS
+# Compila los instaladores de Mac (Apple Silicon e Intel) en las Mac de GitHub, como CineCaptions.
+# Actions > "Instaladores Mac" > Run workflow. Los .dmg quedan en "Artifacts".
+name: Instaladores Mac
+on:
+  workflow_dispatch:
+jobs:
+  mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - nombre: AppleSilicon
+            runner: macos-15
+          - nombre: Intel
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: ffmpeg de respaldo (si no se puede bajar el estatico)
+        run: brew install ffmpeg || true
+      - name: Compilar
+        env:
+          TRAILER_PYTHON: python3
+          TRAILER_SIN_PANTALLA: '1'
+        run: bash PROGRAMA/compilar/mac/construir_mac.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Trailer-automatico-Mac-${{ matrix.nombre }}
+          path: INSTALADORES/Mac/*.dmg
+          if-no-files-found: error
+          retention-days: 3

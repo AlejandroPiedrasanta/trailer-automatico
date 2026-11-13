@@ -1,0 +1,330 @@
+{
+  "_ayuda": "Un perfil por tipo de evento. Cambia aqui los textos sin tocar el codigo. {nombre}, {fecha} y {anio} se reemplazan solos. 'momentos' son los nombres que se ven en el media pool y en la ventana para las zonas MAQUILLAJE / IGLESIA / FIESTA de las plantillas. 'actos' = frase principal y subtitulo para los textos de cada acto (segun el marcador ACTO de la plantilla). 'plantilla' = textos fijos de la plantilla que se reemplazan: titulo ('MIS XV'), titulo_largo ('MIS XV AÑOS' del brillo), frase1 ('Un sueño que empieza') e intro ('Te elijo hoy, mañana y siempre'). La firma 'CINEMA PRODUCTIONS' no se toca. 'capitulos' = titulo y subtitulo al empezar cada momento. 'frases' = frases que se reparten dentro de cada momento (mas frases en las versiones largas). 'gracias' = texto antes de la tarjeta final (3 min o mas).",
+  "xv": {
+    "nombre": "XV años",
+    "prefijo": "XV",
+    "titulo": "Mis XV años",
+    "frase": "MIS XV AÑOS",
+    "momentos": {
+      "MAQUILLAJE": "Maquillaje",
+      "IGLESIA": "Iglesia",
+      "FIESTA": "Fiesta"
+    },
+    "actos": {
+      "FIESTA": [
+        "¡A celebrar!",
+        "QUE COMIENCE LA FIESTA"
+      ],
+      "ROMANTICA": [
+        "Un sueño hecho realidad",
+        ""
+      ],
+      "CEREMONIA": [
+        "Un sueño hecho realidad",
+        ""
+      ],
+      "EPICA": [
+        "El gran día",
+        ""
+      ]
+    },
+    "plantilla": {
+      "titulo": "MIS XV",
+      "titulo_largo": "MIS XV AÑOS",
+      "frase1": "Un sueño que empieza",
+      "intro": "Hoy comienza mi historia"
+    },
+    "capitulos": {
+      "MAQUILLAJE": [
+        "Los preparativos",
+        "Capítulo I"
+      ],
+      "IGLESIA": [
+        "La misa",
+        "Capítulo II"
+      ],
+      "FIESTA": [
+        "La fiesta",
+        "Capítulo III"
+      ]
+    },
+    "frases": {
+      "MAQUILLAJE": [
+        "Cada detalle, pensado para este día",
+        "Lista para brillar",
+        "Un sueño a punto de cumplirse"
+      ],
+      "IGLESIA": [
+        "Gracias, Dios, por mis quince años",
+        "Con fe y con ilusión",
+        "Una bendición para mi nueva etapa"
+      ],
+      "FIESTA": [
+        "Mi primer vals",
+        "Que la fiesta nunca termine",
+        "Una noche para recordar"
+      ]
+    },
+    "gracias": "Gracias por ser parte de mis XV años"
+  },
+  "boda": {
+    "nombre": "Boda",
+    "prefijo": "BODA",
+    "titulo": "Nuestra boda",
+    "frase": "NUESTRA HISTORIA DE AMOR",
+    "momentos": {
+      "MAQUILLAJE": "Preparativos",
+      "IGLESIA": "Ceremonia",
+      "FIESTA": "Fiesta"
+    },
+    "actos": {
+      "FIESTA": [
+        "¡A celebrar!",
+        "QUE COMIENCE LA FIESTA"
+      ],
+      "ROMANTICA": [
+        "Para siempre",
+        ""
+      ],
+      "CEREMONIA": [
+        "Para siempre",
+        ""
+      ],
+      "EPICA": [
+        "El gran día",
+        ""
+      ]
+    },
+    "plantilla": {
+      "titulo": "NUESTRA BODA",
+      "titulo_largo": "NUESTRA BODA",
+      "frase1": "Un sueño que empieza",
+      "intro": "Te elijo hoy, mañana y siempre"
+    },
+    "capitulos": {
+      "MAQUILLAJE": [
+        "Los preparativos",
+        "Capítulo I"
+      ],
+      "IGLESIA": [
+        "La ceremonia",
+        "Capítulo II"
+      ],
+      "FIESTA": [
+        "La celebración",
+        "Capítulo III"
+      ]
+    },
+    "frases": {
+      "MAQUILLAJE": [
+        "Cada detalle, pensado para hoy",
+        "Los nervios más bonitos",
+        "Todo listo para decir sí"
+      ],
+      "IGLESIA": [
+        "El amor es paciente, el amor es bondadoso",
+        "Dos almas, un mismo camino",
+        "Hoy y para siempre"
+      ],
+      "FIESTA": [
+        "Que la fiesta nunca termine",
+        "Bailar contigo toda la vida",
+        "Una noche para recordar"
+      ]
+    },
+    "gracias": "Gracias por ser parte de nuestra historia"
+  },
+  "bautizo": {
+    "nombre": "Bautizo",
+    "prefijo": "BAUTIZO",
+    "titulo": "Mi bautizo",
+    "frase": "BENDECIDO POR DIOS",
+    "momentos": {
+      "MAQUILLAJE": "Preparativos",
+      "IGLESIA": "Iglesia",
+      "FIESTA": "Celebración"
+    },
+    "actos": {
+      "FIESTA": [
+        "¡A celebrar!",
+        "CON TODA LA FAMILIA"
+      ],
+      "ROMANTICA": [
+        "Un regalo de Dios",
+        ""
+      ],
+      "CEREMONIA": [
+        "Un regalo de Dios",
+        ""
+      ],
+      "EPICA": [
+        "Un día bendecido",
+        ""
+      ]
+    },
+    "plantilla": {
+      "titulo": "MI BAUTIZO",
+      "titulo_largo": "MI BAUTIZO",
+      "frase1": "Un regalo del cielo",
+      "intro": "Bienvenido a la familia de Dios"
+    },
+    "capitulos": {
+      "MAQUILLAJE": [
+        "Los preparativos",
+        "Capítulo I"
+      ],
+      "IGLESIA": [
+        "El bautizo",
+        "Capítulo II"
+      ],
+      "FIESTA": [
+        "La celebración",
+        "Capítulo III"
+      ]
+    },
+    "frases": {
+      "MAQUILLAJE": [
+        "Pequeños detalles, gran amor",
+        "Listos para el gran día"
+      ],
+      "IGLESIA": [
+        "Un regalo de Dios",
+        "Bendecido desde hoy",
+        "Con amor y con fe"
+      ],
+      "FIESTA": [
+        "Toda la familia reunida",
+        "Un día para celebrar la vida"
+      ]
+    },
+    "gracias": "Gracias por acompañarnos en este día"
+  },
+  "graduacion": {
+    "nombre": "Graduación",
+    "prefijo": "GRADUACION",
+    "titulo": "Mi graduación",
+    "frase": "GENERACIÓN {anio}",
+    "momentos": {
+      "MAQUILLAJE": "Preparativos",
+      "IGLESIA": "Ceremonia",
+      "FIESTA": "Fiesta"
+    },
+    "actos": {
+      "FIESTA": [
+        "¡A celebrar!",
+        "LO LOGRAMOS"
+      ],
+      "ROMANTICA": [
+        "El esfuerzo valió la pena",
+        ""
+      ],
+      "CEREMONIA": [
+        "El esfuerzo valió la pena",
+        ""
+      ],
+      "EPICA": [
+        "Mi gran logro",
+        ""
+      ]
+    },
+    "plantilla": {
+      "titulo": "MI GRADUACIÓN",
+      "titulo_largo": "MI GRADUACIÓN",
+      "frase1": "Un sueño cumplido",
+      "intro": "El esfuerzo valió la pena"
+    },
+    "capitulos": {
+      "MAQUILLAJE": [
+        "Los preparativos",
+        "Capítulo I"
+      ],
+      "IGLESIA": [
+        "La ceremonia",
+        "Capítulo II"
+      ],
+      "FIESTA": [
+        "La celebración",
+        "Capítulo III"
+      ]
+    },
+    "frases": {
+      "MAQUILLAJE": [
+        "El último paso",
+        "Listos para el gran día"
+      ],
+      "IGLESIA": [
+        "El esfuerzo valió la pena",
+        "Una meta cumplida",
+        "Hoy comienza un nuevo camino"
+      ],
+      "FIESTA": [
+        "¡Lo logramos!",
+        "A celebrar el triunfo"
+      ]
+    },
+    "gracias": "Gracias a todos los que hicieron esto posible"
+  },
+  "cumpleanos": {
+    "nombre": "Cumpleaños",
+    "prefijo": "CUMPLEAÑOS",
+    "titulo": "Mi cumpleaños",
+    "frase": "¡FELIZ CUMPLEAÑOS!",
+    "momentos": {
+      "MAQUILLAJE": "Preparativos",
+      "IGLESIA": "Celebración",
+      "FIESTA": "Fiesta"
+    },
+    "actos": {
+      "FIESTA": [
+        "¡A celebrar!",
+        "QUE VIVA LA FIESTA"
+      ],
+      "ROMANTICA": [
+        "Un año más de vida",
+        ""
+      ],
+      "CEREMONIA": [
+        "Un año más de vida",
+        ""
+      ],
+      "EPICA": [
+        "Mi gran día",
+        ""
+      ]
+    },
+    "plantilla": {
+      "titulo": "MI CUMPLEAÑOS",
+      "titulo_largo": "MI CUMPLEAÑOS",
+      "frase1": "Un año más de vida",
+      "intro": "Celebrando la vida"
+    },
+    "capitulos": {
+      "MAQUILLAJE": [
+        "Los preparativos",
+        "Capítulo I"
+      ],
+      "IGLESIA": [
+        "La celebración",
+        "Capítulo II"
+      ],
+      "FIESTA": [
+        "La fiesta",
+        "Capítulo III"
+      ]
+    },
+    "frases": {
+      "MAQUILLAJE": [
+        "Todo listo para celebrar"
+      ],
+      "IGLESIA": [
+        "Un año más de vida",
+        "Rodeado de los que más quiero"
+      ],
+      "FIESTA": [
+        "Que viva la fiesta",
+        "Una noche para recordar"
+      ]
+    },
+    "gracias": "Gracias por celebrar conmigo"
+  }
+}

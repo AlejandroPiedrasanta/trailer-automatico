@@ -1,0 +1,9 @@
+*.sh text eol=lf
+*.command text eol=lf
+PROGRAMA/compilar/mac/pkg/scripts/postinstall text eol=lf
+*.bin.parte* binary
+*.drp binary
+*.png binary
+*.jpg binary
+*.ttf binary
+*.cube binary

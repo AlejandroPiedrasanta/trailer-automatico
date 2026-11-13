@@ -1,0 +1,62 @@
+TRAILER AUTOMATICO - CINEMA PRODUCTIONS
+=======================================
+
+INSTALAR (Windows)
+Doble clic en  INSTALADORES\Instalar Trailer automatico <version>.exe  > Instalar > Abrir.
+No pide permisos de administrador. Crea "Tráiler automático" en el Escritorio y en el menú Inicio,
+instala las fuentes de los títulos y el color/ruido en DaVinci. Trae su propio ffmpeg, las
+plantillas, la música y los SFX. Para quitarlo: Configuración > Aplicaciones > Tráiler automático.
+Tus carpetas (1 MATERIAL, 2 VIDEOS TERMINADOS) nunca se borran. La carpeta de trabajo se puede
+cambiar en Ajustes. Si algo falla, el registro está en %LOCALAPPDATA%\TrailerAutomatico\registro.log.
+
+COMO SE USA (3 pasos)
+1. Abre "Tráiler automático" (o doble clic en ARMAR TRAILERS.bat / .command sin instalar).
+2. Pon el material: arrastra fotos, videos o carpetas a la ventana (se ordenan solos en
+   1 MATERIAL\FOTOS, VIDEOS y DRON) o usa la pestana "Material" > Agregar...
+     FOTOS   al menos 8 (se usan para los destellos de la intro)
+     VIDEOS  al menos 1 (camara y celular de todo el evento)
+     DRON    opcional
+   Si falta algo, el programa te avisa y te pide agregarlo antes de empezar.
+3. Abajo del boton elige las PLANTILLAS a armar (1, 3, 15, 30 min o Todas) y pulsa el boton ▶
+   del centro. En "Textos" eliges el tipo de evento y escribes los nombres.
+
+El programa hace todo solo: ordena el material (maquillaje, iglesia, fiesta), lo arma en las
+4 plantillas de DaVinci Resolve (1, 3, 15 y 30 min) con textos, transiciones, musica, SFX y
+color, renderiza, deja el audio listo para redes y abre  2 VIDEOS TERMINADOS  con los videos.
+
+Para un evento nuevo: vacia 1 MATERIAL, copia el material nuevo y pulsa ▶ otra vez.
+
+
+CARPETAS
+  1 MATERIAL ............ aqui va el material del evento
+  2 VIDEOS TERMINADOS ... aqui salen los videos listos (una carpeta por evento)
+  PROGRAMA .............. lo tecnico: no hace falta abrirla
+  ARMAR TRAILERS ........ el boton
+
+
+EN MAC (la primera vez)
+1. Instala DaVinci Resolve Studio y Python 3 (python.org). Para ffmpeg instala Homebrew (brew.sh):
+   el programa instala ffmpeg solo.
+2. En DaVinci: Preferencias > Sistema > General > Scripting externo = Local.
+3. Copia esta carpeta completa a la Mac (o descomprime "INSTALADORES/Trailer automatico (Mac).zip").
+4. Doble clic en "ARMAR TRAILERS.command". Si la Mac dice que no puede abrirlo: clic derecho >
+   Abrir > Abrir. La primera vez tarda unos minutos (instala lo necesario) y pide tu clave una
+   vez para la carpeta de color de DaVinci.
+5. La primera vez que pulses ▶, el programa instala las plantillas en DaVinci (proyecto
+   EVENTOS CINEMA), la musica, los SFX y las fuentes de los titulos. Si DaVinci estaba abierto
+   mientras se instalaban las fuentes, cierralo y pulsa ▶ otra vez.
+
+
+OPCIONES (si hace falta)
+"Opciones" en la ventana: que versiones armar, renderizar o solo armar en DaVinci, igualar luz
+y balance de blancos, cuanto ruido quitar, frase bajo el nombre y texto de la tarjeta final.
+"Clasificacion": si algo cae en el momento equivocado, ahi se corrige la hora de inicio de la
+IGLESIA y la FIESTA o se mueve un archivo a otro momento.
+"Ver detalles": todo lo que va haciendo el programa.
+
+
+SI ALGO FALLA
+- "No pude conectar con DaVinci": abre DaVinci Resolve y revisa Scripting externo = Local.
+- DaVinci con una ventana abierta (Organizador de proyectos, Crear proyecto...): cierrala y
+  pulsa ▶ otra vez.
+- La version de 30 min repite planos cuando hay poco material: es normal.

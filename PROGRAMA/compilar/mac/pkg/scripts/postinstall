@@ -1,0 +1,51 @@
+#!/bin/bash
+# Tráiler automático · CINEMA PRODUCTIONS
+# compilar/mac/pkg/scripts/postinstall — corre al terminar de copiar la app (como root; las tareas, como el usuario que esta frente a
+# la Mac): carpeta de color de DaVinci con permiso, ffmpeg (si la app no lo trae y no hay, con Homebrew), fuentes de los titulos,
+# carpetas de trabajo y el color/ruido en DaVinci. Nunca falla la instalacion: lo que no se pudo, el programa lo avisa al abrirse.
+
+APP="/Applications/TrailerAutomatico.app"
+BIN="$APP/Contents/MacOS/TrailerAutomatico"
+LUT="/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/MCP"
+
+xattr -dr com.apple.quarantine "$APP" 2>/dev/null
+mkdir -p "$LUT" && chmod 777 "$LUT"                        # el programa escribe ahi la reduccion de ruido en cada armado
+
+USUARIO=$(stat -f%Su /dev/console 2>/dev/null)
+[ -z "$USUARIO" ] || [ "$USUARIO" = "root" ] && exit 0
+UID_U=$(id -u "$USUARIO")
+CASA=$(dscl . -read "/Users/$USUARIO" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+[ -d "$CASA" ] || exit 0
+LOG="$CASA/Library/Logs/TrailerAutomatico_instalacion.log"
+mkdir -p "$CASA/Library/Logs"
+echo "== $(date '+%Y-%m-%d %H:%M:%S')  Tráiler automático: tareas de instalación" >> "$LOG"
+
+# el programa que estaba abierto se cierra (sus archivos ya se reemplazaron)
+pkill -TERM -f "^$BIN\$" 2>/dev/null && sleep 3 && pkill -9 -f "^$BIN\$" 2>/dev/null
+
+como_usuario() { launchctl asuser "$UID_U" sudo -u "$USUARIO" -H env HOME="$CASA" USER="$USUARIO" \
+                 PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" "$@"; }
+
+# ffmpeg: la app puede traerlo; si no, el del sistema; si tampoco, Homebrew (si esta instalado)
+if [ ! -x "$APP/Contents/Frameworks/ffmpeg/ffmpeg" ] && [ ! -x "$APP/Contents/Resources/ffmpeg/ffmpeg" ]; then
+    if ! [ -x /opt/homebrew/bin/ffmpeg ] && ! [ -x /usr/local/bin/ffmpeg ]; then
+        BREW=""; [ -x /opt/homebrew/bin/brew ] && BREW=/opt/homebrew/bin/brew; [ -x /usr/local/bin/brew ] && BREW=/usr/local/bin/brew
+        if [ -n "$BREW" ]; then
+            echo "-- instalando ffmpeg con Homebrew" >> "$LOG"
+            como_usuario "$BREW" install ffmpeg >> "$LOG" 2>&1
+        else
+            echo "-- AVISO: falta ffmpeg y no hay Homebrew (brew.sh)" >> "$LOG"
+        fi
+    fi
+fi
+
+ESTADO="/tmp/trailer_instalar.$$.txt"
+: > "$ESTADO"; chmod 666 "$ESTADO"
+como_usuario QT_QPA_PLATFORM=offscreen "$BIN" --tarea instalar "$ESTADO" >> "$LOG" 2>&1 &
+P=$!
+for i in $(seq 1 150); do kill -0 "$P" 2>/dev/null || break; sleep 2; done
+kill -9 "$P" 2>/dev/null
+grep -v '^PROGRESO' "$ESTADO" >> "$LOG" 2>/dev/null
+rm -f "$ESTADO"
+chown "$USUARIO" "$LOG" 2>/dev/null
+exit 0

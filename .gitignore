@@ -1,0 +1,10 @@
+# lo del evento y lo que se genera solo: no va al repositorio
+1 MATERIAL/
+2 VIDEOS TERMINADOS/
+INSTALADORES/
+PROGRAMA/datos/
+__pycache__/
+*.pyc
+# musica, SFX y fuentes con licencia: NO se publican tal cual; van cifrados en PROGRAMA/recursos_protegidos/
+PROGRAMA/recursos/audio/
+PROGRAMA/recursos/fuentes/FogtwoNo5.ttf

@@ -76,6 +76,21 @@ Todo corre en local con el programa: `ARMAR TRAILERS.bat` (Windows) o `ARMAR TRA
 - Programa cerrado: Windows, tarea programada del usuario «Trailer automatico Actualizaciones» (cada 4 h y al iniciar sesión; la quita el desinstalador). Mac, LaunchDaemon `com.cinemaproductions.trailerautomatico.actualizar` de root (lo pone el `postinstall`, lo quita `Desinstalar.command`): instala el .pkg sin contraseña; el archivo `/Users/Shared/TrailerAutomatico/.sin_abrir` le dice al `postinstall` que no abra la app.
 - Probado en Windows (2026-11-13): instalación completa → música guardada aparte; actualización en segundo plano con el instalador público (manifiesto local firmado con `TRAILER_URL_ACTUALIZACIONES=file:///...`) → instalado en 31 s, música intacta, autoprueba OK.
 
+## Pruebas en varios equipos (GitHub Actions)
+- **«Pruebas en varios equipos»** (`.github/workflows/pruebas_equipos.yml`) prueba los instaladores PUBLICADOS en Windows Server 2022 y 2025, en Windows 11 ARM (x64 emulado), en Mac macOS 15 y 26 con chip Apple, en Mac Intel y en la versión Intel bajo Rosetta. Cada equipo hace esto:
+  - instala y abre;
+  - corre la autoprueba;
+  - revisa la tarea o el servicio de actualizaciones y que lea la versión publicada;
+  - usa el instalador con ventana (abre el programa y se cierra solo) y una carpeta con espacios y acentos;
+  - desinstala sin dejar nada.
+  - Scripts: `compilar/windows/probar_equipo.ps1` y `compilar/mac/probar_instalacion.sh` (`PROBAR_EXTRA=1`).
+- **«Probar instalador Mac»** con `vieja=1.3.9` compila una versión vieja, la instala y comprueba que el servicio la actualice solo a la publicada sin perder la música.
+- Lecciones del 2026-11-13:
+  - El LaunchDaemon arranca al cargarse **dentro del postinstall** y actualizaba encima de la instalación en curso. Ahora `actualizar_fondo.instalando()` espera si hay un Instalador o installer corriendo, y la tarea de Windows empieza 30 min después de crearse.
+  - En Windows 11 ARM `schtasks` tardó más de 30 s al instalar. Ahora tiene 90 s y 3 intentos, y el programa la vuelve a crear al abrirse.
+  - La ventana tenía un mínimo de 818 px de alto por el astrolabio fijo en el layout. Ahora va en `hueco_boton` (fuera del layout), las páginas usan `QScrollArea` y el mínimo es 880×580.
+  - Al copiar material, dos cámaras con `DSC_0001.JPG` se pisaban. Ahora la segunda se llama «(2)», se ignoran los `._` de la Mac y la copia pasa por un temporal.
+
 ## Carpetas (`rutas.py`, igual en Windows y Mac)
 ```
 TRAILER XV AUTOMATICO/

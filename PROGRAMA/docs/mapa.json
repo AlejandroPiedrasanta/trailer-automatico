@@ -568,5 +568,58 @@
    "Los Type del media pool vienen traducidos ('Video + audio'): no comparar con el ingles.",
    "Voz sobre la musica: SOLO VOTOS/DECLARACION de la IGLESIA (TIPOS_VOZ), en la pista VOZ NATURAL de la plantilla. Pedido de la persona: nada de audios random."
   ]
+ },
+ {
+  "id": "actualizaciones",
+  "resumen": "Actualizaciones como CineCaptions: version.json firmado en trailer-automatico-releases, descarga con huella, al cerrar o en segundo plano (tarea Windows / servicio Mac)",
+  "claves": [
+   "actualizar",
+   "actualizacion",
+   "version",
+   "release",
+   "publicar",
+   "firma",
+   "ed25519",
+   "tarea programada",
+   "launchdaemon",
+   "servicio"
+  ],
+  "archivos": [
+   "PROGRAMA/nucleo/actualizaciones.py",
+   "PROGRAMA/nucleo/actualizar_fondo.py",
+   "PROGRAMA/nucleo/firma_ed25519.py",
+   "PROGRAMA/herramientas/firmar_manifiesto.py",
+   "PROGRAMA/herramientas/publicar_version.ps1",
+   "PROGRAMA/interfaz/trailer_xv.py",
+   "PROGRAMA/compilar/mac/pkg/scripts/postinstall",
+   "PROGRAMA/compilar/mac/pkg/scripts/preinstall"
+  ],
+  "simbolos": [
+   "comprobar",
+   "descargar",
+   "instalar",
+   "firma_valida",
+   "bytes_firmados",
+   "CLAVES_FIRMA",
+   "URL_MANIFIESTO",
+   "asegurar_programada",
+   "quitar_programada",
+   "programa_abierto",
+   "_correr_windows",
+   "_correr_mac",
+   "_instalar_mac",
+   "_buscar_actualizacion",
+   "_instalar_ahora",
+   "_lanzar_instalacion",
+   "guardar_protegidos",
+   "PROTEGIDOS"
+  ],
+  "notas": [
+   "Publicar: pwsh -File PROGRAMA/herramientas/publicar_version.ps1 -Notas \"...\" (sube config/version.txt antes; claves en ~/TrailerAutomatico_claves, NUNCA en el repo).",
+   "Los instaladores publicos NO traen musica/SFX/FogtwoNo5: rutas.PROTEGIDOS (Windows %LOCALAPPDATA%/TrailerAutomatico, Mac /Users/Shared/TrailerAutomatico) guarda la del instalador completo.",
+   "Windows: tarea \"Trailer automatico Actualizaciones\" (cada 4 h, al iniciar sesion) corre --tarea actualizar_fondo e instala /silencioso /noabrir. Con el programa abierto: lo baja y lo instala al cerrar o con Instalar ahora.",
+   "Mac: LaunchDaemon com.cinemaproductions.trailerautomatico.actualizar (root) instala el .pkg sin contrasena; pedidos en /Users/Shared/TrailerAutomatico/pedidos; .sin_abrir hace que el postinstall no abra la app.",
+   "Probar sin publicar: TRAILER_URL_ACTUALIZACIONES=file:///...version.json firmado con la clave real."
+  ]
  }
 ]

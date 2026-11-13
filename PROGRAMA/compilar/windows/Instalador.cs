@@ -332,6 +332,13 @@ static class Instalador
             try { File.Delete(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), NOMBRE + ".lnk")); } catch { }
             try { File.Delete(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), NOMBRE + ".lnk")); } catch { }
             try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + APP, false); } catch { }
+            try   // la tarea programada de las actualizaciones (la crea el programa: actualizar_fondo.asegurar_programada)
+            {
+                ProcessStartInfo st = new ProcessStartInfo("schtasks", "/Delete /TN \"Trailer automatico Actualizaciones\" /F");
+                st.CreateNoWindow = true; st.UseShellExecute = false;
+                using (Process q = Process.Start(st)) { q.WaitForExit(15000); }
+            }
+            catch { }
             L(v, "Accesos directos y entrada de Aplicaciones quitados.");
             P(v, 1, EstadoPaso.Hecho, -1);
             P(v, 2, EstadoPaso.EnCurso, -1);

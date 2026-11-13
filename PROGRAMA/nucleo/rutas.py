@@ -108,8 +108,62 @@ REGISTRO = os.path.join(DATOS, "registro", "registro.log")
 
 RECURSOS = os.path.join(PROGRAMA, "recursos")
 PLANTILLAS_DRP = os.path.join(RECURSOS, "plantillas", "EVENTOS CINEMA - PLANTILLAS.drp")
-AUDIO = os.path.join(RECURSOS, "audio")          # musica y SFX de las plantillas (para reenlazar en otra compu)
 FUENTES = os.path.join(RECURSOS, "fuentes")
+
+# Musica, SFX y la fuente con licencia: los trae el instalador COMPLETO (el que se comparte a mano) y al instalar se guardan FUERA
+# del programa, asi las actualizaciones publicas (que no los traen) no los borran. Windows: %LOCALAPPDATA%\TrailerAutomatico.
+# Mac: /Users/Shared/TrailerAutomatico (la app de /Applications la reemplaza cada .pkg). En el codigo: recursos/ como siempre.
+if CONGELADO and ES_MAC:
+    PROTEGIDOS = "/Users/Shared/TrailerAutomatico"
+elif CONGELADO:
+    PROTEGIDOS = DATOS
+else:
+    PROTEGIDOS = RECURSOS
+FUENTES_LICENCIA = ("FogtwoNo5.ttf",)
+
+
+def _con_archivos(d):
+    try:
+        return any(not f.startswith(".") for f in os.listdir(d))
+    except OSError:
+        return False
+
+
+AUDIO = os.path.join(PROTEGIDOS, "audio") if _con_archivos(os.path.join(PROTEGIDOS, "audio")) \
+    else os.path.join(RECURSOS, "audio")          # musica y SFX de las plantillas (para reenlazar en otra compu)
+
+
+def carpetas_fuentes():
+    """Donde buscar las fuentes de los titulos: las del programa y las con licencia guardadas aparte."""
+    return [d for d in (FUENTES, os.path.join(PROTEGIDOS, "fuentes")) if os.path.isdir(d)]
+
+
+def guardar_protegidos(log=print):
+    """Instalado: copia (Mac) o mueve (Windows) la musica y la fuente con licencia que trae el instalador completo a PROTEGIDOS.
+    No pisa lo que ya hay. Devuelve cuantos archivos guardo."""
+    if not CONGELADO:
+        return 0
+    import shutil
+    n = 0
+    for sub, solo in (("audio", None), ("fuentes", FUENTES_LICENCIA)):
+        origen = os.path.join(RECURSOS, sub)
+        if not os.path.isdir(origen):
+            continue
+        destino = os.path.join(PROTEGIDOS, sub)
+        os.makedirs(destino, exist_ok=True)
+        for f in os.listdir(origen):
+            if solo and f not in solo:
+                continue
+            o, d = os.path.join(origen, f), os.path.join(destino, f)
+            if os.path.isfile(o) and not (os.path.exists(d) and os.path.getsize(d) == os.path.getsize(o)):
+                try:
+                    shutil.copy2(o, d)
+                    n += 1
+                except OSError as ex:
+                    log("No pude guardar %s: %s" % (f, ex))
+    if n:
+        log("Música, SFX y fuente guardadas aparte (%d archivos): las actualizaciones no las tocan." % n)
+    return n
 DCTL = os.path.join(PROGRAMA, "dctl")
 
 

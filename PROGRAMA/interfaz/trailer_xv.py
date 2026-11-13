@@ -413,8 +413,15 @@ def app():
             self.aviso_h = QLabel(time.strftime("%H:%M:%S"), objectName="hora")
             ha.addWidget(self.aviso_i)
             ha.addWidget(self.aviso_t, 1)
+            self.b_actualizar = QPushButton("Instalar ahora", objectName="boton")      # aparece con una version nueva lista
+            self.b_actualizar.setCursor(Qt.PointingHandCursor)
+            self.b_actualizar.clicked.connect(self._instalar_ahora)
+            self.b_actualizar.hide()
+            ha.addWidget(self.b_actualizar)
             ha.addWidget(self.aviso_h)
             raiz.addWidget(self.aviso)
+            self.actualizacion = None            # {"version", "ruta"} cuando ya se bajo una version nueva
+            self._instalando = False
 
             # --- paginas + registro
             medio = QHBoxLayout()
@@ -852,12 +859,117 @@ def app():
                 g2.addWidget(b_base, 0, 2)
             g2.setColumnStretch(1, 1)
             v.addWidget(caja2)
+            caja3 = QFrame(objectName="vidrio")                 # actualizaciones (como CineCaptions)
+            g3 = QHBoxLayout(caja3)
+            g3.setContentsMargins(26, 14, 26, 14)
+            l3 = QLabel("Versión %s" % rutas.version())
+            l3.setStyleSheet("font-weight:700;")
+            g3.addWidget(l3)
+            self.l_act = QLabel("Se actualiza sola: busca versiones nuevas al abrir y cada %d horas, aunque esté cerrado."
+                                % 4)
+            self.l_act.setStyleSheet("color:%s;" % TENUE)
+            self.l_act.setWordWrap(True)
+            g3.addWidget(self.l_act, 1)
+            self.b_buscar = QPushButton("Buscar actualizaciones", objectName="borde")
+            self.b_buscar.setCursor(Qt.PointingHandCursor)
+            self.b_buscar.clicked.connect(lambda: self._buscar_actualizacion(manual=True))
+            g3.addWidget(self.b_buscar)
+            v.addWidget(caja3)
             pie = QLabel("Versión %s  ·  registro: %s" % (rutas.version(), rutas.REGISTRO))
             pie.setStyleSheet("color:%s; font-size:12px;" % TENUE)
             pie.setTextInteractionFlags(Qt.TextSelectableByMouse)
             v.addWidget(pie)
             v.addStretch(1)
             return w
+
+        # ============================================================== actualizaciones
+        def _buscar_actualizacion(self, manual=False):
+            """En un hilo: lee el version.json firmado; si hay una version nueva la baja sola y queda lista para instalar
+            al cerrar (o con «Instalar ahora»). Instalado nada mas: en el codigo solo avisa."""
+            import actualizaciones as act
+            if getattr(self, "_buscando", False) or self.actualizacion:
+                if manual and self.actualizacion:
+                    self._avisar("La versión %s ya está lista: se instala al cerrar (o pulsa «Instalar ahora»)."
+                                 % self.actualizacion["version"])
+                return
+            self._buscando = True
+            if manual:
+                self.b_buscar.setEnabled(False)
+                self.l_act.setText("Buscando…")
+            avance = {"t": ""}
+
+            def trabajo():
+                r = act.comprobar()
+                if r["estado"] == "nueva" and rutas.CONGELADO:
+                    def prog(h, t):
+                        avance["t"] = "Bajando la versión %s… %d %%" % (r["version"], 100 * h // t) if t else \
+                            "Bajando la versión %s… %.0f MB" % (r["version"], h / 1e6)
+                    r["ruta"] = act.descargar(r["archivo"], prog)
+                return r
+            self.t_bajar = QTimer(self)
+            self.t_bajar.timeout.connect(lambda: self.l_act.setText(avance["t"]) if avance["t"] else None)
+            self.t_bajar.start(500)
+
+            def listo(r, error):
+                self._buscando = False
+                self.t_bajar.stop()
+                self.b_buscar.setEnabled(True)
+                if error is not None:
+                    self.l_act.setText("No se pudo buscar ni bajar la versión nueva: %s" % str(error)[:120])
+                    if manual:
+                        self._avisar("Actualizaciones: %s" % str(error)[:140], "warn")
+                    return
+                if r["estado"] == "al_dia":
+                    self.l_act.setText("Al día: tienes la última versión (%s)." % rutas.version())
+                    if manual:
+                        self._avisar("Tienes la última versión (%s)." % rutas.version())
+                elif r["estado"] == "error":
+                    self.l_act.setText("Actualizaciones: %s" % r.get("mensaje", ""))
+                    if manual:
+                        self._avisar("Actualizaciones: %s" % r.get("mensaje", ""), "warn")
+                elif r.get("ruta"):
+                    self.actualizacion = {"version": r["version"], "ruta": r["ruta"]}
+                    self.l_act.setText("Versión %s lista: se instala sola al cerrar el programa. %s"
+                                       % (r["version"], (r.get("notas") or "").split("\n")[0][:160]))
+                    self._avisar("Hay una versión nueva (%s) lista: se instala al cerrar el programa." % r["version"])
+                    self.b_actualizar.show()
+                else:
+                    self.l_act.setText("Hay una versión nueva (%s) (en el código no se instala)." % r["version"])
+            qt_kit.correr_en_hilo(self, trabajo, listo)
+
+        def _lanzar_instalacion(self, reabrir):
+            import actualizaciones as act
+            import threading
+            hecho = {}
+
+            def lanzar():
+                try:
+                    hecho["modo"] = act.instalar(self.actualizacion["ruta"], reabrir=reabrir)
+                except Exception as ex:
+                    hecho["error"] = str(ex)
+            h = threading.Thread(target=lanzar, daemon=True)
+            h.start()
+            h.join(8)
+            if "error" in hecho:
+                registro.error("No se pudo lanzar la actualizacion: %s" % hecho["error"])
+            else:
+                registro.info("Actualizacion %s lanzada (%s)" % (self.actualizacion["version"], hecho.get("modo")))
+            return "error" not in hecho
+
+        def _instalar_ahora(self):
+            if not self.actualizacion:
+                return
+            if self.trabajo is not None:
+                self._avisar("Espera a que termine el armado: luego pulsa «Instalar ahora» (o se instala al cerrar).", "warn")
+                return
+            self._instalando = True
+            self._avisar("Instalando la versión %s: el programa se cierra y se vuelve a abrir solo…"
+                         % self.actualizacion["version"])
+            if self._lanzar_instalacion(reabrir=True):
+                QTimer.singleShot(600, self.close)
+            else:
+                self._instalando = False
+                self._avisar("No se pudo empezar la instalación: se intenta al cerrar.", "error")
 
         def _cambiar_base(self):
             d = QFileDialog.getExistingDirectory(self, "Carpeta de trabajo (ahí van 1 MATERIAL y 2 VIDEOS TERMINADOS)",
@@ -945,6 +1057,14 @@ def app():
             self.cheq.fin.connect(self._fin_chequeo)
             self.cheq.start()
             self._ver_davinci()
+            QTimer.singleShot(4000, self._buscar_actualizacion)          # actualizaciones: al abrir y cada 4 h
+            self.t_act = QTimer(self)
+            self.t_act.timeout.connect(self._buscar_actualizacion)
+            self.t_act.start(4 * 3600 * 1000)
+            if rutas.CONGELADO and rutas.ES_WIN:                          # la tarea programada (con el programa cerrado)
+                import actualizar_fondo
+                qt_kit.correr_en_hilo(self, actualizar_fondo.asegurar_programada,
+                                      lambda r, e: registro.info("Tarea de actualizaciones: %s" % (e or r)))
 
         def _fin_chequeo(self, res):
             mal = [(n, d) for n, ok, d in res if not ok]
@@ -1372,6 +1492,9 @@ def app():
                 self._guardar()
             except Exception:
                 pass
+            if self.actualizacion and not self._instalando:      # la version nueva ya bajada se instala al cerrar
+                self._instalando = True
+                self._lanzar_instalacion(reabrir=False)
             e.accept()
 
     if rutas.ES_WIN:

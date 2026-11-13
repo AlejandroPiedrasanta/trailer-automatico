@@ -11,6 +11,39 @@ LUT="/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/MCP"
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null
 mkdir -p "$LUT" && chmod 777 "$LUT"                        # el programa escribe ahi la reduccion de ruido en cada armado
 
+# carpeta compartida: musica/SFX y fuente con licencia (fuera de la app: las actualizaciones no las traen) y pedidos al servicio
+COMP="/Users/Shared/TrailerAutomatico"
+mkdir -p "$COMP/pedidos" "$COMP/audio" "$COMP/fuentes" && chmod 777 "$COMP" "$COMP/pedidos" "$COMP/audio" "$COMP/fuentes"
+SIN_ABRIR=0; [ -f "$COMP/.sin_abrir" ] && SIN_ABRIR=1           # la instalacion la hace el servicio de actualizaciones
+
+# servicio de actualizaciones (root, como CineCaptions): al encender, cada 4 h y cuando el programa deja un pedido
+ETQ="com.cinemaproductions.trailerautomatico.actualizar"
+PLIST="/Library/LaunchDaemons/$ETQ.plist"
+EST="/Library/Application Support/TrailerAutomatico/actualizar"
+mkdir -p "$EST"
+NUEVO="$(mktemp)"
+cat > "$NUEVO" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$ETQ</string>
+  <key>ProgramArguments</key><array><string>$BIN</string><string>--tarea</string><string>actualizar_fondo</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>14400</integer>
+  <key>QueueDirectories</key><array><string>$COMP/pedidos</string></array>
+  <key>StandardOutPath</key><string>$EST/servicio.log</string>
+  <key>StandardErrorPath</key><string>$EST/servicio.log</string>
+</dict></plist>
+PL
+if ! cmp -s "$NUEVO" "$PLIST"; then                       # solo si cambio: recargarlo mataria una actualizacion en curso
+    cp "$NUEVO" "$PLIST"; chown root:wheel "$PLIST"; chmod 644 "$PLIST"
+    launchctl bootout "system/$ETQ" 2>/dev/null
+    launchctl bootstrap system "$PLIST" 2>/dev/null || launchctl load -w "$PLIST" 2>/dev/null
+elif ! launchctl print "system/$ETQ" >/dev/null 2>&1; then
+    launchctl bootstrap system "$PLIST" 2>/dev/null || launchctl load -w "$PLIST" 2>/dev/null
+fi
+rm -f "$NUEVO"
+
 USUARIO=$(stat -f%Su /dev/console 2>/dev/null)
 [ -z "$USUARIO" ] || [ "$USUARIO" = "root" ] && exit 0
 UID_U=$(id -u "$USUARIO")
@@ -48,6 +81,12 @@ kill -9 "$P" 2>/dev/null
 grep -v '^PROGRESO' "$ESTADO" >> "$LOG" 2>/dev/null
 rm -f "$ESTADO"
 chown "$USUARIO" "$LOG" 2>/dev/null
+
+if [ "$SIN_ABRIR" = 1 ]; then                              # actualizacion del servicio: el abre (o no) el programa
+    rm -f "$COMP/.sin_abrir"
+    echo "-- instalado por el servicio de actualizaciones" >> "$LOG"
+    exit 0
+fi
 
 # Al terminar: se abre el programa y se cierra el Instalador (la persona: "cuando se termine de instalar se abre
 # automaticamente y se cierra el instalador"). Va en segundo plano y espera a que el Instalador escriba el recibo del

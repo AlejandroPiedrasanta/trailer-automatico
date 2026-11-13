@@ -1,0 +1,16 @@
+#!/bin/bash
+# Tráiler automático · CINEMA PRODUCTIONS
+# compilar/mac/pkg/scripts/preinstall — corre ANTES de reemplazar la app (como root). Las versiones viejas traian la musica, los
+# SFX y la fuente con licencia DENTRO de la app; las actualizaciones publicas no los traen: se guardan aparte para no perderlos.
+
+APP="/Applications/TrailerAutomatico.app"
+COMP="/Users/Shared/TrailerAutomatico"
+mkdir -p "$COMP/audio" "$COMP/fuentes" "$COMP/pedidos" && chmod 777 "$COMP" "$COMP/audio" "$COMP/fuentes" "$COMP/pedidos"
+if [ -d "$APP" ] && [ -z "$(ls -A "$COMP/audio" 2>/dev/null)" ]; then
+    AUD="$(find "$APP/Contents" -type d -path '*recursos/audio' 2>/dev/null | head -1)"
+    [ -n "$AUD" ] && cp -Rp "$AUD/." "$COMP/audio/" 2>/dev/null
+fi
+FUE="$(find "$APP/Contents" -type f -name 'FogtwoNo5.ttf' 2>/dev/null | head -1)"
+[ -n "$FUE" ] && [ ! -f "$COMP/fuentes/FogtwoNo5.ttf" ] && cp -p "$FUE" "$COMP/fuentes/" 2>/dev/null
+chmod -R a+rwX "$COMP" 2>/dev/null
+exit 0

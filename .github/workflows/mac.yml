@@ -1,9 +1,16 @@
 # Tráiler automático · CINEMA PRODUCTIONS
 # Compila los instaladores de Mac (Apple Silicon e Intel) en las Mac de GitHub, como CineCaptions.
 # Actions > "Instaladores Mac" > Run workflow. Los .dmg quedan en "Artifacts".
+#   publico = true: la version para las actualizaciones publicas (sin musica, SFX ni fuente con licencia), la que sube
+#   PROGRAMA/herramientas/publicar_version.ps1 al repositorio trailer-automatico-releases.
 name: Instaladores Mac
 on:
   workflow_dispatch:
+    inputs:
+      publico:
+        description: "Version publica para actualizaciones (sin musica)"
+        type: boolean
+        default: false
 jobs:
   mac:
     strategy:
@@ -27,11 +34,12 @@ jobs:
         env:
           TRAILER_PYTHON: python3
           TRAILER_SIN_PANTALLA: '1'
-          TRAILER_CLAVE: ${{ secrets.TRAILER_CLAVE }}
+          TRAILER_SIN_MUSICA: ${{ inputs.publico && '1' || '0' }}
+          TRAILER_CLAVE: ${{ !inputs.publico && secrets.TRAILER_CLAVE || '' }}
         run: bash PROGRAMA/compilar/mac/construir_mac.sh
       - uses: actions/upload-artifact@v7
         with:
-          name: Trailer-automatico-Mac-${{ matrix.nombre }}
+          name: Trailer-automatico-Mac-${{ matrix.nombre }}${{ inputs.publico && '-publico' || '' }}
           path: "3 INSTALADORES/Mac/*.dmg"
           if-no-files-found: error
           retention-days: 3

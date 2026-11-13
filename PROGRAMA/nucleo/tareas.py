@@ -6,8 +6,10 @@ tareas.py - Trabajos sin ventana que llama el instalador (o la compilacion) con
 El archivo de estado recibe lineas "PROGRESO|n|texto" y termina con "OK|texto" o "ERROR|texto"; el instalador
 lo va leyendo (mismo patron que CineCaptions).
 
-  instalar   carpetas de trabajo, fuentes de los titulos, DCTL/LUT de color en DaVinci, datos de la version anterior
-  verificar  autoprueba: librerias, recursos, ffmpeg y el modulo de scripting de DaVinci (sin abrirlo)
+  instalar          carpetas de trabajo, musica/SFX guardados aparte, fuentes, DCTL/LUT de color, datos de la version anterior,
+                    y (Windows) la tarea programada de actualizaciones
+  verificar         autoprueba: librerias, recursos, firma de actualizaciones, ffmpeg y el scripting de DaVinci (sin abrirlo)
+  actualizar_fondo  actualizaciones con el programa cerrado (tarea programada de Windows / servicio de la Mac)
 """
 import os
 import sys
@@ -42,6 +44,8 @@ def instalar(est):
     import motor
     est.progreso(10, "Creando las carpetas de trabajo")
     rutas.crear_carpetas()
+    est.progreso(20, "Guardando la musica y los SFX aparte")
+    n_p = rutas.guardar_protegidos(lambda m: None)
     leeme = os.path.join(rutas.BASE, "LEEME.txt")
     origen = os.path.join(rutas.CONFIG_PROG, "LEEME.txt")
     if not os.path.exists(leeme) and os.path.exists(origen):
@@ -61,7 +65,16 @@ def instalar(est):
         est.progreso(70, "Aviso: no se pudo escribir en la carpeta de LUT de DaVinci (%s)" % ex)
     est.progreso(85, "Trayendo los analisis anteriores")
     n_m = rutas.migrar_datos()
-    est.fin(True, "Listo: carpeta %s · %d fuentes · %d archivos de color · %d datos" % (rutas.BASE, n_f, n_l, n_m))
+    n_t = ""
+    if rutas.ES_WIN and rutas.CONGELADO:
+        est.progreso(92, "Programando las actualizaciones automaticas")
+        try:
+            import actualizar_fondo
+            n_t = " · actualizaciones: " + actualizar_fondo.asegurar_programada()
+        except Exception as ex:
+            n_t = " · aviso: sin tarea de actualizaciones (%s)" % str(ex)[:80]
+    est.fin(True, "Listo: carpeta %s · %d de musica guardados · %d fuentes · %d archivos de color · %d datos%s"
+            % (rutas.BASE, n_p, n_f, n_l, n_m, n_t))
 
 
 def verificar(est):
@@ -78,14 +91,17 @@ def verificar(est):
     prueba("PySide6", lambda: __import__("PySide6.QtWidgets"))
     prueba("numpy", lambda: __import__("numpy"))
     prueba("Pillow", lambda: __import__("PIL.Image"))
-    for m in ("motor", "analizar_material", "renderizar", "masterizar", "mezcla", "ritmo", "ruido", "sfx", "indexar"):
+    for m in ("motor", "analizar_material", "renderizar", "masterizar", "mezcla", "ritmo", "ruido", "sfx", "indexar",
+              "escenas_ia", "actualizaciones", "actualizar_fondo"):
         prueba(m, lambda m=m: __import__(m))
     est.progreso(40, "Recursos")
     for r in ("build_trailers.py", "perfiles_evento.json", "LEEME.txt", "version.txt"):
         prueba(r, lambda r=r: os.path.exists(rutas.codigo(r) if r.endswith(".py") else os.path.join(rutas.CONFIG_PROG, r)))
     prueba("plantillas .drp", lambda: os.path.exists(rutas.PLANTILLAS_DRP))
-    prueba("musica y SFX", lambda: len(os.listdir(rutas.AUDIO)) >= 15)
+    if os.environ.get("TRAILER_SIN_MUSICA") != "1":         # el instalador publico (actualizacion) no la trae
+        prueba("musica y SFX", lambda: len(os.listdir(rutas.AUDIO)) >= 15)
     prueba("fuentes", lambda: len(os.listdir(rutas.FUENTES)) >= 5)
+    prueba("firma de actualizaciones", lambda: _probar_firma())
     prueba("DCTL", lambda: any(f.endswith(".dctl") for f in os.listdir(rutas.DCTL)))
     est.progreso(60, "ffmpeg")
     prueba("ffmpeg", lambda: subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=30,
@@ -103,7 +119,19 @@ def verificar(est):
     return not fallas
 
 
+def _probar_firma():
+    """La verificacion Ed25519 del programa funciona (si fallara, no aceptaria ninguna actualizacion)."""
+    import firma_ed25519
+    k = firma_ed25519.nueva_privada()
+    s = firma_ed25519.firmar(k, b"trailer")
+    return firma_ed25519.verificar(firma_ed25519.publica(k), b"trailer", s) and \
+        not firma_ed25519.verificar(firma_ed25519.publica(k), b"trailer!", s)
+
+
 def correr(nombre, archivo):
+    if nombre == "actualizar_fondo":
+        import actualizar_fondo
+        return actualizar_fondo.correr()
     est = Estado(archivo)
     try:
         if nombre == "instalar":

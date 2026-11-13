@@ -67,6 +67,15 @@ Todo corre en local con el programa: `ARMAR TRAILERS.bat` (Windows) o `ARMAR TRA
 - `registro.py`: `registro.log` rotativo, `excepthook`, `threading.excepthook`, `faulthandler` (`fallo_nativo.log`) y stdout/stderr a devnull en el .exe. `QLockFile` impide abrir dos instancias.
 - **Bug corregido:** `pm.SaveProject()` sobre el «Untitled Project» que Resolve abre al arrancar saca el cuadro «Crear proyecto» y la API se queda esperando para siempre. Ahora solo se guarda un proyecto con nombre (`_sin_titulo`), y `_Vigilante` cancela ese cuadro si aparece mientras se conecta. `estado_davinci` ya no usa la API ni el candado: mira el proceso (`tasklist` / `pgrep`) y el título de la ventana.
 
+## Actualizaciones (como CineCaptions, pedido 2026-11-13: «todo en su repo pública»)
+- Se publican en el repositorio PÚBLICO `AlejandroPiedrasanta/trailer-automatico-releases` (GitHub Releases): `version.json` firmado (Ed25519) + los instaladores **públicos sin música, SFX ni FogtwoNo5** (`Actualizar_Trailer_automatico_<v>.exe`, `Actualizar_Trailer_automatico_Mac_<arq>_<v>.dmg`). El programa lee `releases/latest/download/version.json`.
+- Publicar: subir `config/version.txt`, commit y push, y `pwsh -File PROGRAMA\herramientas\publicar_version.ps1 -Notas "..."` (compila Windows, compila los .dmg públicos en GitHub con `publico=true`, arma y firma el manifiesto, crea el release).
+- Claves privadas FUERA del repo: `~/TrailerAutomatico_claves/firma_principal.txt` y `firma_reserva.txt` (guardar la de reserva aparte). Las públicas están en `actualizaciones.CLAVES_FIRMA`. Sin clave, nadie puede repartir un instalador a los programas.
+- El instalador COMPLETO (`3 INSTALADORES`) trae la música; al instalarse la guarda aparte en `rutas.PROTEGIDOS` (Windows `%LOCALAPPDATA%\TrailerAutomatico`, Mac `/Users/Shared/TrailerAutomatico`), así las actualizaciones públicas no la borran. El `preinstall` de la Mac rescata la de versiones viejas.
+- Programa abierto: busca al abrir y cada 4 h, baja sola la versión nueva y la instala al cerrar (o «Instalar ahora», que la reabre). Ajustes muestra la versión y «Buscar actualizaciones».
+- Programa cerrado: Windows, tarea programada del usuario «Trailer automatico Actualizaciones» (cada 4 h y al iniciar sesión; la quita el desinstalador). Mac, LaunchDaemon `com.cinemaproductions.trailerautomatico.actualizar` de root (lo pone el `postinstall`, lo quita `Desinstalar.command`): instala el .pkg sin contraseña; el archivo `/Users/Shared/TrailerAutomatico/.sin_abrir` le dice al `postinstall` que no abra la app.
+- Probado en Windows (2026-11-13): instalación completa → música guardada aparte; actualización en segundo plano con el instalador público (manifiesto local firmado con `TRAILER_URL_ACTUALIZACIONES=file:///...`) → instalado en 31 s, música intacta, autoprueba OK.
+
 ## Carpetas (`rutas.py`, igual en Windows y Mac)
 ```
 TRAILER XV AUTOMATICO/

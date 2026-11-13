@@ -45,7 +45,12 @@ fi
 
 # la musica, los SFX y las fuentes con licencia vienen CIFRADOS en el repositorio publico (recursos_protegidos/): se descifran
 # con la clave TRAILER_CLAVE (secreto de GitHub, o PROGRAMA/datos/clave_recursos.txt en tu PC)
-if [ ! -d "$PROG/recursos/audio" ] || [ -z "$(ls -A "$PROG/recursos/audio" 2>/dev/null)" ]; then
+#   TRAILER_SIN_MUSICA=1: version PUBLICA para las actualizaciones (sin musica, SFX ni fuente con licencia; usa la ya instalada)
+if [ "${TRAILER_SIN_MUSICA:-0}" = 1 ]; then
+    paso "Version publica (actualizaciones): sin musica, SFX ni fuente con licencia"
+    rm -rf "$PROG/recursos/audio"; rm -f "$PROG/recursos/fuentes/FogtwoNo5.ttf"
+    export TRAILER_SIN_MUSICA
+elif [ ! -d "$PROG/recursos/audio" ] || [ -z "$(ls -A "$PROG/recursos/audio" 2>/dev/null)" ]; then
     paso "Musica y SFX (cifrados)"
     "$VPY" "$COMPILAR/protegidos.py" descifrar || falla "No pude descifrar la musica y los SFX: falta el secreto TRAILER_CLAVE"
 fi
@@ -147,8 +152,9 @@ cp "$AQUI/Desinstalar.command" "$STAGE/Desinstalar.command"; chmod +x "$STAGE/De
 FONDO="$OBRA/fondo_dmg.tiff"
 tiffutil -cathidpicheck "$AQUI/dmg/fondo.png" "$AQUI/dmg/fondo@2x.png" -out "$FONDO" >/dev/null || falla "No pude preparar el fondo del .dmg"
 SALIDA="${TRAILER_SALIDA:-$BASE/3 INSTALADORES/Mac}"; mkdir -p "$SALIDA"
-rm -f "$SALIDA"/Instalar_Trailer_automatico_Mac_${NOMBRE_ARQ}_*.dmg
-DMG="$SALIDA/Instalar_Trailer_automatico_Mac_${NOMBRE_ARQ}_$VERSION.dmg"
+PREFIJO="Instalar"; [ "${TRAILER_SIN_MUSICA:-0}" = 1 ] && PREFIJO="Actualizar"     # el publico (sin musica) se llama Actualizar_
+rm -f "$SALIDA"/${PREFIJO}_Trailer_automatico_Mac_${NOMBRE_ARQ}_*.dmg
+DMG="$SALIDA/${PREFIJO}_Trailer_automatico_Mac_${NOMBRE_ARQ}_$VERSION.dmg"
 for intento in 1 2 3 4 5; do                      # hdiutil a veces responde «Resource busy»: hasta 5 intentos
     "$VPY" -m dmgbuild -s "$AQUI/dmg/ajustes_dmg.py" -D stage="$STAGE" -D fondo="$FONDO" -D icono="$OBRA/TrailerAutomatico.icns" \
         "Trailer automatico $VERSION" "$DMG" >/dev/null && break

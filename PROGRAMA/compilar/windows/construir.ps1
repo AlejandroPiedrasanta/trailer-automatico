@@ -46,19 +46,25 @@ $zpy = Join-Path $trabajo "zipear.py"
 @"
 import os, sys, zipfile
 app, zipr = sys.argv[1], sys.argv[2]
+publico = len(sys.argv) > 3 and sys.argv[3] == 'publico'      # sin musica, SFX ni fuente con licencia (actualizaciones publicas)
 guardar = ('.mp3', '.png', '.jpg', '.drp', '.zip', '.pyd', '.dll')
 with zipfile.ZipFile(zipr, 'w') as z:
     for raiz, _, fs in os.walk(app):
         for f in fs:
             p = os.path.join(raiz, f)
-            z.write(p, os.path.relpath(p, app).replace(os.sep, '/'),
-                    zipfile.ZIP_STORED if f.lower().endswith(guardar) else zipfile.ZIP_DEFLATED)
+            rel = os.path.relpath(p, app).replace(os.sep, '/')
+            if publico and ('/recursos/audio/' in '/' + rel or f == 'FogtwoNo5.ttf'):
+                continue
+            z.write(p, rel, zipfile.ZIP_STORED if f.lower().endswith(guardar) else zipfile.ZIP_DEFLATED)
 print('%.0f MB' % (os.path.getsize(zipr) / 1e6))
 "@ | Set-Content $zpy -Encoding utf8
 python $zpy $app $zip
 if ($LASTEXITCODE -ne 0) { throw "No se pudo comprimir" }
+python $zpy $app (Join-Path $trabajo "programa_publico.zip") publico
+if ($LASTEXITCODE -ne 0) { throw "No se pudo comprimir la version publica" }
 }
 $zip = Join-Path $trabajo "programa.zip"
+$zip_pub = Join-Path $trabajo "programa_publico.zip"
 if (-not (Test-Path $zip)) { throw "No hay programa compilado: corre sin -SoloInstalador" }
 
 Paso "Instalador (C#)"
@@ -75,16 +81,28 @@ if (-not (Test-Path "$b\banner.jpg")) { python "$win\banner.py" "$b\banner.jpg" 
     "/resource:$b\astro_fili.png,astro_fili.png" "/resource:$b\astro_nucleo.png,astro_nucleo.png" $cs
 if ($LASTEXITCODE -ne 0) { throw "csc fallo" }
 
+function Unir($destino, $zipr) {          # instalador + programa.zip + pie (posicion del zip y la marca TRAILER1)
+    $tmp = "$destino.tmp"
+    Copy-Item $base_exe $tmp -Force
+    $ini = (Get-Item $tmp).Length
+    $s = [System.IO.File]::Open($tmp, "Append")
+    $z = [System.IO.File]::OpenRead($zipr)
+    $z.CopyTo($s); $z.Close()
+    $pie = [BitConverter]::GetBytes([long]$ini) + [Text.Encoding]::ASCII.GetBytes("TRAILER1")
+    $s.Write($pie, 0, $pie.Length); $s.Close()
+    Move-Item $tmp $destino -Force
+}
 Paso "Uniendo instalador + programa"
 $final = Join-Path $salida ("Instalar Trailer automatico {0}.exe" -f $ver)
-$tmp = "$final.tmp"
-Copy-Item $base_exe $tmp -Force
-$ini = (Get-Item $tmp).Length
-$s = [System.IO.File]::Open($tmp, "Append")
-$z = [System.IO.File]::OpenRead($zip)
-$z.CopyTo($s); $z.Close()
-$pie = [BitConverter]::GetBytes([long]$ini) + [Text.Encoding]::ASCII.GetBytes("TRAILER1")
-$s.Write($pie, 0, $pie.Length); $s.Close()
-Move-Item $tmp $final -Force
+Unir $final $zip
 Get-ChildItem $salida -Filter "Instalar Trailer automatico *.exe" | Where-Object { $_.FullName -ne $final } | Remove-Item -Force
 Paso ("Listo: {0} ({1:N0} MB)" -f $final, ((Get-Item $final).Length / 1MB))
+# la de las actualizaciones publicas (sin musica, SFX ni fuente con licencia): la sube herramientas\publicar_version.ps1
+$pub_dir = Join-Path $prog "datos\publicar"
+New-Item -ItemType Directory -Force $pub_dir | Out-Null
+$publico = Join-Path $pub_dir ("Actualizar_Trailer_automatico_{0}.exe" -f $ver)
+if (Test-Path $zip_pub) {
+    Unir $publico $zip_pub
+    Get-ChildItem $pub_dir -Filter "Actualizar_Trailer_automatico_*.exe" | Where-Object { $_.FullName -ne $publico } | Remove-Item -Force
+    Paso ("Actualizacion publica (sin musica): {0} ({1:N0} MB)" -f $publico, ((Get-Item $publico).Length / 1MB))
+}

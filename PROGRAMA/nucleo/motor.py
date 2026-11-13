@@ -448,7 +448,7 @@ def reenlazar(project, log=print):
     if not perdidos:
         return 0
     hay = {}
-    for raiz in (rutas.MATERIAL, rutas.RECURSOS):
+    for raiz in (rutas.MATERIAL, rutas.RECURSOS, rutas.AUDIO):
         for d, _, fs in os.walk(raiz):
             for x in fs:
                 hay.setdefault(x.lower(), d)
@@ -475,16 +475,21 @@ def instalar_fuentes(log=print):
     """Instala para el usuario (sin administrador) las fuentes de los titulos que falten:
     Windows: %LOCALAPPDATA%\\Microsoft\\Windows\\Fonts + registro HKCU. Mac: ~/Library/Fonts."""
     import shutil
-    if not os.path.isdir(rutas.FUENTES):
+    origen = {}                                  # nombre -> carpeta (las del programa y la con licencia guardada aparte)
+    for d in rutas.carpetas_fuentes():
+        for f in os.listdir(d):
+            if f.lower().endswith((".ttf", ".otf")):
+                origen.setdefault(f, d)
+    if not origen:
         return 0
-    archivos = [f for f in os.listdir(rutas.FUENTES) if f.lower().endswith((".ttf", ".otf"))]
+    archivos = sorted(origen)
     n = 0
     if rutas.ES_MAC:
         destino = os.path.expanduser("~/Library/Fonts")
         os.makedirs(destino, exist_ok=True)
         for f in archivos:
             if not os.path.exists(os.path.join(destino, f)):
-                shutil.copy2(os.path.join(rutas.FUENTES, f), os.path.join(destino, f))
+                shutil.copy2(os.path.join(origen[f], f), os.path.join(destino, f))
                 n += 1
     elif rutas.ES_WIN:
         import winreg
@@ -496,7 +501,7 @@ def instalar_fuentes(log=print):
             for f in archivos:
                 if os.path.exists(os.path.join(sistema, f)) or os.path.exists(os.path.join(destino, f)):
                     continue
-                shutil.copy2(os.path.join(rutas.FUENTES, f), os.path.join(destino, f))
+                shutil.copy2(os.path.join(origen[f], f), os.path.join(destino, f))
                 nombre = os.path.splitext(f)[0].replace("-", " ")
                 winreg.SetValueEx(clave, "%s (%s)" % (nombre, "OpenType" if f.lower().endswith(".otf") else "TrueType"),
                                   0, winreg.REG_SZ, os.path.join(destino, f))

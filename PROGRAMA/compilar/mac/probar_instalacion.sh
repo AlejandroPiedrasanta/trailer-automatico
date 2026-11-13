@@ -61,6 +61,38 @@ grep -q "abierto el programa y cerrado el Instalador" "$LOG" 2>/dev/null && ok "
     || falla "el registro de instalacion no lo anota"
 pgrep -fl "$APP_BIN" > "$SAL/procesos.txt" 2>&1
 pkgutil --pkg-info com.cinemaproductions.trailerautomatico >> "$SAL/procesos.txt" 2>&1
+
+# 4. (PROBAR_ACTUALIZACION=1, con una version VIEJA instalada) el servicio de root la actualiza solo a la publicada en
+#    trailer-automatico-releases, sin contrasena, y la musica guardada aparte sigue ahi
+if [ "${PROBAR_ACTUALIZACION:-0}" = 1 ]; then
+    ETQ="com.cinemaproductions.trailerautomatico.actualizar"
+    VER_TXT() { cat "$(find /Applications/TrailerAutomatico.app/Contents -name version.txt -not -path '*/recursos/*' 2>/dev/null | head -1)" 2>/dev/null | tr -d ' \r\n'; }
+    V0="$(VER_TXT)"
+    PUBLICADA="$(curl -sL https://github.com/AlejandroPiedrasanta/trailer-automatico-releases/releases/latest/download/version.json \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin)["estable"]["version"])' 2>/dev/null)"
+    echo "instalada $V0 · publicada $PUBLICADA"
+    N_AUD=$(ls /Users/Shared/TrailerAutomatico/audio 2>/dev/null | wc -l | tr -d ' ')
+    [ "$N_AUD" -ge 15 ] && ok "musica guardada aparte ($N_AUD archivos)" || falla "la musica no se guardo aparte ($N_AUD)"
+    sudo launchctl print "system/$ETQ" >/dev/null 2>&1 && ok "servicio de actualizaciones cargado" || falla "el servicio no esta cargado"
+    pkill -f "$APP_BIN" 2>/dev/null; sleep 4                  # cerrado: el servicio actualiza solo
+    sudo launchctl kickstart -k "system/$ETQ"
+    INI=$(date +%s); V="$V0"
+    for i in $(seq 1 300); do
+        V="$(VER_TXT)"; [ -n "$V" ] && [ "$V" != "$V0" ] && break
+        sleep 2
+    done
+    sleep 5
+    T=$(( $(date +%s) - INI ))
+    [ "$V" = "$PUBLICADA" ] && ok "el servicio actualizo solo de $V0 a $V (en ${T} s, sin contrasena)" \
+        || falla "no se actualizo (sigue en $V, publicada $PUBLICADA)"
+    N2=$(ls /Users/Shared/TrailerAutomatico/audio 2>/dev/null | wc -l | tr -d ' ')
+    [ "$N2" -ge 15 ] && ok "la musica sigue despues de actualizar ($N2 archivos)" || falla "se perdio la musica ($N2)"
+    pgrep -f "$APP_BIN" >/dev/null && echo "nota: el programa quedo abierto" || ok "con el programa cerrado no lo abre (actualizacion silenciosa)"
+    [ -d "$MONTAJE" ] || true
+    sudo cat "/Library/Application Support/TrailerAutomatico/actualizar/fondo.log" > "$SAL/servicio_fondo.log" 2>/dev/null
+    sudo cat "/Library/Application Support/TrailerAutomatico/actualizar/servicio.log" > "$SAL/servicio.log" 2>/dev/null
+    foto 3_despues_de_actualizar
+fi
 echo
 cat "$SAL/resultado.txt"
 exit $MAL

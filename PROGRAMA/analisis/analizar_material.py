@@ -613,11 +613,56 @@ def _relojes_basicos(items, ajuste_manual):
             avisos.append("%s: fecha mal puesta (%s) pero la hora cuadra con las demás cámaras: la pasé al %s."
                           % (k, d.isoformat(), dia.isoformat()))
             continue
+        # 3b) reloj sin poner (otra fecha Y otra hora) pero que corre bien: sus tomas guardan las pausas reales del dia.
+        #     Si hay UN corrimiento con el que caen donde trabajaron las demas camaras, se usa.
+        corrido = _reloj_corrido([_dt(i) for i in fuera], refmin, base)
+        if corrido is not None:
+            for i in fuera:
+                i["hora"] = (_dt(i) + corrido).isoformat(timespec="seconds")
+                i["reloj"] = "corregido"
+            avisos.append("%s: el reloj estaba sin poner (marcaba %s) pero corre bien: alineé sus %d archivos con las "
+                          "demás cámaras." % (k, d.isoformat(), len(fuera)))
+            continue
         for i in fuera:
             i["reloj"] = "dudoso"
         avisos.append("%s: %d archivo%s con fecha %s (no es el día del evento): los ordené por contenido."
                       % (k, len(fuera), "s" if len(fuera) > 1 else "", d.isoformat()))
     return dia, avisos
+
+
+def _reloj_corrido(ts, refmin, base, ventana=15.0):
+    """Corrimiento (timedelta) de una camara con el reloj sin poner pero que corre bien, o None si no hay un encaje claro.
+    ts: horas de sus archivos segun su reloj. refmin: minutos (desde `base`, las 00:00 del dia del evento) de los archivos
+    de las camaras fiables, ordenados. Se prueba cada corrimiento, minuto a minuto, con el que la camara cabe en el dia, y
+    gana aquel con el que mas tomas suyas caen junto a las de las demas (y al reves). Solo se acepta si la camara cubre
+    buena parte del dia (si no, encaja en cualquier lado) y si ningun otro corrimiento lejano encaja casi igual."""
+    if len(ts) < 6 or len(refmin) < 30:
+        return None
+    t0 = min(ts)
+    mg = sorted((t - t0).total_seconds() / 60.0 for t in ts)
+    dur, ref_ini, ref_fin = mg[-1], refmin[0], refmin[-1]
+    if dur < 120 or dur < 0.5 * (ref_fin - ref_ini) or dur > (ref_fin - ref_ini) + 90:
+        return None
+
+    def cubre(a, b, off, v):                       # parte de `a` que tiene algo de `b` a menos de v minutos
+        n = 0
+        for m in a:
+            j = bisect.bisect_left(b, m + off - v)
+            n += j < len(b) and b[j] <= m + off + v
+        return n / float(len(a))
+    notas = []
+    off = ref_ini - 45.0
+    while off <= ref_fin - dur + 45.0:
+        propia = cubre(mg, refmin, off, ventana)
+        notas.append((propia + 0.5 * cubre(refmin, mg, -off, 2 * ventana), propia, off))
+        off += 1.0
+    if not notas:
+        return None
+    nota, propia, off = max(notas)
+    lejos = [n for n, _, o in notas if abs(o - off) >= 45]
+    if propia < 0.75 or (lejos and max(lejos) > nota - 0.10):
+        return None
+    return (base + datetime.timedelta(minutes=off)) - t0
 
 
 def _grupos(items):
@@ -917,9 +962,56 @@ def _auto_contenido(items, fecha):
         huecos = [(mins[j + 1] - mins[j], mins[j + 1]) for j in range(max(0, k - 1 - cerca), min(n - 1, k + cerca))
                   if mins[j + 1] - mins[j] >= 8]
         inicios.append((max(huecos)[1] if huecos else mins[k]) - 1)
+    # Una pausa larga de TODAS las camaras y, enseguida, video grabado casi sin parar: ahi empieza la ceremonia aunque
+    # lo que se ve no se parezca a una iglesia (ceremonia en jardin o salon). Solo si el corte por contenido quedo lejos.
+    ceremonia = _ceremonia_tras_pausa(seq, mins, fecha)
+    if ceremonia is not None and abs(ceremonia - inicios[0]) > 60:
+        k = next((j for j, m in enumerate(mins) if m >= ceremonia), None)
+        resto = seq[k:] if k else []
+        if len(resto) >= 6:
+            moms2 = _cortes_en_orden(resto, probs, POSICION)
+            f = next((j for j, x in enumerate(moms2) if x == "FIESTA"), None)
+            if f:
+                f += k
+                huecos = [(mins[j + 1] - mins[j], mins[j + 1]) for j in range(max(k, f - 1 - cerca), min(n - 1, f + cerca))
+                          if mins[j + 1] - mins[j] >= 8]
+                inicios = [ceremonia - 1, (max(huecos)[1] if huecos else mins[f]) - 1]
     if inicios[1] - inicios[0] < 10:                     # sin un tramo claro de iglesia: que decidan los huecos
         return None
     return [["MAQUILLAJE", "00:00"], ["IGLESIA", _hhmm(inicios[0])], ["FIESTA", _hhmm(inicios[1])]]
+
+
+BLOQUE_VENTANA, BLOQUE_MINIMO = 20.0, 0.35      # min; parte de la ventana con video grabado para decir "sin parar"
+PAUSA_MINIMA, PAUSA_CERCA = 60.0, 30.0          # min de pausa; y cuanto antes del tramo puede acabar esa pausa
+
+
+def _ceremonia_tras_pausa(seq, mins, fecha):
+    """Minuto en que arranca la ceremonia segun el ritmo de las camaras, o None. Los preparativos se graban a ratos; una
+    ceremonia, casi seguida. Se toma el primer tramo del dia con video grabado al menos el 35 % de 20 minutos y se mira si
+    viene justo despues de una pausa larga de todas las camaras (el almuerzo o el traslado; un par de fotos sueltas no la
+    rompen). Devuelve la hora del primer archivo despues de la pausa. Si antes del tramo siguieron trabajando (una pausa
+    DENTRO de los preparativos, como en la boda de prueba), no dice nada y manda lo que se ve."""
+    videos = sorted((m, m + (i.get("dur") or 0) / 60.0) for i, m in zip(seq, mins) if i.get("tipo") != "foto" and i.get("dur"))
+    if len(videos) < 8:
+        return None
+    for t0, _ in videos:
+        fin = t0 + BLOQUE_VENTANA
+        grabado = sum(max(0.0, min(b, fin) - max(a, t0)) for a, b in videos if a < fin and b > t0)
+        if grabado / BLOQUE_VENTANA < BLOQUE_MINIMO:
+            continue
+        cerca = [m for m in mins if t0 - PAUSA_CERCA <= m < t0]     # la llegada: ya es parte de la ceremonia
+        inicio = min(cerca) if cerca else t0
+        grupos = []                                      # antes de eso: archivos seguidos (menos de 10 min entre ellos)
+        for m in (x for x in mins if x < inicio):
+            if grupos and m - grupos[-1][-1] < 10:
+                grupos[-1].append(m)
+            else:
+                grupos.append([m])
+        firmes = [g for g in grupos if len(g) > 3 or g[-1] - g[0] >= 5]     # un par de fotos sueltas no cuenta
+        if not firmes or inicio - firmes[-1][-1] < PAUSA_MINIMA:
+            return None                                  # el primer tramo seguido no viene de una pausa: no se toca
+        return inicio
+    return None
 
 
 def _auto_huecos(items, fecha):

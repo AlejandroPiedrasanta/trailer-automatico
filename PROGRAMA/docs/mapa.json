@@ -258,13 +258,17 @@
    "guardar_momentos",
    "leer_ultimo",
    "no_compatibles",
-   "listar"
+   "listar",
+   "_reloj_corrido",
+   "_ceremonia_tras_pausa",
+   "_auto_contenido"
   ],
   "notas": [
    "Cache material.json con clave nombre|tamano (sobrevive a mover carpetas); VERSION sube y lo viejo se completa solo.",
    "Relojes: UTC se detecta comparando la fecha del ARCHIVO (hora local de la camara) con creation_time; fecha mala con hora buena se pasa al dia del evento; lo demas se ordena por contenido.",
    "Contenido: luz/negro/saturacion/calidez/grises en la escala de CADA camara + orden de sus archivos (DP MAQUILLAJE->IGLESIA->FIESTA). Los vecinos de otras camaras empeoraban (MEZCLA_VECINOS=0).",
-   "Medido rompiendo relojes a proposito: UTC 100%, fecha mala 100%, fotos sin hora 97%, todo sin hora 92%, material real sin falsos positivos."
+   "Medido rompiendo relojes a proposito: UTC 100%, fecha mala 100%, fotos sin hora 97%, todo sin hora 92%, material real sin falsos positivos.",
+   "Reloj sin poner (otra fecha y otra hora, pero corre): _reloj_corrido lo alinea con las camaras fiables. Ceremonia: primer tramo de video casi seguido tras una pausa larga (_ceremonia_tras_pausa)."
   ]
  },
  {

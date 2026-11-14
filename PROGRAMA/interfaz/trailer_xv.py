@@ -168,6 +168,10 @@ def app():
     QScrollBar:vertical { background: transparent; width: 8px; }
     QScrollBar::handle:vertical { background: rgba(255,255,255,0.15); border-radius: 4px; min-height: 24px; }
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+    QScrollBar:horizontal { background: transparent; height: 8px; }
+    QScrollBar::handle:horizontal { background: rgba(255,255,255,0.15); border-radius: 4px; min-width: 24px; }
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+    QAbstractScrollArea::corner { background: transparent; border: none; }
     QToolTip { background: #0E1E26; color: %(t)s; border: 1px solid rgba(255,255,255,0.12); padding: 6px 8px; }
     QFrame#hoja { background: rgba(12, 26, 34, 0.97); border: 1px solid rgba(34,196,126,0.55); border-radius: 22px; }
     QFrame#hoja[modo="soltar"] { border: 2px dashed rgba(34,196,126,0.95); background: rgba(8, 32, 27, 0.94); }
@@ -549,7 +553,7 @@ def app():
             self._instalando = False
 
             # --- paginas + registro
-            medio = QHBoxLayout()
+            medio = self._medio = QHBoxLayout()
             self.paginas = QStackedWidget()
             medio.addWidget(self.paginas, 1)
             self.registro = QPlainTextEdit(readOnly=True)
@@ -581,6 +585,8 @@ def app():
             self.paginas.currentChanged.connect(self._pagina)
             QTimer.singleShot(0, lambda: self._pagina(self.paginas.currentIndex()))
             self.b_log.toggled.connect(self.registro.setVisible)
+            self.b_log.toggled.connect(self._ancho_registro)
+            self.paginas.currentChanged.connect(self._ancho_registro)
             self.hoja = Hoja(self.cielo)             # «suelta aqui», preguntas y cuenta atras, sobre toda la ventana
 
             pie = QHBoxLayout()
@@ -1671,7 +1677,21 @@ def app():
         def resizeEvent(self, e):
             super().resizeEvent(e)
             if hasattr(self, "boton"):
+                self._ancho_registro()
                 QTimer.singleShot(0, self._acomodar)
+
+        def _ancho_registro(self, *_):
+            """El panel del registro se angosta para no cortar la pagina (ventana chica, pestaña Material). Si ni asi
+            cabe, esa pagina se desplaza de lado en vez de quedar cortada."""
+            pag = self.paginas.currentWidget()
+            scroll = isinstance(pag, QScrollArea)
+            libre = 400
+            if self.b_log.isChecked():
+                pide = pag.widget().minimumSizeHint().width() if scroll else 470
+                libre = self._medio.geometry().width() - pide - max(0, self._medio.spacing())
+                self.registro.setFixedWidth(max(260, min(400, libre)))
+            if scroll:
+                pag.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded if libre < 260 else Qt.ScrollBarAlwaysOff)
 
         def _fin(self, res):
             self.resultado = res or {}

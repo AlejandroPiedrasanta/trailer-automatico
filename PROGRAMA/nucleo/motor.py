@@ -856,6 +856,7 @@ def aplicar_ruido(log, intensidad):
             return None
         p.RefreshLUTList()
         n_tl = n = 0
+        clips = []                                   # (item, ruta del video): primero se juntan, luego se mide lo que falte
         for i in range(1, p.GetTimelineCount() + 1):
             t = p.GetTimelineByIndex(i)
             if t.GetName().startswith(("TRAILER XV", "CC ")):
@@ -863,11 +864,26 @@ def aplicar_ruido(log, intensidad):
             n_tl += 1
             for tr in range(1, t.GetTrackCount("video") + 1):
                 for it in t.GetItemListInTrack("video", tr) or []:
-                    if ruido.es_video(it) and ruido.aplicar_a_item(it, intensidad):
-                        n += 1
+                    if ruido.es_video(it):
+                        clips.append((it, it.GetMediaPoolItem().GetClipProperty("File Path") or ""))
+        medidas = {}
+        if int(intensidad) > 0:                      # cada toma con el nivel que pide SU ruido (el mismo proceso para todas)
+            try:
+                import ruido_tomas
+                medidas = ruido_tomas.medir_varios(sorted({(ruta, None) for _, ruta in clips if ruta}), log)
+            except Exception as ex:
+                log("Aviso: no pude medir el ruido de los videos (%s); van con el nivel normal." % ex)
+        cuenta = {}
+        for it, ruta in clips:
+            medida = medidas.get(os.path.normcase(ruta))
+            if ruido.aplicar_a_item(it, intensidad, medida):
+                n += 1
+                nv = ruido.nivel_para(medida, intensidad)
+                cuenta[nv] = cuenta.get(nv, 0) + 1
         r.GetProjectManager().SaveProject()
-        log("Reduccion de ruido %d (%s) aplicada a %d clips en %d timelines." % (
-            int(intensidad), ruido.nivel(intensidad), n, n_tl))
+        log("Reduccion de ruido %d (%s) aplicada a %d clips en %d timelines: %s." % (
+            int(intensidad), ruido.nivel(intensidad), n, n_tl,
+            ", ".join("%d %s" % (cuenta[k], ruido.NOMBRES[k]) for k in sorted(cuenta)) or "sin clips"))
         return {"tipo": "ruido", "clips": n, "timelines": n_tl}
 
 

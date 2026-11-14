@@ -1489,6 +1489,12 @@ def main():
     except Exception as ex:
         aviso("No se pudo escribir la reduccion de ruido (%s)" % ex)
     reporte["ruido"] = ruido_n
+    ruidos = {}                                  # ruta -> ruido medido (el mismo proceso para cualquier video)
+    try:
+        rt = _modulo("ruido_tomas")
+    except Exception as ex:
+        rt = None
+        aviso("No se pudo cargar el medidor de ruido (%s); todas las tomas van con el nivel normal." % ex)
     objetivos = objetivos_de_luz(items)
     sat_evento = objetivo_de_saturacion(items)
     reporte["luz_objetivo"] = {k: round(v, 3) for k, v in objetivos.items()}
@@ -1575,6 +1581,14 @@ def main():
             aviso("%s: se pidieron %d clips y se colocaron %d." % (nombre, len(secuencia), len(puestos)))
 
         grupo = grupos.get(ver["grupo"])
+        try:                                    # ruido de cada video de esta version (cada video se mide una sola vez)
+            sin_medir = [(p["item"]["ruta"], p["item"].get("dur")) for p, _ in puestos
+                         if p["tipo"] != "foto" and os.path.normcase(p["item"]["ruta"]) not in ruidos]
+            if rt and sin_medir and ruido_n > 0:
+                ruidos.update(rt.medir_varios(sin_medir, print))
+        except Exception as ex:
+            aviso("No se pudo medir el ruido de los videos (%s); van con el nivel normal." % ex)
+        niveles_ruido = {}
         for p, x in puestos:                    # llenar cuadro, color del momento, grupo, ruido e igualacion
             try:                                # fotos 3:2 o videos 4:3 llenan el 16:9 sin franjas negras
                 if not x.SetProperties({"Scaling": resolve.SCALE_FILL}):
@@ -1586,7 +1600,10 @@ def main():
                 if grupo:
                     x.AssignToColorGroup(grupo)
                 if p["tipo"] != "foto":
-                    rd.aplicar_a_item(x, ruido_n)
+                    medida = ruidos.get(os.path.normcase(p["item"]["ruta"]))
+                    if rd.aplicar_a_item(x, ruido_n, medida):
+                        nv = rd.nivel_para(medida, ruido_n)
+                        niveles_ruido[nv] = niveles_ruido.get(nv, 0) + 1
                     if IGUALAR:
                         cdl = cdl_para(p, objetivos.get((p.get("momento") or p["item"].get("momento")), 0.42), sat_evento)
                         if cdl and x.SetCDL(cdl):
@@ -1595,6 +1612,7 @@ def main():
                 pass
         if grupo:
             preparar_grupo(grupo, ver)
+        info["ruido"] = ", ".join("%d %s" % (niveles_ruido[k], rd.NOMBRES[k]) for k in sorted(niveles_ruido))
         info["camara_lenta"] = sum(1 for p, _ in puestos if p.get("lento_ok"))
         info["estabilizados"] = estabilizar(puestos)
         info["transiciones"] = transiciones(tl, pv, zonas, ver)
@@ -1646,6 +1664,8 @@ def main():
                   info.get("camara_lenta", 0), info.get("estabilizados", 0), len(info.get("voces") or [])))
         for v in info.get("voces") or []:
             print("   voz: %s" % v)
+        if info.get("ruido"):
+            print("   ruido quitado segun cada toma: %s" % info["ruido"])
     pm.SaveProject()
 
 

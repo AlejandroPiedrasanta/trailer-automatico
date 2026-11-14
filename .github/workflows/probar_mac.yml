@@ -1,5 +1,9 @@
 # Tráiler automático · CINEMA PRODUCTIONS
-# Prueba en una Mac de GitHub que al instalar el .dmg el programa se abre solo y el Instalador se cierra solo.
+# Prueba en dos Mac de GitHub (chip Apple e Intel) el instalador COMPLETO, como lo recibe la persona:
+#   - al instalar el .dmg el programa se abre solo y el Instalador se cierra solo;
+#   - el instalador lo trae todo (plantillas de DaVinci, musica y SFX, fuentes, looks, ffmpeg);
+#   - con el programa ya instalado, se suelta una carpeta con fotos, videos y dron: la ordena, la organiza y calcula el
+#     plan de las 4 plantillas. En GitHub no hay DaVinci Resolve: el armado dentro de DaVinci no se prueba aqui.
 #   vieja = "1.3.9": compila esa version vieja, la instala y comprueba que el servicio la ACTUALIZA solo a la publicada en
 #   trailer-automatico-releases (sin contrasena y sin perder la musica).
 # Actions > "Probar instalador Mac" > Run workflow. Capturas y registros en "Artifacts".
@@ -13,7 +17,15 @@ on:
         default: ""
 jobs:
   probar:
-    runs-on: macos-15-intel
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - nombre: AppleSilicon
+            runner: macos-15
+          - nombre: Intel
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7
@@ -36,9 +48,12 @@ jobs:
           PROBAR_ACTUALIZACION: ${{ inputs.vieja != '' && '1' || '0' }}
           VIEJA: ${{ inputs.vieja }}
         run: bash PROGRAMA/compilar/mac/probar_instalacion.sh
+      - name: Lo que trae el instalador y soltar una carpeta (programa instalado)
+        if: ${{ !cancelled() }}
+        run: bash PROGRAMA/compilar/mac/probar_flujo.sh
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: prueba-instalador-mac
+          name: prueba-instalador-mac-${{ matrix.nombre }}
           path: prueba/
           retention-days: 3

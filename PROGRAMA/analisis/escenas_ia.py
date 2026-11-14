@@ -24,7 +24,15 @@ import unicodedata
 import rutas
 
 CACHE = os.path.join(rutas.ANALISIS, "escenas.json")
-VERSION = 3               # 2: votos mal oidos ("en la salud...") y sin discursos repetitivos; 3: pasajes de habla
+VERSION = 4               # 2: votos mal oidos ("en la salud...") y sin discursos repetitivos; 3: pasajes de habla;
+#                           4: quien habla en cada pasaje (la transcripcion de Resolve 21 trae el hablante)
+# Las PERSONAS que reconoce Resolve Studio (IntelliSearch con caras): al analizar un clip o una foto deja en su
+# metadato «People» las caras que aparecen ("Rostro 3, Rostro 6"...), las mismas de un archivo a otro. Con eso se
+# sabe quien es la persona festejada (la cara que sale en mas fotos), que tomas no tienen a nadie de frente (el piso,
+# espaldas, detalles) y en cuales sale ella. Cache: datos/analisis/personas.json (clave nombre|tamano).
+PERSONAS = os.path.join(rutas.ANALISIS, "personas.json")
+PROTAS_POR_TIPO = {"boda": 2}       # cuantas personas son "la protagonista" (en una boda, los dos)
+PROTA_MINIMO = 0.08                 # debe salir al menos en esta parte de lo analizado para contar como protagonista
 COLOR_MARCADOR = "Lavender"
 
 # lo que el modelo "oye" en musica o ruido (alucinaciones tipicas de los transcriptores): se descarta
@@ -157,7 +165,7 @@ def pasajes_de(transcripcion, inicio_tc, fps, dur):
         n = len(re.findall(r"\w+", _normal(texto)))
         if b - a < 0.4 or n < 1:
             continue
-        oraciones.append((a, b, n, texto))
+        oraciones.append((a, b, n, texto, str(seg.get("speaker") or "")))
     grupos = []
     for o in oraciones:
         if grupos and o[0] - grupos[-1][-1][1] <= PAUSA_PASAJE:
@@ -187,8 +195,17 @@ def pasajes_de(transcripcion, inicio_tc, fps, dur):
         else:
             tipo = "DISCURSO"
         puntaje = PESO_PASAJE[tipo] * min(1.0, (b - a) / 20.0) ** 0.5 * (0.6 + 0.4 * min(1.0, (fe + emo) / 6.0))
+        # quien habla (lo dice la transcripcion de Resolve): el pasaje es de quien mas habla en el; "pureza" = que
+        # parte del pasaje es suya. Un discurso es de una persona; muchas voces mezcladas es el publico.
+        por_voz = {}
+        for o in g:
+            por_voz[o[4]] = por_voz.get(o[4], 0.0) + (o[1] - o[0])
+        hablante = max(por_voz, key=lambda k: por_voz[k])
+        pureza = por_voz[hablante] / max(0.1, sum(por_voz.values()))
+        if hablante and pureza < 0.55:
+            continue
         out.append({"ini": round(a, 2), "fin": round(b, 2), "texto": texto[:400], "tipo": tipo, "palabras": len(palabras),
-                    "claves": fe + emo, "puntaje": round(puntaje, 3),
+                    "claves": fe + emo, "puntaje": round(puntaje, 3), "hablante": hablante, "pureza": round(pureza, 2),
                     "oraciones": [[round(o[0], 2), round(o[1], 2), o[2]] for o in g]})
     return out
 
@@ -320,6 +337,141 @@ def entender(resolve, project, pares, log=print, transcribir=True):
     if puestos:
         log("  %d frases clave marcadas en el media pool (marcadores lavanda «VOZ»)." % puestos)
     return cache
+
+
+def leer_personas():
+    try:
+        with open(PERSONAS, encoding="utf-8") as f:
+            j = json.load(f)
+        return j if isinstance(j, dict) else {}
+    except Exception:
+        return {}
+
+
+def _guardar_personas(cache):
+    os.makedirs(os.path.dirname(PERSONAS), exist_ok=True)
+    with open(PERSONAS + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False)
+    os.replace(PERSONAS + ".tmp", PERSONAS)
+
+
+HECHOS_INTELLISEARCH = os.path.join(rutas.ANALISIS, "intellisearch.json")   # lo que ya analizo indexar.py en segundo plano
+VIDEOS_LIMITE_S = 600.0             # s que como mucho se dedican a reconocer VIDEOS en un armado (el resto, despues)
+
+
+def _pantalla_despierta(si):
+    """Mientras DaVinci analiza, que no se apague la pantalla ni se suspenda la PC. Con la pantalla apagada Resolve
+    entra en su «modo de suspension» y el analisis se queda parado (visto el 2026-11-14: el respaldo automatico del
+    proyecto se atasco al 7 % detras del cuadro de IntelliSearch y hubo que cerrar DaVinci). Devuelve lo que haya
+    que cerrar despues (el proceso caffeinate en la Mac)."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001 | (0x00000002 if si else 0))
+        elif si and os.uname().sysname == "Darwin":
+            import subprocess
+            return subprocess.Popen(["caffeinate", "-d", "-i", "-w", str(os.getpid())])
+    except Exception:
+        pass
+    return None
+
+
+def reconocer(pares, log=print, limite_s=VIDEOS_LIMITE_S, renderizando=None):
+    """pares: [(MediaPoolItem, item del analisis)] de fotos y videos. Pasa por IntelliSearch con caras (modo rapido)
+    lo que aun no se analizo y lee las personas de cada uno.
+    - Primero las fotos (0,7 s cada una): son las que dicen quien es la persona festejada.
+    - Luego los videos, los CORTOS primero y durante limite_s como mucho: en los cortos es donde se esconden las
+      tomas accidentales, y se clasifican muchos por minuto. Un video largo (la ceremonia entera) tarda minutos y casi
+      seguro trae a la festejada: si no da tiempo, queda sin dato (neutro) y lo analiza despues indexar.py.
+    - Lo que ya analizo indexar.py en segundo plano no se repite: solo se lee.
+    Se guarda cada poco: si se corta, sigue donde iba. Devuelve la cache {clave: [caras]}."""
+    cache = leer_personas()
+    try:
+        with open(HECHOS_INTELLISEARCH, encoding="utf-8") as f:
+            hechos = set(json.load(f))
+    except Exception:
+        hechos = set()
+
+    def personas_de(c):
+        return [x.strip() for x in str(c.GetMetadata("People") or "").split(",") if x.strip()]
+    pendientes = []
+    for c, it in pares:
+        try:
+            k = _clave(it["ruta"])
+        except OSError:
+            continue
+        if k in cache:
+            continue
+        try:
+            ya = personas_de(c)
+        except Exception:
+            ya = []
+        if ya or k in hechos:                    # ya lo analizo alguien: solo se lee
+            cache[k] = ya
+            continue
+        pendientes.append((0 if it["tipo"] == "foto" else 1, float(it.get("dur") or 0), k, c, it))
+    if not pendientes:
+        _guardar_personas(cache)
+        return cache
+    pendientes.sort(key=lambda t: t[:3])
+    n_fotos = sum(1 for p in pendientes if p[0] == 0)
+    log("Reconociendo a las personas con la IA de DaVinci: %d fotos y %d videos (solo la primera vez)…"
+        % (n_fotos, len(pendientes) - n_fotos))
+    t0, t_videos, hechos_n = time.time(), None, 0
+    despierta = _pantalla_despierta(True)
+    try:
+        for n, (es_video, _, k, c, it) in enumerate(pendientes, 1):
+            if es_video and t_videos is None:
+                t_videos = time.time()
+            if renderizando and renderizando():
+                break
+            if es_video and time.time() - t_videos > limite_s:
+                log("  %d videos largos se reconocen después, en segundo plano." % (len(pendientes) - n + 1))
+                break
+            try:
+                if not c.AnalyzeForIntellisearch(True, False):
+                    continue
+                cache[k] = personas_de(c)
+                hechos_n += 1
+            except Exception as ex:
+                log("  %s: no se pudo reconocer (%s)" % (it["nombre"], ex))
+            if n % 25 == 0:
+                _guardar_personas(cache)
+                log("  %d/%d reconocidos (%.0f s)" % (n, len(pendientes), time.time() - t0))
+    finally:
+        _guardar_personas(cache)
+        _pantalla_despierta(False)
+        if despierta is not None:
+            try:
+                despierta.terminate()
+            except Exception:
+                pass
+    log("  personas reconocidas en %d archivos (%.0f s)." % (hechos_n, time.time() - t0))
+    return cache
+
+
+def aplicar_personas(items, cache=None, tipo="xv"):
+    """Pega las personas a los items: it['caras'] = [...] (None si aun no se analizo) e it['prota'] (sale la persona
+    festejada). La protagonista es la cara que sale en mas fotos y videos (en una boda, las dos primeras).
+    Devuelve (protagonistas, huella): la huella cambia cuando cambia lo que se sabe (para volver a planificar)."""
+    cache = leer_personas() if cache is None else cache
+    cuenta, analizados = {}, 0
+    for it in items:
+        try:
+            caras = cache.get(_clave(it["ruta"]))
+        except OSError:
+            caras = None
+        it["caras"] = caras
+        if caras is None:
+            continue
+        analizados += 1
+        for c in set(caras):
+            cuenta[c] = cuenta.get(c, 0) + 1
+    orden = sorted(cuenta, key=lambda c: -cuenta[c])
+    protas = [c for c in orden[:PROTAS_POR_TIPO.get(tipo, 1)] if cuenta[c] >= max(3, PROTA_MINIMO * analizados)]
+    for it in items:
+        it["prota"] = None if it.get("caras") is None else any(c in protas for c in it["caras"])
+    return protas, (analizados, tuple(protas))
 
 
 def aplicar(items, cache=None):

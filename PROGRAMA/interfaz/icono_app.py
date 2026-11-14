@@ -29,13 +29,41 @@ def _fuente():
         return None
 
 
+CHICO, MEDIANO = 24, 48        # hasta CHICO px: version simplificada; hasta MEDIANO: la imagen, afilada
+
+
 def dibujar(t):
+    """El icono a t x t. La imagen de la persona es muy detallada: a 16-24 px (barra de tareas, pestanas, lista de
+    programas) se volvia una mancha borrosa. En esos tamanos va la version simplificada (el mismo cuadro morado con
+    borde neon y el play dorado, que si se lee); de 25 a 48 px, la imagen con mascara de enfoque; mas grande, tal cual."""
     f = _fuente()
-    if f:
+    if f and t > CHICO:
         img = _desde_imagen(f, t)
         if img is not None:
-            return img
+            return _afilar(img, 1.1) if t <= MEDIANO else img
     return _vectorial(t)
+
+
+def _afilar(img, cuanto):
+    """Mascara de enfoque 3 x 3 (solo para iconos chicos: recorre pixel a pixel)."""
+    w, h = img.width(), img.height()
+    src = [[img.pixelColor(x, y) for x in range(w)] for y in range(h)]
+    out = QImage(img)
+    for y in range(h):
+        for x in range(w):
+            c = src[y][x]
+            if c.alpha() == 0:
+                continue
+            r = g = b = 0
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    v = src[min(h - 1, max(0, y + dy))][min(w - 1, max(0, x + dx))]
+                    r += v.red()
+                    g += v.green()
+                    b += v.blue()
+            out.setPixelColor(x, y, QColor(*[int(max(0, min(255, a + cuanto * (a - m / 9.0))))
+                                             for a, m in ((c.red(), r), (c.green(), g), (c.blue(), b))], c.alpha()))
+    return out
 
 
 # ------------------------------------------------------------------ con la imagen de la persona

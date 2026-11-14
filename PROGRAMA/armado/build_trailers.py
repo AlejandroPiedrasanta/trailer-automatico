@@ -66,6 +66,11 @@ LENTO_PARTE_ZONA = 0.45       # como mucho esta parte de las camaras lentas en u
 # plano de video en camara lenta (Planificador.heroe). Antes caia el plano que tocara (espaldas bailando).
 FINAL_ANTES_S = 1.5           # s antes del marcador CIERRE en que entra el plano final
 FINAL_VEL = 0.5               # velocidad del plano final (Speed Warp de Resolve inventa los cuadros que faltan)
+# Las PERSONAS que reconoce DaVinci (escenas_ia.reconocer -> it["caras"], it["prota"]): cuanto pesa en el puntaje de
+# un video que salga la persona festejada, que salga alguien de frente o que no salga nadie (el piso, espaldas,
+# detalles sueltos). El dron no cuenta: ahi nunca hay caras.
+PESO_PROTA, PESO_SIN_CARAS = 1.25, 0.72
+ACCIDENTAL_SIN_CARAS = 0.35   # un video sin ninguna cara es accidental si sirve menos de esta parte (con caras: 0,15)
 UMBRAL_PLANO = 0.20           # puntaje minimo de un tramo para entrar; por debajo se rellena (dron, fotos) o se
 #                               repite uno bueno, antes que meter una toma floja
 VOCES = {"1min": 1, "3min": 2, "15min": 6, "30min": 14}      # pasajes de voz original (pastor, brindis, discursos)
@@ -254,7 +259,8 @@ class Planificador:
         self._firmas = {}
         self._refs = self._enfoque_tipico(self.vids)
         # videos grabados por accidente (camara colgando, desenfocada, apuntando al piso): no entran al montaje
-        accidentes = [v for v in self.vids if (v.get("vista") or {}).get("nit") and self.parte_buena(v) < VIDEO_ACCIDENTAL]
+        accidentes = [v for v in self.vids if (v.get("vista") or {}).get("nit") and self.parte_buena(v) < (
+            ACCIDENTAL_SIN_CARAS if v["tipo"] == "video" and v.get("caras") == [] else VIDEO_ACCIDENTAL)]
         self.accidentales = []
         if accidentes and len(accidentes) < len(self.vids):
             self.accidentales = [v["nombre"] for v in accidentes]
@@ -399,8 +405,20 @@ class Planificador:
         cal = v.get("calidad") or []
         emo = self.emocion(v)
         _, factor = self.vista(v)
-        return [c * (factor[i] if i < len(factor) else 1.0) * (0.85 + 0.35 * (emo[i] if i < len(emo) else 0.0))
+        gente = self.gente(v)
+        return [c * gente * (factor[i] if i < len(factor) else 1.0) * (0.85 + 0.35 * (emo[i] if i < len(emo) else 0.0))
                 for i, c in enumerate(cal)]
+
+    @staticmethod
+    def gente(v):
+        """Cuanto vale un video por QUIEN sale (lo que reconocio DaVinci): mas si sale la persona festejada, menos si
+        no sale nadie de frente. Sin analizar todavia (None) o dron: no cambia."""
+        caras = v.get("caras")
+        if caras is None or v["tipo"] == "dron":
+            return 1.0
+        if v.get("prota"):
+            return PESO_PROTA
+        return 1.0 if caras else PESO_SIN_CARAS
 
     def emocion(self, v):
         """0-1 por medio segundo: el audio sube sobre lo normal del video (aplausos, gritos) y los momentos clave que
@@ -475,6 +493,9 @@ class Planificador:
                 and 0.22 <= f.get("brillo", 0.5) <= 0.62]
         tarde = [f for f in cand if f.get("momento") in ("IGLESIA", "FIESTA")]
         cand = tarde or cand
+        # con la persona festejada y poca gente (un retrato suyo, no una foto de grupo); si no hay, donde salga
+        retratos = [f for f in cand if f.get("prota") and len(f.get("caras") or []) <= 3]
+        cand = retratos or [f for f in cand if f.get("prota")] or cand
         if not cand:
             return None
         f = max(cand, key=lambda x: x["nitidez"])
@@ -487,8 +508,9 @@ class Planificador:
         lenta. De la ceremonia o la fiesta, no de dron. Devuelve la pieza o None."""
         l = dur_f / float(self.fps) * vel               # en lento se gasta menos toma de la que se ve
         mejor = None
+        hay_prota = any(v.get("prota") for v in self.vids)
         for v in self.vids:
-            if v["tipo"] != "video" or not (v.get("vista") or {}).get("nit"):
+            if v["tipo"] != "video" or not (v.get("vista") or {}).get("nit") or (hay_prota and not v.get("prota")):
                 continue
             tem, pan = v.get("temblor") or [], (v.get("vista") or {}).get("pan") or []
             for a, b in self.utiles(v, ("IGLESIA", "FIESTA")):
@@ -533,6 +555,9 @@ class Planificador:
     def intro(self, k):
         n = len(INTRO_CORTES)
         cand = [f for f in self.fotos if f.get("brillo", 0.5) >= BRILLO_MIN_INTRO] or self.fotos
+        con_ella = [f for f in cand if f.get("prota")]           # la intro es de la persona festejada
+        if len(con_ella) >= 2 * n:
+            cand = con_ella
         nit = sorted(f["nitidez"] for f in cand if f.get("nitidez") is not None)
         if len(nit) > 3 * n:                        # fuera las movidas o desenfocadas (el 30 % menos nitido)
             corte = nit[int(len(nit) * 0.3)]
@@ -675,8 +700,11 @@ class Planificador:
         cand = [f for f in self.fotos if f["ruta"] not in self.fotos_usadas
                 and (not momentos or f.get("momento") in momentos)
                 and f.get("quemado", 0.0) < 0.12 and f.get("brillo", 0.5) >= BRILLO_MIN_INTRO]
-        nit = sorted(f["nitidez"] for f in cand if f.get("nitidez") is not None)
         pedidas = sum(len(t) for t in tramos)
+        con_gente = [f for f in cand if f.get("caras")]          # fotos con alguien de frente antes que detalles
+        if len(con_gente) >= pedidas:
+            cand = con_gente
+        nit = sorted(f["nitidez"] for f in cand if f.get("nitidez") is not None)
         if len(nit) > 2 * pedidas:               # sobran: fuera el 30 % menos nitido
             corte = nit[int(len(nit) * 0.3)]
             cand = [f for f in cand if f.get("nitidez") is None or f["nitidez"] >= corte]
@@ -1263,6 +1291,14 @@ def elegir_voces(items, sufijo, zonas, fps, excluir=()):
         return []
     lo, hi = VOZ_LARGO.get(sufijo, (4.0, 9.0))
     de_zona = {z[0]: z for z in zonas}
+    # quien habla (lo dice la transcripcion de DaVinci): el pastor, quien brinda o da el discurso hablan MUCHO a lo
+    # largo del evento; una voz que aparece una sola vez unos segundos es alguien del publico
+    habla = {}
+    for it in items:
+        for pa in it.get("pasajes") or []:
+            if pa.get("hablante"):
+                habla[pa["hablante"]] = habla.get(pa["hablante"], 0.0) + (pa["fin"] - pa["ini"])
+    mas_habla = max(habla.values()) if habla else 0.0
     cand = []
     for it in items:
         if it["tipo"] != "video" or it.get("descartar") or it["nombre"] in excluir:
@@ -1274,9 +1310,10 @@ def elegir_voces(items, sufijo, zonas, fps, excluir=()):
             if mom == "FIESTA" and pa["tipo"] == "DISCURSO" and pa.get("claves", 0) < 2:
                 continue                         # en la fiesta suena musica con letra: eso no es un discurso
             trozos = sorted(_trozos(pa, lo, hi), key=lambda t: -(t[2] / max(0.1, t[1] - t[0])))
+            voz = 0.7 + 0.3 * (habla.get(pa.get("hablante"), 0.0) / mas_habla if mas_habla > 0 else 1.0)
             for k, (a, b, pal) in enumerate(trozos):
                 ritmo = min(1.0, pal / max(0.1, b - a) / 2.5)          # habla clara y seguida
-                cand.append((pa["puntaje"] * (0.6 + 0.4 * ritmo) * (0.85 ** k), it, pa, a, b, mom))
+                cand.append((pa["puntaje"] * voz * (0.6 + 0.4 * ritmo) * (0.85 ** k), it, pa, a, b, mom))
         if TIPO_EVENTO == "boda" and not it.get("pasajes") and it.get("momento") == "IGLESIA" and "IGLESIA" in de_zona:
             for fr in it.get("frases") or []:    # boda sin pasajes: los votos y "los declaro" (frases cortas)
                 if fr["tipo"] in TIPOS_VOZ and 1.2 <= fr["fin"] - fr["ini"] <= 9.0:
@@ -2267,6 +2304,7 @@ def main():
     # ---------- plan (con lo que Resolve entendio de cada escena: votos, brindis, el beso...) ----------
     ia = _modulo("escenas_ia")
     ia.aplicar(items)                            # lo ya escuchado en otros armados (cache)
+    protas, huella_personas = ia.aplicar_personas(items, None, TIPO_EVENTO)   # y las personas ya reconocidas
 
     def planificar():
         reporte["versiones"] = []
@@ -2382,16 +2420,37 @@ def main():
     reporte["luz_objetivo"] = {k: round(v, 3) for k, v in objetivos.items()}
     pool = organizar_pool(mp, root, evento, items)
     print("Media pool: %d archivos en carpetas MAQUILLAJE / IGLESIA / FIESTA con colores" % len(pool))
+    otra_vez = False
+    try:                                         # la IA de Resolve reconoce a las personas (IntelliSearch con caras)
+        pares_p = [(pool[os.path.normcase(i["ruta"])], i) for i in items
+                   if not i.get("descartar") and os.path.normcase(i["ruta"]) in pool]
+        cache_p = ia.reconocer(pares_p, print, renderizando=project.IsRenderingInProgress)
+        protas, huella = ia.aplicar_personas(items, cache_p, TIPO_EVENTO)
+        otra_vez = huella != huella_personas
+        vid = [i for i in items if i["tipo"] == "video" and i.get("caras") is not None]
+        fot = [i for i in items if i["tipo"] == "foto" and i.get("caras") is not None]
+        reporte["personas"] = {"protagonistas": len(protas), "videos_con_ella": sum(1 for i in vid if i.get("prota")),
+                               "videos_sin_caras": sum(1 for i in vid if not i["caras"]),
+                               "fotos_con_ella": sum(1 for i in fot if i.get("prota"))}
+        if protas:
+            print("Personas (IA de DaVinci): la persona festejada sale en %d fotos y %d videos; %d videos sin nadie de frente."
+                  % (reporte["personas"]["fotos_con_ella"], reporte["personas"]["videos_con_ella"],
+                     reporte["personas"]["videos_sin_caras"]))
+    except Exception as ex:
+        aviso("No se pudo reconocer a las personas con la IA de DaVinci (%s)" % ex)
     try:                                         # la IA de Resolve escucha los videos: votos, brindis, discursos
         pares = [(pool[os.path.normcase(i["ruta"])], i) for i in items
                  if i["tipo"] == "video" and i.get("audio_pista", True) and not i.get("descartar")
                  and os.path.normcase(i["ruta"]) in pool]
         antes = ia.aplicar(items)
         cache_ia = ia.entender(resolve, project, pares, print)
-        if ia.aplicar(items, cache_ia) != antes:
+        if ia.aplicar(items, cache_ia) != antes or otra_vez:
+            otra_vez = False
             plan, planes = planificar()          # con las frases nuevas el plan cambia
     except Exception as ex:
         aviso("No se pudo escuchar los videos con la IA de DaVinci (%s)" % ex)
+    if otra_vez:                                 # personas nuevas y la escucha fallo: igual se vuelve a planificar
+        plan, planes = planificar()
     whoosh = buscar_clip(root, WHOOSH)
     png = png_texto(mp, root)
     try:

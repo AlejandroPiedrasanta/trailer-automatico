@@ -66,7 +66,7 @@
  },
  {
   "id": "ventana",
-  "resumen": "Ventana sin marco: pestanas Material/Textos/Ajustes, bordes, chequeo de arranque, instancia unica",
+  "resumen": "Ventana sin marco: portada al instante, pestanas Material/Textos/Ajustes (voz original, verticales, ruido), chequeo de arranque, instancia unica",
   "claves": [
    "interfaz",
    "ui",
@@ -76,7 +76,8 @@
    "qss",
    "pyside6",
    "portada",
-   "voz original"
+   "voz original",
+   "verticales"
   ],
   "archivos": [
    "PROGRAMA/interfaz/trailer_xv.py"
@@ -89,13 +90,15 @@
    "_pagina_ajustes",
    "eventFilter",
    "_fin_chequeo",
-   "Cielo"
+   "Cielo",
+   "_portada_nativa"
   ],
   "notas": [
    "QSS: un QPushButton sin borde o con radio > alto/2 sale cuadrado: border 1px solid transparent.",
    "Pruebas de la ventana: motor simulado (armar_todo falso) + grab() a PNG en el scratchpad.",
    "Portada (QSplashScreen) al instante mientras se construye la ventana (~1,5 s).",
-   "Ajustes > Voz original: un interruptor por version corta (1, 3 y 15 min); en 30 min va siempre."
+   "Ajustes > Voz original: un interruptor por version corta (1, 3 y 15 min); en 30 min va siempre.",
+   "Ajustes > videos verticales (ch_vert -> motor.armar(verticales=))."
   ]
  },
  {
@@ -227,7 +230,7 @@
  },
  {
   "id": "analisis",
-  "resumen": "Analisis del material: relojes por camara (UTC, fecha mala), contenido, calidad/color/audio en 1 lectura, tramos",
+  "resumen": "Analisis del material: relojes por camara, contenido, calidad/color/audio y la 'vista' absoluta de cada medio segundo (enfoque, quemado, torcida, barrido) en 1 lectura",
   "claves": [
    "analizar",
    "exif",
@@ -318,7 +321,7 @@
  },
  {
   "id": "armado",
-  "resumen": "Armado de cada version: duplicar plantilla, planificar planos, zonas por marcador, cortes al ritmo",
+  "resumen": "Armado de cada version: duplicar plantilla, planificar planos (tomas malas fuera, relleno con dron/fotos, final con foto), zonas por marcador, cortes al ritmo, camara lenta",
   "claves": [
    "build",
    "plantilla",
@@ -334,7 +337,11 @@
    "accidental",
    "piso",
    "conformar",
-   "fluido"
+   "fluido",
+   "final",
+   "cierre",
+   "heroe",
+   "camara lenta"
   ],
   "archivos": [
    "PROGRAMA/armado/build_trailers.py"
@@ -357,7 +364,11 @@
    "_rellenar_dron",
    "_parecidas",
    "separar",
-   "zona"
+   "zona",
+   "foto_final",
+   "heroe",
+   "marcar_efectos",
+   "marcar_acercados"
   ],
   "notas": [
    "zonas_de: si el marcador ACTO esta a menos de 5 s, el momento empieza en el cambio de cancion.",
@@ -367,7 +378,9 @@
    "Variedad: tope del 22 % de una zona para un mismo encuadre (videos del tripode agrupados por firma de 3 huellas) y 15 % de dron.",
    "Relleno si no alcanzan las tomas buenas: dron libre, fotos del momento (solo 30 min, con zoom dinamico y encadenado) y al final repetir.",
    "30 c/s en linea de 24: los planos van al 80 % (CONFORMAR_30_A_24) para ver todos los cuadros; los sincronizados con voz, al 100 %.",
-   "transiciones(): encadenado corto entre dos planos casi iguales (no en la apertura) y al entrar/salir de una foto de relleno."
+   "transiciones(): encadenado corto entre dos planos casi iguales (no en la apertura) y al entrar/salir de una foto de relleno.",
+   "FINAL: desde 1,5 s antes del marcador CIERRE va una sola imagen: la mejor foto de la festejada (retrato, la mas nitida) con zoom dinamico y la tarjeta final en el tercio inferior; si no hay foto, el mejor plano en camara lenta (heroe).",
+   "Camaras lentas: 3/6/12/18 por version, solo en tomas firmes, como mucho el 45 % en un mismo momento; UMBRAL_PLANO descarta tramos flojos."
   ]
  },
  {
@@ -396,7 +409,7 @@
  },
  {
   "id": "color",
-  "resumen": "Color por plano (exposicion, negros, blancos, saturacion medida), grupos PRE/POST y reduccion de ruido",
+  "resumen": "Color por plano (exposicion, negros, blancos; la saturacion nunca sube de la de camara), grupos PRE/POST, looks _REC709 y reduccion de ruido",
   "claves": [
    "color",
    "cdl",
@@ -445,7 +458,7 @@
  },
  {
   "id": "textos",
-  "resumen": "Titulos Fusion (script + subtitulo + velo), capitulos, frases y gracias (PNG transparente en V3)",
+  "resumen": "Titulos Fusion (script + subtitulo + velo), capitulos, frases, gracias y tarjeta final abajo (PNG transparente en V3); velo bajo los titulos de la plantilla",
   "claves": [
    "titulos",
    "textos",
@@ -453,7 +466,9 @@
    "capitulo",
    "frase",
    "velo",
-   "fuentes"
+   "fuentes",
+   "legibilidad",
+   "tarjeta final"
   ],
   "archivos": [
    "PROGRAMA/armado/build_trailers.py",
@@ -465,16 +480,20 @@
    "textos_plantilla",
    "textos_extra",
    "nuevo_texto",
-   "png_texto"
+   "png_texto",
+   "velos_plantilla",
+   "legibilidad_plantilla"
   ],
   "notas": [
    "NUNCA InsertFusionTitleIntoTimeline: inserta en V1 con ripple. Textos nuevos = PNG transparente + AddFusionComp.",
-   "Nunca la herramienta Shadow de Fusion (pidio 47 GB y tumbo Resolve): sombreado de Text+ (elementos 3 y 5)."
+   "Nunca la herramienta Shadow de Fusion (pidio 47 GB y tumbo Resolve): sombreado de Text+ (elementos 3 y 5).",
+   "Los titulos propios de la plantilla son macros (mWedding, MultiText): no se pueden redisenar; velos_plantilla pone un velo oscuro en la pista TEXTOS (debajo de ellos) mientras estan en pantalla.",
+   "disenar_titulo(abajo=True): la tarjeta final en el tercio inferior. Frases 0,088 de tamano y velo 0,55."
   ]
  },
  {
   "id": "sonido",
-  "resumen": "SFX por momento (campanas, petalos, entrada, chispa, vitores), whoosh, ritmo y mezcla medida en LUFS",
+  "resumen": "SFX por momento, SFX propios en los momentos clave, whoosh, cambio de cancion sin huecos, musica bajo la voz en rampa y mezcla medida en LUFS",
   "claves": [
    "sfx",
    "sonido",
@@ -487,13 +506,19 @@
    "cruce",
    "fundido",
    "voz",
-   "rampa"
+   "rampa",
+   "golpe",
+   "subida",
+   "destellos",
+   "obturador",
+   "momentos"
   ],
   "archivos": [
    "PROGRAMA/armado/sfx.py",
    "PROGRAMA/armado/mezcla.py",
    "PROGRAMA/analisis/ritmo.py",
-   "PROGRAMA/armado/build_trailers.py"
+   "PROGRAMA/armado/build_trailers.py",
+   "PROGRAMA/herramientas/hacer_sfx.py"
   ],
   "simbolos": [
    "sonorizar",
@@ -506,29 +531,34 @@
    "poner_voces",
    "pulir_voz",
    "_final_de_cancion",
-   "_mover_cancion"
+   "_mover_cancion",
+   "momentos",
+   "sfx_propios"
   ],
   "notas": [
    "Sin librosa en el .exe: ritmo de las canciones de plantilla en recursos/ritmo_plantillas.json.",
    "Musica bajo la voz SIN escalon: el tramo bajo va en la pista «MUSICA BAJA (voz)» con la misma cancion en fase y fundidos de 14 cuadros (la suma es una rampa).",
    "VOZ a -10 LUFS medido en crudo: el aislamiento le quita el ambiente y con -15 quedaba 6 dB bajo la musica.",
-   "Cambio de cancion (cruces_de_musica mide el sonido con ffmpeg): si la que sale sigue sonando, se alarga 2,5 s y se apaga en 4 s; si se ACABA antes (huecos casi en silencio), se retrasa entera para terminar donde entra la otra, de la ultima a la primera: la primera se alarga y la musica de fiesta no se mueve de su marcador."
+   "Cambio de cancion (cruces_de_musica mide el sonido con ffmpeg): si la que sale sigue sonando, se alarga 2,5 s y se apaga en 4 s; si se ACABA antes (huecos casi en silencio), se retrasa entera para terminar donde entra la otra, de la ultima a la primera: la primera se alarga y la musica de fiesta no se mueve de su marcador.",
+   "SFX PROPIOS (recursos/sfx/XV_*.wav, los crea herramientas/hacer_sfx.py con numeros, sin licencias): golpe y subida a la entrada de la fiesta (marcador ACTO ... FIESTA), destellos en el titulo y el final, paso en capitulos, obturador en las fotos de la intro. Pista «SFX MOMENTOS»."
   ]
  },
  {
   "id": "entrega",
-  "resumen": "Render de la cola, audio a -14 LUFS con limitador, medicion de saturacion/luz del video final",
+  "resumen": "Render de la cola (solo las versiones pedidas), audio a -14 LUFS con limitador, medicion del video final y revisar_video.py",
   "claves": [
    "render",
    "masterizar",
    "loudnorm",
    "entrega",
    "mov",
-   "h265"
+   "h265",
+   "revisar"
   ],
   "archivos": [
    "PROGRAMA/entrega/renderizar.py",
-   "PROGRAMA/entrega/masterizar.py"
+   "PROGRAMA/entrega/masterizar.py",
+   "PROGRAMA/herramientas/revisar_video.py"
   ],
   "simbolos": [
    "renderizar",
@@ -537,7 +567,8 @@
    "medir"
   ],
   "notas": [
-   "renderizar(solo=[...]): solo esas versiones; las demas que sigan en la cola no se vuelven a renderizar."
+   "renderizar(solo=[...]): solo esas versiones; las demas que sigan en la cola no se vuelven a renderizar.",
+   "herramientas/revisar_video.py (hoja | cuadros | audio): revisar un video terminado sin verlo entero."
   ]
  },
  {
@@ -564,7 +595,7 @@
  },
  {
   "id": "instalador",
-  "resumen": "Instalador .exe como el de CineCaptions: banner animado (astrolabio), PASOS, % y barra; PyInstaller + C#",
+  "resumen": "Instalador .exe de 1 MB + .dat (abre al instante) como el de CineCaptions: banner animado, PASOS, % y barra; PyInstaller + C#; icono",
   "claves": [
    "exe",
    "instalador",
@@ -575,7 +606,8 @@
    "desinstalar",
    "dat",
    "instante",
-   "antivirus"
+   "antivirus",
+   "icono"
   ],
   "archivos": [
    "PROGRAMA/compilar/icono/icono.py",
@@ -607,7 +639,8 @@
    "C# 5 (csc de .NET 4): sin $\"\" ni ?. ; la ventana se escala a mano por DPI (E()). Doble clic = instala solo; /desinstalar espera el boton.",
    "Icono: la imagen EXACTA de la persona (recursos/icono_fuente.png, sin fondo con: python PROGRAMA/compilar/icono/icono.py limpiar <imagen>). icono_app.dibujar la escala; sin ese archivo dibuja la version vectorial.",
    "El instalador son DOS archivos: el .exe (1 MB, abre al instante) y el .dat de al lado (el programa). Con todo en un .exe de 560 MB el antivirus lo revisaba entero antes de arrancar (8 s sin ver nada). La actualizacion publica sigue siendo un solo .exe.",
-   "Sin autoprueba en el instalador ni espera al terminar: abre el programa y se queda hasta que su ventana se ve."
+   "Sin autoprueba en el instalador ni espera al terminar: abre el programa y se queda hasta que su ventana se ve.",
+   "Icono: hasta 24 px va la version simplificada (la imagen detallada se volvia una mancha); 25-48 px afilada."
   ]
  },
  {
@@ -676,7 +709,7 @@
  },
  {
   "id": "ia-resolve",
-  "resumen": "IA de Resolve Studio: escuchar votos/brindis (transcripcion + clasificacion), voz sobre la musica, camara lenta Speed Warp, estabilizar, IntelliSearch al final",
+  "resumen": "IA de Resolve Studio: personas (IntelliSearch con caras -> quien es la festejada), quien habla y pasajes de voz (transcripcion), Speed Warp, estabilizar, Smart Reframe",
   "claves": [
    "ia",
    "intellisearch",
@@ -693,7 +726,15 @@
    "pasajes",
    "pastor",
    "discurso",
-   "voz original"
+   "voz original",
+   "personas",
+   "caras",
+   "protagonista",
+   "festejada",
+   "hablante",
+   "people",
+   "smart reframe",
+   "verticales"
   ],
   "archivos": [
    "PROGRAMA/analisis/escenas_ia.py",
@@ -719,7 +760,11 @@
    "tipo_de",
    "pasajes_de",
    "ubicar_voces",
-   "voz_activa"
+   "voz_activa",
+   "reconocer",
+   "aplicar_personas",
+   "gente",
+   "reencuadrar"
   ],
   "notas": [
    "TranscribeAudio y PerformAudioClassification devuelven False si Resolve no esta en la pagina MEDIOS (entender la abre y vuelve).",
@@ -730,7 +775,11 @@
    "Voz sobre la musica: SOLO VOTOS/DECLARACION de la IGLESIA (TIPOS_VOZ), en la pista VOZ NATURAL de la plantilla. Pedido de la persona: nada de audios random.",
    "Voz original = PASAJES: oraciones seguidas (pausa <= 1,6 s) de >= 5 s y >= 12 palabras a ritmo de habla: pastor, brindis, discursos. Nada de frases sueltas; en la fiesta un DISCURSO necesita palabras de discurso (si no, es la letra de una cancion).",
    "Por version: siempre en 30 min, activada en 15, a elegir en 1 y 3 (Ajustes > Voz original -> VOZ). Cada voz entra en un corte y, si la imagen sirve, ese plano es quien habla, sincronizado.",
-   "Pulido por clip: AudioVoiceIsolation 70 + AudioDialogueLeveler (propiedades del TimelineItem, solo en la timeline activa)."
+   "Pulido por clip: AudioVoiceIsolation 70 + AudioDialogueLeveler (propiedades del TimelineItem, solo en la timeline activa).",
+   "PERSONAS: MediaPoolItem.AnalyzeForIntellisearch(True, False) deja en el metadato «People» las caras del clip o la foto («Rostro 3, Rostro 6», las mismas entre archivos). escenas_ia.reconocer las guarda (datos/analisis/personas.json); la protagonista es la cara que sale en mas archivos. 0,7 s por foto y ~1 s por cada 5 de video, una vez por evento.",
+   "El plan las usa: video con la festejada x1,25, sin ninguna cara x0,72 (y accidental si sirve < 35 %); intro, relleno y foto final con ella. Un video grabado por accidente sale sin caras.",
+   "HABLANTE: cada segmento de GetTranscription trae «speaker». Un pasaje es de quien mas habla en el (pureza >= 0,55) y pesa mas quien mas habla en todo el evento (el pastor), no una voz suelta.",
+   "Smart Reframe (TimelineItem.SmartReframe) para los videos verticales cuando Ajustes los activa."
   ]
  },
  {

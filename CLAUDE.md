@@ -20,23 +20,23 @@
 <!-- MAPA:INICIO (lo escribe PROGRAMA/herramientas/mapa_codigo.py generar) -->
 - **boton-play**: El boton GO hace todo: analizar, armar en DaVinci, renderizar, masterizar, abrir carpeta
 - **inicio-escena**: Pantalla de Inicio = la de CineCaptions: esfera de particulas, astrolabio GO, cometas, explosion
-- **ventana**: Ventana sin marco: pestanas Material/Textos/Ajustes, bordes, chequeo de arranque, instancia unica
+- **ventana**: Ventana sin marco: portada al instante, pestanas Material/Textos/Ajustes (voz original, verticales, ruido), chequeo de arranque, instancia unica
 - **material**: 1 MATERIAL: minimos, pedir lo que falta, arrastrar/agregar, y el panel 'Como quedo organizado' (linea del dia)
 - **soltar**: Suelta la carpeta y listo: examinar, evento nuevo (ANTERIORES), copiar con avance, ordenar FOTOS/VIDEOS/DRON, armar solo; plan previo sin DaVinci y prueba de arrastre
 - **rutas**: Todas las rutas: codigo vs instalado (.exe), DATOS, carpeta de trabajo, Resolve y LUT por sistema, ffmpeg
-- **analisis**: Analisis del material: relojes por camara (UTC, fecha mala), contenido, calidad/color/audio en 1 lectura, tramos
+- **analisis**: Analisis del material: relojes por camara, contenido, calidad/color/audio y la 'vista' absoluta de cada medio segundo (enfoque, quemado, torcida, barrido) en 1 lectura
 - **resolve**: Conexion con DaVinci: abrir, cargar/importar proyecto, cuadros que bloquean, reenlazar medios
-- **armado**: Armado de cada version: duplicar plantilla, planificar planos, zonas por marcador, cortes al ritmo
+- **armado**: Armado de cada version: duplicar plantilla, planificar planos (tomas malas fuera, relleno con dron/fotos, final con foto), zonas por marcador, cortes al ritmo, camara lenta
 - **media-pool**: Media pool en carpetas numeradas 01 PLANTILLAS .. 06 EFECTOS, por momento y fuente, con colores
-- **color**: Color por plano (exposicion, negros, blancos, saturacion medida), grupos PRE/POST y reduccion de ruido
-- **textos**: Titulos Fusion (script + subtitulo + velo), capitulos, frases y gracias (PNG transparente en V3)
-- **sonido**: SFX por momento (campanas, petalos, entrada, chispa, vitores), whoosh, ritmo y mezcla medida en LUFS
-- **entrega**: Render de la cola, audio a -14 LUFS con limitador, medicion de saturacion/luz del video final
+- **color**: Color por plano (exposicion, negros, blancos; la saturacion nunca sube de la de camara), grupos PRE/POST, looks _REC709 y reduccion de ruido
+- **textos**: Titulos Fusion (script + subtitulo + velo), capitulos, frases, gracias y tarjeta final abajo (PNG transparente en V3); velo bajo los titulos de la plantilla
+- **sonido**: SFX por momento, SFX propios en los momentos clave, whoosh, cambio de cancion sin huecos, musica bajo la voz en rampa y mezcla medida en LUFS
+- **entrega**: Render de la cola (solo las versiones pedidas), audio a -14 LUFS con limitador, medicion del video final y revisar_video.py
 - **perfiles**: Tipos de evento (xv, boda, bautizo, graduacion, cumpleanos): titulos, capitulos, frases, gracias
-- **instalador**: Instalador .exe como el de CineCaptions: banner animado (astrolabio), PASOS, % y barra; PyInstaller + C#
+- **instalador**: Instalador .exe de 1 MB + .dat (abre al instante) como el de CineCaptions: banner animado, PASOS, % y barra; PyInstaller + C#; icono
 - **mac**: Mac: .dmg de «Arrastralo a Aplicaciones» como CineCaptions (sin .pkg ni contrasena), primer arranque, servicio del usuario; se compila en una Mac o GitHub Actions
 - **registro**: Registro en archivo (registro.log), ganchos de errores, faulthandler; donde mirar cuando algo falla
-- **ia-resolve**: IA de Resolve Studio: escuchar votos/brindis (transcripcion + clasificacion), voz sobre la musica, camara lenta Speed Warp, estabilizar, IntelliSearch al final
+- **ia-resolve**: IA de Resolve Studio: personas (IntelliSearch con caras -> quien es la festejada), quien habla y pasajes de voz (transcripcion), Speed Warp, estabilizar, Smart Reframe
 - **actualizaciones**: Actualizaciones como CineCaptions: version.json firmado en trailer-automatico-releases, descarga con huella, al cerrar o en segundo plano (tarea Windows / servicio Mac)
 <!-- MAPA:FIN -->
 
@@ -49,7 +49,8 @@
   - Los cambios de clips solo funcionan en la timeline activa y ya asentada.
 - **Plantillas:** `TRAILER XV - *` no se tocan; cada evento es un duplicado.
 - **Montaje:**
-  - 8 fotos en la intro. Fotos dentro del video solo como relleno en el de 30 min (cuando no alcanzan las tomas buenas), antes que repetir o meter una toma fea.
+  - 8 fotos en la intro y UNA al final (la mejor de la persona festejada, con la tarjeta final abajo). Fotos dentro del video solo como relleno en el de 30 min (cuando no alcanzan las tomas buenas), antes que repetir o meter una toma fea.
+  - Personas: las reconoce DaVinci (IntelliSearch con caras → `it["caras"]`, `it["prota"]`); la festejada es la cara que sale en más archivos y sus tomas y fotos van primero.
   - Tomas malas fuera: desenfocadas, quemadas, torcidas o al piso (medidas `vista` del analizador, en absoluto).
   - Voz original solo de quien habla de corrido (pastor, brindis, discursos), nunca ruidos ni voces sueltas: siempre en 30 min, activada en 15, a elegir en 1 y 3 (Ajustes › Voz original).
   - Color: la saturación nunca pasa de la de cámara (ni el CDL ni el look la suben).

@@ -451,7 +451,7 @@ class Planificador:
     def marcar_efectos(self, zonas, fps, max_lentos):
         """Despues de cortar al ritmo: camara lenta (Speed Warp de Resolve) en los planos mas emotivos y estabilizador
         en los que tiemblan. Pone p['vel'] (0,4-0,5) y p['estabilizar']."""
-        cand = []
+        cand, con_ella = [], []
         for nombre, _, _, piezas in zonas:
             for p in piezas:
                 if p["tipo"] != "video" or p.get("sincro") or p.get("heroe"):
@@ -462,8 +462,11 @@ class Planificador:
                 # camara lenta donde pasa algo (aplausos, gritos, una frase clave) y la toma esta firme: lento sobre
                 # una toma que tiembla o barre solo alarga el defecto
                 firme = self.media(v.get("temblor") or [], p["ini"], l) <= 2.5
-                if nombre in ("IGLESIA", "FIESTA", "APERTURA") and e >= UMBRAL_LENTO_MIN and l >= LENTO_MIN_S and firme:
-                    cand.append((e, nombre, p))
+                if nombre in ("IGLESIA", "FIESTA", "APERTURA") and l >= LENTO_MIN_S and firme:
+                    if e >= UMBRAL_LENTO_MIN:
+                        cand.append((e, nombre, p))
+                    elif v.get("prota"):         # sin emocion en el audio, pero sale la persona festejada
+                        con_ella.append((self.puntaje(v, p["ini"], l), nombre, p))
         lentos, por_zona = sum(1 for _, _, _, ps in zonas for p in ps if p.get("heroe")), {}
         tope_zona = max(1, int(math.ceil(max_lentos * LENTO_PARTE_ZONA)))
         for umbral in (UMBRAL_LENTO, UMBRAL_LENTO_MIN):          # primero los claros; si faltan, los siguientes
@@ -476,6 +479,16 @@ class Planificador:
                 p["vel"] = 0.4 if vf >= 48 else 0.5      # 60 fps: lento natural; 24-30 fps: Speed Warp inventa cuadros
                 por_zona[nombre] = por_zona.get(nombre, 0) + 1
                 lentos += 1
+        # si el audio no marco bastantes momentos (un evento con musica alta todo el rato), se completa hasta el 70 %
+        # con las mejores tomas firmes donde sale la persona festejada (la reconocio DaVinci)
+        for _, nombre, p in sorted(con_ella, key=lambda t: -t[0]):
+            if lentos >= int(math.ceil(max_lentos * 0.7)):
+                break
+            if p.get("vel") or por_zona.get(nombre, 0) >= tope_zona:
+                continue
+            p["vel"] = 0.4 if (p["item"].get("fps") or 30) >= 48 else 0.5
+            por_zona[nombre] = por_zona.get(nombre, 0) + 1
+            lentos += 1
         for _, _, _, piezas in zonas:
             for p in piezas:
                 if p["tipo"] == "foto" or p["tipo"] == "dron":

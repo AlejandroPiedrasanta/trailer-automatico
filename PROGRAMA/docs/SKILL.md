@@ -112,6 +112,9 @@ Todo corre en local con el programa: `ARMAR TRAILERS.bat` (Windows) o `ARMAR TRA
 - Lecciones:
   - En Windows `os._exit` con hilos de Qt vivos terminaba con 0xC0000005: la prueba sale con `TerminateProcess`.
   - El error completo va al registro; en la ventana solo «No se pudo terminar: …».
+  - Con el registro (☰) abierto, la pestaña Material quedaba cortada a la derecha: `_ancho_registro` angosta el panel (260 a 400 px) según lo que pide la página, y si ni así cabe la página se desplaza de lado.
+  - El plan previo junta los avisos «repiten video» en una sola línea («Con el video que hay, las versiones de … repiten tomas»).
+  - Resultado del 2026-11-13: 24 de 24 en GitHub (6 equipos × código y compilado × una carpeta y evento nuevo), 16 a 27 s cada una.
 
 ## Carpetas (`rutas.py`, igual en Windows y Mac)
 ```

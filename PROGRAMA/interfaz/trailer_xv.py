@@ -1324,6 +1324,9 @@ def app():
             self.chip_evento.hide()
             self.chip_cancelar.show()
             self.copia = Copia(archivos, tipo, examen, anterior)
+            # _fin_copia suelta self.copia cuando el hilo AUN no acaba de salir de run(): si Qt destruye un QThread que
+            # sigue corriendo, cierra el programa sin avisar (paso 1 vez de 4 en la prueba). Aqui queda vivo hasta el final.
+            self._hilos_vivos = [h for h in getattr(self, "_hilos_vivos", []) if h.isRunning()] + [self.copia]
             self.copia.avance.connect(self._avance_copia)
             self.copia.fin.connect(self._fin_copia)
             self.copia.start()

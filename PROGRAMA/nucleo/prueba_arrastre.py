@@ -379,6 +379,11 @@ class Guion:
         fallo = w._ultimo_fallo
         if fallo is None:
             self.ok("armado en DaVinci: %s" % (w.resultado or {}).get("evento"))
+            incompleta = [x for x in w.registro.toPlainText().splitlines() if "se pidieron" in x]
+            if incompleta:                          # p. ej. las fotos de la intro no entraron (secuencia de imagenes)
+                self.falla("la linea quedo incompleta: %s" % incompleta[0][:200])
+            elif self.espera == "armado":
+                self.ok("todos los clips pedidos quedaron en la linea (las fotos de la intro incluidas)")
         elif "DaVinci" in fallo and self.espera != "armado":
             self.ok("sin DaVinci en este equipo, lo dice claro: «%s»" % fallo[:110])
         else:

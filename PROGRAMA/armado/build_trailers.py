@@ -1251,6 +1251,32 @@ def carpeta_raiz(mp, root, clave, crear=True):
     return mp.AddSubFolder(root, CARPETAS_RAIZ.get(clave, clave)) if crear else None
 
 
+def lotes_sin_secuencia(fotos, tam=100):
+    """Resolve junta en UNA «secuencia de imagenes» las fotos con numeros seguidos (IMG_1001.JPG, IMG_1002.JPG...: los
+    nombres que pone la camara) cuando entran en la misma llamada, y entonces ninguna sirve para la intro. Repartidas por
+    la paridad de su ultimo numero nunca van dos seguidas juntas (con saltos de 2 las deja sueltas)."""
+    pares = ([], [])
+    for r in fotos:
+        nums = re.findall(r"\d+", os.path.splitext(os.path.basename(r))[0])
+        pares[int(nums[-1]) % 2 if nums else 0].append(r)
+    return [lote[j:j + tam] for lote in pares for j in range(0, len(lote), tam)]
+
+
+def importar_fotos(mp, dest, faltan):
+    """Importa las fotos como fotos sueltas (ver lotes_sin_secuencia) y, si alguna no quedo (Resolve armo una secuencia
+    de todos modos), la importa sola: de una en una nunca hace secuencia.
+    OJO: aqui no se borra nada del media pool. mp.DeleteClips justo despues de importar cerro DaVinci (2026-11-13: al
+    borrar cambia un instante a la pagina Medios y ahi se cayo); una secuencia vieja se queda, no estorba."""
+    for lote in lotes_sin_secuencia(faltan):
+        mp.SetCurrentFolder(dest)
+        mp.ImportMedia(lote)
+    hay = {os.path.normcase(c.GetClipProperty("File Path") or "") for c in dest.GetClipList() or []}
+    for r in faltan:
+        if os.path.normcase(r) not in hay:
+            mp.SetCurrentFolder(dest)
+            mp.ImportMedia([r])
+
+
 def organizar_pool(mp, root, evento, items):
     """Media pool profesional: 04 FOTOS\\<EVENTO>\\01 MAQUILLAJE ... y 03 VIDEO\\<EVENTO>\\01 MAQUILLAJE\\CAMARA|
     CELULAR|DRON, cada clip con el color de su momento (morado / verde / rosa). Mueve lo ya importado y solo
@@ -1300,9 +1326,12 @@ def organizar_pool(mp, root, evento, items):
                     mp.MoveClips(mover, dest)
                 faltan = [i["ruta"] for i in grupo_sel if os.path.normcase(i["ruta"]) not in existentes]
                 mp.SetCurrentFolder(dest)
-                for j in range(0, len(faltan), 100):
-                    if not mp.ImportMedia(faltan[j:j + 100]):
-                        mp.ImportMedia([{"FilePath": r} for r in faltan[j:j + 100]])
+                if top == "FOTOS":
+                    importar_fotos(mp, dest, faltan)
+                else:
+                    for j in range(0, len(faltan), 100):
+                        if not mp.ImportMedia(faltan[j:j + 100]):
+                            mp.ImportMedia([{"FilePath": r} for r in faltan[j:j + 100]])
                 color = COLORES.get(mom, "Brown")
                 for c in dest.GetClipList() or []:
                     r = c.GetClipProperty("File Path")

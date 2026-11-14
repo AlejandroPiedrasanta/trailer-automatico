@@ -347,9 +347,13 @@
    "organizar_pool",
    "carpeta_raiz",
    "CARPETAS_RAIZ",
-   "buscar_clip"
+   "buscar_clip",
+   "importar_fotos",
+   "lotes_sin_secuencia"
   ],
-  "notas": []
+  "notas": [
+   "Las fotos se importan por lotes sin numeros seguidos (Resolve las junta en una secuencia de imagenes) y en el armado nunca se usa mp.DeleteClips: justo despues de importar cerro DaVinci."
+  ]
  },
  {
   "id": "color",

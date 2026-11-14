@@ -115,6 +115,12 @@ Todo corre en local con el programa: `ARMAR TRAILERS.bat` (Windows) o `ARMAR TRA
   - Con el registro (☰) abierto, la pestaña Material quedaba cortada a la derecha: `_ancho_registro` angosta el panel (260 a 400 px) según lo que pide la página, y si ni así cabe la página se desplaza de lado.
   - El plan previo junta los avisos «repiten video» en una sola línea («Con el video que hay, las versiones de … repiten tomas»).
   - Resultado del 2026-11-13: 24 de 24 en GitHub (6 equipos × código y compilado × una carpeta y evento nuevo), 16 a 27 s cada una.
+  - **Prueba real con DaVinci (2026-11-13, `--con-davinci`)**: armó «BODA 2026-10-17 - 1min» en 75 s con 46 clips, igual que la línea real, y destapó tres cosas:
+    - Resolve junta en UNA «secuencia de imágenes» las fotos con números seguidos (`IMG_1001.JPG`, `IMG_1002.JPG`: los nombres de cámara) si entran en la misma llamada a `ImportMedia`, y la intro quedaba sin fotos («se pidieron 46 clips y se colocaron 38»). `lotes_sin_secuencia` las reparte por la paridad de su último número (con saltos de 2 quedan sueltas) e `importar_fotos` importa sola la que falte. La forma `{"FilePath": patrón, "StartIndex": n, "EndIndex": n}` también las junta.
+    - `mp.DeleteClips` justo después de importar cerró DaVinci (al borrar cambia un instante a la página Medios). En el armado no se borra nada del media pool; una secuencia vieja se queda.
+    - `_fin_copia` soltaba `self.copia` cuando el hilo aún no salía de `run()`: Qt destruye el `QThread` vivo y el programa se cierra sin avisar (1 vez de 4). Ahora queda en `_hilos_vivos` hasta que termina. Regla: un `QThread` se suelta en `finished`, nunca en su propia señal de resultado.
+    - La prueba ahora falla si el registro dice «se pidieron … y se colocaron …».
+    - Después de la prueba se borran la línea y las carpetas «BODA 2026-10-17» del proyecto (con DaVinci en reposo `DeleteTimelines` y `DeleteFolders` funcionan bien).
 
 ## Carpetas (`rutas.py`, igual en Windows y Mac)
 ```

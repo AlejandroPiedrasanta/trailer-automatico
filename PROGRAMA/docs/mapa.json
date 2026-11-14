@@ -390,11 +390,17 @@
    "nivel_para",
    "medir_varios",
    "ruido_de_cuadro",
-   "aplicar_ruido"
+   "aplicar_ruido",
+   "capturar_de_resolve",
+   "capturar_ruido_davinci",
+   "drx_activo",
+   "_guardar_ruido_dv",
+   "aplicar"
   ],
   "notas": [
    "Tomas Rec.709: se tocan poco. Por plano solo empareja (pendiente 0.92-1.12, saturacion 0.90-1.08 hacia la del evento), DCTL casi neutro y look _REC709 a media fuerza (LOOK_REC709). Medir antes de subir margenes.",
-   "Ruido: cada video se mide (ruido_tomas) y recibe un nivel N1..N5 (ruido.py, un DCTL por nivel). El mismo proceso para cualquier toma; la fuerza entera solo en las sombras."
+   "Ruido: cada video se mide (ruido_tomas) y recibe un nivel N1..N5 (ruido.py, un DCTL por nivel). El mismo proceso para cualquier toma; la fuerza entera solo en las sombras.",
+   "Ruido de DaVinci: Ajustes > «Guardar el del clip actual» captura el grado del clip bajo el cursor (datos/ruido_davinci/ruido.drx) y al armar se aplica a todas las tomas con ApplyGradeFromDRX; el DCTL queda transparente (N0)."
   ]
  },
  {

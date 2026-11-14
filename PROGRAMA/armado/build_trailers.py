@@ -1490,6 +1490,9 @@ def main():
         aviso("No se pudo escribir la reduccion de ruido (%s)" % ex)
     reporte["ruido"] = ruido_n
     ruidos = {}                                  # ruta -> ruido medido (el mismo proceso para cualquier video)
+    drx_ruido = rd.drx_activo(ruido_n)           # el ruido de DaVinci que la persona dejo guardado (o None)
+    if drx_ruido:
+        print("Ruido: se usa el ajuste de DaVinci guardado en todas las tomas.")
     try:
         rt = _modulo("ruido_tomas")
     except Exception as ex:
@@ -1584,7 +1587,7 @@ def main():
         try:                                    # ruido de cada video de esta version (cada video se mide una sola vez)
             sin_medir = [(p["item"]["ruta"], p["item"].get("dur")) for p, _ in puestos
                          if p["tipo"] != "foto" and os.path.normcase(p["item"]["ruta"]) not in ruidos]
-            if rt and sin_medir and ruido_n > 0:
+            if rt and sin_medir and ruido_n > 0 and not drx_ruido:
                 ruidos.update(rt.medir_varios(sin_medir, print))
         except Exception as ex:
             aviso("No se pudo medir el ruido de los videos (%s); van con el nivel normal." % ex)
@@ -1601,9 +1604,12 @@ def main():
                     x.AssignToColorGroup(grupo)
                 if p["tipo"] != "foto":
                     medida = ruidos.get(os.path.normcase(p["item"]["ruta"]))
-                    if rd.aplicar_a_item(x, ruido_n, medida):
-                        nv = rd.nivel_para(medida, ruido_n)
+                    nv = rd.aplicar(x, ruido_n, medida, drx_ruido)
+                    if nv is not None:
                         niveles_ruido[nv] = niveles_ruido.get(nv, 0) + 1
+                    if nv == "davinci" and not IGUALAR:  # el grado guardado trae el color del clip donde se capturo
+                        x.SetCDL({"NodeIndex": "1", "Slope": "1.0 1.0 1.0", "Offset": "0.0 0.0 0.0",
+                                  "Power": "1.0 1.0 1.0", "Saturation": "1.0"})
                     if IGUALAR:
                         cdl = cdl_para(p, objetivos.get((p.get("momento") or p["item"].get("momento")), 0.42), sat_evento)
                         if cdl and x.SetCDL(cdl):
@@ -1612,7 +1618,7 @@ def main():
                 pass
         if grupo:
             preparar_grupo(grupo, ver)
-        info["ruido"] = ", ".join("%d %s" % (niveles_ruido[k], rd.NOMBRES[k]) for k in sorted(niveles_ruido))
+        info["ruido"] = rd.resumen(niveles_ruido)
         info["camara_lenta"] = sum(1 for p, _ in puestos if p.get("lento_ok"))
         info["estabilizados"] = estabilizar(puestos)
         info["transiciones"] = transiciones(tl, pv, zonas, ver)

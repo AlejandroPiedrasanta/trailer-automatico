@@ -952,6 +952,44 @@ def app():
             self.c_tipo.currentIndexChanged.connect(self._pintar_evento)
             return w
 
+        def _pintar_ruido_dv(self, info=None):
+            info = info if info is not None else motor.estado_ruido_davinci()
+            if info.get("hay"):
+                vio = ", ".join(info.get("de_ruido") or [])
+                self.l_ruido_dv.setText("Guardado el %s del clip «%s»%s. Se aplica a todas las tomas al armar." % (
+                    info.get("fecha", "?"), info.get("clip", "?"),
+                    " (%s)" % vio if vio else " (ojo: en ese clip no vi reducción de ruido)"))
+            else:
+                self.l_ruido_dv.setText("Sin guardar: las tomas usan el filtro del programa. Para usar el de DaVinci, "
+                                        "déjalo a tu gusto en un clip (página Color) y guárdalo aquí.")
+            self.b_ruido_quitar.setVisible(bool(info.get("hay")))
+
+        def _guardar_ruido_dv(self):
+            if self.trabajo is not None:
+                self._avisar("Espera a que termine el trabajo en curso para guardar el ruido de DaVinci.", "warn")
+                return
+            self.b_ruido_dv.setEnabled(False)
+            self.l_ruido_dv.setText("Leyendo el clip que DaVinci tiene bajo el cursor…")
+
+            def listo(info, error):
+                self.b_ruido_dv.setEnabled(True)
+                if error is not None:
+                    registro.error("Ruido de DaVinci: %s" % error)
+                    self._pintar_ruido_dv()
+                    self._avisar("No se pudo guardar el ruido de DaVinci: %s" % error, "error")
+                    return
+                self._pintar_ruido_dv(info)
+                if info.get("de_ruido"):
+                    self._avisar("Ruido de DaVinci guardado. Vuelve a armar para que se aplique a todas las tomas.", "ok")
+                else:
+                    self._avisar("Guardé el clip, pero no vi reducción de ruido en él. Revisa que el cursor de DaVinci "
+                                 "esté sobre el clip correcto y vuelve a guardar.", "warn")
+            qt_kit.correr_en_hilo(self, lambda: motor.capturar_ruido_davinci(registro.info), listo)
+
+        def _quitar_ruido_dv(self):
+            self._pintar_ruido_dv(motor.quitar_ruido_davinci())
+            self._avisar("Ruido de DaVinci quitado: las tomas vuelven a usar el filtro del programa al armar.", "info")
+
         def _pagina_ajustes(self):
             w = QWidget()
             v = QVBoxLayout(w)
@@ -971,7 +1009,7 @@ def app():
             self.ch_auto.setChecked(self.est.get("auto_armar", True))
             g.addWidget(self.ch_render, 0, 0, 1, 3)
             g.addWidget(self.ch_igualar, 1, 0, 1, 3)
-            g.addWidget(self.ch_auto, 3, 0, 1, 3)
+            g.addWidget(self.ch_auto, 4, 0, 1, 3)
             l = QLabel("Quitar ruido")
             l.setStyleSheet("color:%s; font-weight:600;" % TENUE)
             self.s_ruido = QSlider(Qt.Horizontal)
@@ -982,6 +1020,28 @@ def app():
             g.addWidget(l, 2, 0)
             g.addWidget(self.s_ruido, 2, 1)
             g.addWidget(self.l_ruido, 2, 2)
+            # el ruido propio de DaVinci: la persona lo deja a su gusto en un clip y aqui se guarda para todas las tomas
+            l_dv = QLabel("Ruido de DaVinci")
+            l_dv.setStyleSheet("color:%s; font-weight:600;" % TENUE)
+            self.l_ruido_dv = QLabel("")
+            self.l_ruido_dv.setWordWrap(True)
+            self.l_ruido_dv.setStyleSheet("color:%s;" % TENUE)
+            self.b_ruido_dv = QPushButton("Guardar el del clip actual", objectName="borde")
+            self.b_ruido_dv.setToolTip("En DaVinci, página Color: deja la reducción de ruido a tu gusto en un clip, "
+                                       "deja el cursor sobre él y pulsa aquí. Al armar se aplica a todas las tomas.")
+            self.b_ruido_dv.setCursor(Qt.PointingHandCursor)
+            self.b_ruido_dv.clicked.connect(self._guardar_ruido_dv)
+            self.b_ruido_quitar = QPushButton("Quitar", objectName="borde")
+            self.b_ruido_quitar.setCursor(Qt.PointingHandCursor)
+            self.b_ruido_quitar.clicked.connect(self._quitar_ruido_dv)
+            fila_dv = QHBoxLayout()
+            fila_dv.setSpacing(10)
+            fila_dv.addWidget(self.l_ruido_dv, 1)
+            fila_dv.addWidget(self.b_ruido_dv)
+            fila_dv.addWidget(self.b_ruido_quitar)
+            g.addWidget(l_dv, 3, 0)
+            g.addLayout(fila_dv, 3, 1, 1, 2)
+            self._pintar_ruido_dv()
             g.setColumnStretch(1, 1)
             v.addWidget(caja)
             fila = QHBoxLayout()

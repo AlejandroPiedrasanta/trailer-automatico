@@ -26,7 +26,15 @@ DEFECTO = 60
 # paso 2 = recoge de mas lejos (manchas grandes); grueso = cuanto usa esa limpieza amplia para la LUZ de las sombras
 NIVELES = {1: (0.016, 0.18, 0.85, 1, 0.0), 2: (0.026, 0.40, 1.00, 1, 0.0), 3: (0.040, 0.58, 1.00, 2, 0.5),
            4: (0.058, 0.76, 1.00, 2, 0.7), 5: (0.085, 0.90, 1.00, 2, 0.85)}
-NOMBRES = {0: "apagada", 1: "limpia", 2: "poco ruido", 3: "ruido medio", 4: "ruido alto", 5: "ruido muy alto"}
+NOMBRES = {0: "apagada", 1: "limpia", 2: "poco ruido", 3: "ruido medio", 4: "ruido alto", 5: "ruido muy alto",
+           "davinci": "con el ruido de DaVinci"}
+# El ruido propio de DaVinci Studio (temporal y espacial) limpia mucho mas que un DCTL, pero no se puede configurar por
+# API. La persona lo deja UNA vez a su gusto en un clip (pagina Color) y aqui se guarda ese grado (.drx): al armar se
+# aplica a todas las tomas, el mismo para cualquier video, y el DCTL del nodo 1 queda transparente (N0).
+DIR_DAVINCI = os.path.join(rutas.DATOS, "ruido_davinci")
+RUTA_DRX = os.path.join(DIR_DAVINCI, "ruido.drx")
+RUTA_DRX_INFO = os.path.join(DIR_DAVINCI, "ruido.json")
+ETIQUETA_DAVINCI = "RUIDO DE DAVINCI"
 # medida de ruido_tomas x1000 -> de N1 a N5. Con ruido puesto a proposito: 0.8/255 da 5 a 6; 1.5/255, 9 a 11;
 # 3.1/255, 16 a 20; 5.6/255, 28 a 36. Una toma limpia da de 2.5 a 3.6.
 UMBRALES = (5.0, 9.0, 16.0, 28.0)
@@ -40,6 +48,89 @@ def archivo(n):
 
 def ruta_resolve(n):
     return "MCP/" + archivo(n) if int(n) > 0 else RUTA_RESOLVE
+
+
+def drx_activo(intensidad=DEFECTO):
+    """Ruta del ajuste de ruido de DaVinci guardado, o None si no hay o si «Quitar ruido» esta en 0."""
+    return RUTA_DRX if int(intensidad) > 0 and os.path.isfile(RUTA_DRX) else None
+
+
+def estado_davinci():
+    """Lo guardado: {"hay", "fecha", "clip", "linea", "herramientas", "de_ruido"}."""
+    import json
+    info = {"hay": os.path.isfile(RUTA_DRX)}
+    if info["hay"]:
+        try:
+            with open(RUTA_DRX_INFO, encoding="utf-8") as f:
+                info.update(json.load(f))
+        except Exception:
+            pass
+        info["hay"] = True
+    return info
+
+
+def quitar_davinci():
+    for r in (RUTA_DRX, RUTA_DRX_INFO):
+        try:
+            os.remove(r)
+        except OSError:
+            pass
+
+
+def es_de_ruido(herramienta):
+    """¿Ese renglon de «herramientas del nodo» es la reduccion de ruido? Viene en el idioma de DaVinci
+    («Reducción de ruido», «Noise Reduction»...). El DCTL del programa («LUT: XV_RUIDO_N3») no cuenta."""
+    t = str(herramienta).lower()
+    if t.startswith("lut"):
+        return False
+    return any(p in t for p in ("ruido", "noise", "denois", "rausch", "bruit", "rumore", "ruído"))
+
+
+def capturar_de_resolve(resolve, log=print):
+    """Guarda el grado del clip que DaVinci tiene bajo el cursor (donde la persona dejo el ruido a su gusto).
+    Devuelve lo mismo que estado_davinci(). Lanza RuntimeError con un mensaje claro si no se puede."""
+    import glob
+    import json
+    import shutil
+    import time
+    p = resolve.GetProjectManager().GetCurrentProject()
+    tl = p.GetCurrentTimeline() if p else None
+    if tl is None:
+        raise RuntimeError("Abre en DaVinci la línea de tiempo donde dejaste el ruido a tu gusto.")
+    item = tl.GetCurrentVideoItem()
+    if item is None or not es_video(item):
+        raise RuntimeError("Pon el cursor de DaVinci sobre el clip de video donde ajustaste el ruido.")
+    g = item.GetNodeGraph()
+    herramientas = []
+    for n in range(1, int(g.GetNumNodes() or 0) + 1):
+        herramientas += [str(t) for t in (g.GetToolsInNode(n) or [])]
+    alb = p.GetGallery().GetCurrentStillAlbum()
+    still = tl.GrabStill()
+    if not still or alb is None:
+        raise RuntimeError("DaVinci no dejó capturar ese clip: abre la página Color sobre él y vuelve a intentar.")
+    tmp = os.path.join(DIR_DAVINCI, "captura")
+    shutil.rmtree(tmp, ignore_errors=True)
+    os.makedirs(tmp, exist_ok=True)
+    try:
+        ok = alb.ExportStills([still], tmp, "ruido", "drx")
+    finally:
+        try:
+            alb.DeleteStills([still])                # la captura no se queda en la galeria de la persona
+        except Exception:
+            pass
+    drx = sorted(glob.glob(os.path.join(tmp, "*.drx")), key=os.path.getmtime)
+    if not ok or not drx:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise RuntimeError("DaVinci no pudo guardar el ajuste de ese clip.")
+    os.replace(drx[-1], RUTA_DRX)
+    shutil.rmtree(tmp, ignore_errors=True)
+    info = {"fecha": time.strftime("%Y-%m-%d %H:%M"), "clip": item.GetName(), "linea": tl.GetName(),
+            "herramientas": herramientas, "de_ruido": [t for t in herramientas if es_de_ruido(t)]}
+    with open(RUTA_DRX_INFO, "w", encoding="utf-8") as f:
+        json.dump(info, f, ensure_ascii=False, indent=1)
+    log("Ajuste de ruido de DaVinci guardado del clip %s (%s)." % (info["clip"], ", ".join(info["de_ruido"]) or
+                                                                  "sin reducción de ruido a la vista"))
+    return estado_davinci()
 
 
 def nivel(intensidad):
@@ -171,6 +262,7 @@ def escribir(intensidad, copia_en=None):
     """Escribe los DCTL de los 5 niveles (y el de siempre) en la carpeta de LUTs de Resolve, y una copia opcional.
     Devuelve la ruta del de siempre."""
     textos = {archivo(n): fuente(n) for n in NIVELES}
+    textos[archivo(0)] = TRANSPARENTE                            # cuando el ruido lo quita DaVinci (ajuste guardado)
     textos[ARCHIVO] = fuente(nivel_para(None, intensidad))       # lineas de versiones anteriores: nivel 2 +- el control
     for d in [DIR_LUT_MCP] + ([copia_en] if copia_en else []):
         os.makedirs(d, exist_ok=True)
@@ -188,14 +280,37 @@ def es_video(item):
     return not ruta.endswith((".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".heic", ".webp"))
 
 
-def aplicar_a_item(item, intensidad, medida=None):
-    """El nodo 1 del clip lleva la reduccion de ruido (el DCTL de su nivel) y la igualacion de color (CDL):
-    nunca se apaga; con el control en 0 el DCTL es transparente."""
+def aplicar(item, intensidad, medida=None, drx=None):
+    """Pone la reduccion de ruido de un clip. Devuelve como quedo: "davinci", el nivel (0 a 5) o None si no se pudo.
+    Con `drx` (el ajuste de DaVinci guardado) se aplica ese grado y el DCTL del nodo 1 queda transparente; si DaVinci
+    no lo acepta, el clip sigue con el filtro del programa. El nodo 1 lleva tambien la igualacion de color (CDL), que
+    el armado vuelve a poner despues: el grado guardado trae la del clip donde se capturo."""
     g = item.GetNodeGraph()
     if g is None:
-        return False
+        return None
+    if drx and int(intensidad) > 0:
+        try:
+            aplicado = g.ApplyGradeFromDRX(drx, 0)
+        except Exception:
+            aplicado = False
+        if aplicado:
+            g = item.GetNodeGraph() or g
+            g.SetLUT(1, "MCP/" + archivo(0))
+            g.SetNodeLabel(1, ETIQUETA_DAVINCI)
+            g.SetNodeEnabled(1, True)
+            return "davinci"
     n = nivel_para(medida, intensidad)
     ok = g.SetLUT(1, ruta_resolve(n))
     g.SetNodeLabel(1, "REDUCCION DE RUIDO" + (" N%d" % n if n else ""))
     g.SetNodeEnabled(1, True)
-    return bool(ok)
+    return n if ok else None
+
+
+def aplicar_a_item(item, intensidad, medida=None):
+    """Como aplicar(), solo con el filtro del programa. Devuelve True si se pudo."""
+    return aplicar(item, intensidad, medida) is not None
+
+
+def resumen(cuenta):
+    """{como quedo: cuantos clips} -> «12 limpia, 30 poco ruido» (para el registro)."""
+    return ", ".join("%d %s" % (cuenta[k], NOMBRES.get(k, str(k))) for k in sorted(cuenta, key=str))

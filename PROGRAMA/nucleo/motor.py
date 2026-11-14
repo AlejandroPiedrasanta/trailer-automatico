@@ -847,6 +847,9 @@ def cargar_perfiles():
 def aplicar_ruido(log, intensidad):
     """Cambia la intensidad de la reduccion de ruido en TODAS las timelines de eventos (no en las plantillas)."""
     import ruido
+    if ruido.drx_activo(intensidad):                 # el ruido lo quita DaVinci con el ajuste guardado por la persona
+        log("El ruido lo quita DaVinci con tu ajuste guardado: el cambio se aplica al volver a armar.")
+        return {"tipo": "ruido", "clips": 0, "timelines": 0}
     with CANDADO:
         ruido.escribir(intensidad, os.path.join(rutas.DATOS, "dctl"))
         r = conectar_resolve(log)
@@ -885,6 +888,32 @@ def aplicar_ruido(log, intensidad):
             int(intensidad), ruido.nivel(intensidad), n, n_tl,
             ", ".join("%d %s" % (cuenta[k], ruido.NOMBRES[k]) for k in sorted(cuenta)) or "sin clips"))
         return {"tipo": "ruido", "clips": n, "timelines": n_tl}
+
+
+def estado_ruido_davinci():
+    """El ajuste de ruido de DaVinci guardado: {"hay", "fecha", "clip", "linea", "herramientas", "de_ruido"}."""
+    import ruido
+    return ruido.estado_davinci()
+
+
+def capturar_ruido_davinci(log):
+    """Guarda el grado del clip que DaVinci tiene bajo el cursor: ahi dejo la persona el ruido a su gusto (pagina
+    Color). Al armar se aplica a todas las tomas. Devuelve lo mismo que estado_ruido_davinci()."""
+    import ruido
+    with CANDADO:
+        if not resolve_abierto():
+            raise RuntimeError("Abre DaVinci Resolve en el clip donde dejaste el ruido a tu gusto.")
+        r = conectar_resolve(log)
+        p = r.GetProjectManager().GetCurrentProject()
+        if p is not None and p.IsRenderingInProgress():
+            raise RuntimeError("Hay un render en curso: guarda el ajuste cuando termine.")
+        return ruido.capturar_de_resolve(r, log)
+
+
+def quitar_ruido_davinci():
+    import ruido
+    ruido.quitar_davinci()
+    return ruido.estado_davinci()
 
 
 def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", frase="", tipo_evento="xv",

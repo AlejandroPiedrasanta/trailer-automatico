@@ -386,7 +386,23 @@ class Planificador:
             if dron is not None:
                 piezas.remove(dron)
                 piezas.insert(0, dron)
+        self.separar(piezas)
         return piezas, reusos
+
+    @staticmethod
+    def separar(piezas, alcance=3):
+        """Variedad: que no vayan dos planos seguidos del MISMO video (se ve como un salto). Se adelanta un plano cercano
+        de otro video (hasta `alcance` puestos), asi el orden sigue siendo casi cronologico. Devuelve cuantos pares
+        quedaron pegados (cuando el momento tiene un solo video no hay con que separar)."""
+        n = len(piezas)
+        for i in range(1, n):
+            if piezas[i]["item"] is not piezas[i - 1]["item"]:
+                continue
+            for j in range(i + 1, min(n, i + 1 + alcance)):
+                if piezas[j]["item"] is not piezas[i - 1]["item"]:
+                    piezas.insert(i, piezas.pop(j))
+                    break
+        return sum(1 for a, b in zip(piezas, piezas[1:]) if a["item"] is b["item"])
 
     def _colocar(self, v, intervalos, largos):
         """Elige las mejores ventanas del video (calidad alta, repartidas) para cada largo pedido."""
@@ -1347,7 +1363,7 @@ def main():
     except Exception:
         fps = 24
     intro_f = sum(INTRO_CORTES)
-    ritmo = _modulo("ritmo") if CORTAR_AL_RITMO else None
+    ritmo = _modulo("ritmo") if CORTAR_AL_RITMO and not globals().get("SIN_RESOLVE") else None   # el plan previo: sin musica
 
     # ---------- plan (con lo que Resolve entendio de cada escena: votos, brindis, el beso...) ----------
     ia = _modulo("escenas_ia")

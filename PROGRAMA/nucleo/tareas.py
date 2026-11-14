@@ -138,6 +138,15 @@ def correr(nombre, archivo):
     if nombre == "actualizar_fondo":
         import actualizar_fondo
         return actualizar_fondo.correr()
+    if nombre == "material_prueba":                 # un evento de mentira para la prueba de arrastre (prueba_arrastre.py)
+        import prueba_arrastre
+        try:
+            prueba_arrastre.crear_material(archivo, lambda m: None)
+            return 0
+        except Exception as ex:
+            with open(os.path.join(archivo, "error.txt"), "w", encoding="utf-8") as f:
+                f.write("%s\n%s" % (ex, traceback.format_exc()))
+            return 1
     est = Estado(archivo)
     try:
         if nombre == "instalar":

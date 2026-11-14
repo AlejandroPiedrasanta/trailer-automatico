@@ -483,8 +483,15 @@ def _info_video(ruta):
          "audio_pista": any(s.get("codec_type") == "audio" for s in streams),
          "horizontal": (v.get("width") or 16) >= (v.get("height") or 9) if abs(rot) % 180 == 0
          else (v.get("height") or 9) >= (v.get("width") or 16)}
+    codificador = str(tags.get("encoder") or "").strip()
+    if not modelo and codificador.upper().startswith("DJI"):
+        modelo = codificador
     if modelo:
         d["camara"] = modelo[:40]
+    # dron aunque el archivo se haya renombrado o este en VIDEOS: DJI lo escribe en el archivo (no las camaras de mano
+    # de DJI: Osmo, Pocket, Action, Ronin)
+    if codificador.upper().startswith("DJI"):
+        d["es_dron"] = not re.search(r"osmo|pocket|action|ronin|mic", codificador, re.I)
     return d
 
 
@@ -496,6 +503,11 @@ def _analizar_archivo(tipo, ruta, previo=None):
         d.update(_info_foto(ruta))
     else:
         d.update(_info_video(ruta))
+        dron = d.pop("es_dron", None)                    # lo que dice el archivo manda sobre el nombre y la carpeta
+        if dron is True:
+            d["tipo"] = "dron"
+        elif dron is False and tipo == "dron":           # camara de mano de DJI (Osmo, Pocket): se llama DJI_ pero no vuela
+            d["tipo"] = "video"
         if d["dur"] <= 0:
             raise ValueError("no se pudo leer la duración (¿archivo incompleto?)")
         if np is not None:
@@ -870,6 +882,47 @@ def _a_min(hhmm):
 
 
 def _auto(items, fecha):
+    """Propone la hora de inicio de IGLESIA y FIESTA: por lo que se VE (luz y color de cada toma, en orden) afinado con
+    los huecos del dia; si no hay suficiente material medido, solo con los huecos."""
+    try:
+        por_contenido = _auto_contenido(items, fecha)
+    except Exception:
+        por_contenido = None
+    return por_contenido or _auto_huecos(items, fecha)
+
+
+def _auto_contenido(items, fecha):
+    """El dia en orden se reparte en MAQUILLAJE -> IGLESIA -> FIESTA segun la luz y el color de cada toma (lo mismo que
+    ordena las camaras sin hora) y cada corte se lleva al hueco mas grande que tenga cerca: el traslado a la iglesia o
+    al salon. Asi una pausa larga DENTRO de un momento (el almuerzo) no se confunde con el traslado.
+    Medido: en la boda real da 15:32 y 18:16 (lo que la persona dio por bueno)."""
+    seq = sorted(items, key=lambda i: i["hora"])
+    z = _normalizador(items)
+    probs = {}
+    for i in seq:
+        zi = z(i)
+        if zi is not None:
+            probs[id(i)] = _prob_prototipo(zi)
+    n = len(seq)
+    if len(probs) < 20 or len(probs) < 0.5 * n:
+        return None
+    moms = _cortes_en_orden(seq, probs, POSICION)
+    mins = [_min(i["hora"], fecha) for i in seq]
+    cerca = max(3, int(n * 0.06))
+    inicios = []
+    for m in ("IGLESIA", "FIESTA"):
+        k = next((j for j, x in enumerate(moms) if x == m or (m == "IGLESIA" and x == "FIESTA")), None)
+        if not k:                                        # no hay ese momento (o empieza en el primer archivo)
+            return None
+        huecos = [(mins[j + 1] - mins[j], mins[j + 1]) for j in range(max(0, k - 1 - cerca), min(n - 1, k + cerca))
+                  if mins[j + 1] - mins[j] >= 8]
+        inicios.append((max(huecos)[1] if huecos else mins[k]) - 1)
+    if inicios[1] - inicios[0] < 10:                     # sin un tramo claro de iglesia: que decidan los huecos
+        return None
+    return [["MAQUILLAJE", "00:00"], ["IGLESIA", _hhmm(inicios[0])], ["FIESTA", _hhmm(inicios[1])]]
+
+
+def _auto_huecos(items, fecha):
     """Propone la hora de inicio de IGLESIA y FIESTA buscando los huecos mas grandes del dia."""
     mins = sorted(_min(i["hora"], fecha) for i in items)
     if not mins:
@@ -939,6 +992,19 @@ def clasificar(items, base, log=print):
         except OSError:
             pass
         log("Aviso: %s estaba dañado; lo guardé aparte y hago uno nuevo." % ARCHIVO_CLASIF)
+    if cfg.get("fecha"):                                 # ¿la clasificacion guardada es de OTRO evento?
+        fecha0, _ = _relojes_basicos(items, None)
+        try:
+            otra = abs((fecha0 - datetime.date.fromisoformat(cfg["fecha"])).days) > 1
+        except (ValueError, TypeError):
+            otra = True
+        if otra:                                         # sus excepciones y ajustes de reloj no valen para este
+            try:
+                os.replace(rutas.CLASIFICACION, rutas.CLASIFICACION + ".anterior")
+            except OSError:
+                pass
+            log("La clasificación guardada era de otro evento (%s): empiezo una nueva." % cfg.get("fecha"))
+            cfg = {}
     fecha, avisos = _relojes_basicos(items, cfg.get("ajuste_horas"))
     z = _normalizador(items)
     inicios = _inicios_validos(cfg) if cfg.get("fecha") == fecha.isoformat() else None

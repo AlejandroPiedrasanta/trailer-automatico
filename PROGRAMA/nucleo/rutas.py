@@ -33,6 +33,9 @@ if CONGELADO:
 else:
     PROGRAMA = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))      # PROGRAMA/nucleo/rutas.py
     DATOS = os.path.join(PROGRAMA, "datos")
+# Pruebas (arrastrar una carpeta de mentira sin tocar el material ni los datos de verdad): TRAILER_DATOS y TRAILER_BASE
+if os.environ.get("TRAILER_DATOS"):
+    DATOS = os.path.abspath(os.environ["TRAILER_DATOS"])
 CONFIG = os.path.join(DATOS, "config.json")
 
 # El codigo va ordenado en carpetas (en el .exe / .app todo queda junto en _MEIPASS). Importar rutas pone las carpetas en
@@ -81,6 +84,8 @@ def guardar_config(d):
 
 
 def _base():
+    if os.environ.get("TRAILER_BASE"):
+        return os.path.abspath(os.environ["TRAILER_BASE"])
     if not CONGELADO:
         return os.path.dirname(PROGRAMA)
     elegida = leer_config().get("carpeta_trabajo")

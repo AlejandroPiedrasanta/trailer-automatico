@@ -1,0 +1,217 @@
+{
+ "TRAILER XV - 1min": {
+  "fps": 24.0,
+  "marcadores": {
+   "0": {
+    "name": "INTRO",
+    "color": "Yellow",
+    "duration": 120
+   },
+   "5": {
+    "name": "FOTOS",
+    "color": "Cyan",
+    "duration": 24
+   },
+   "134": {
+    "name": "FIN INTRO",
+    "color": "Yellow",
+    "duration": 1
+   },
+   "204": {
+    "name": "MAQUILLAJE",
+    "color": "Purple",
+    "duration": 24
+   },
+   "360": {
+    "name": "ACTO 2 - ROMANTICA",
+    "color": "Pink",
+    "duration": 1
+   },
+   "463": {
+    "name": "IGLESIA",
+    "color": "Green",
+    "duration": 24
+   },
+   "895": {
+    "name": "FIESTA",
+    "color": "Fuchsia",
+    "duration": 24
+   },
+   "912": {
+    "name": "ACTO 3 - FIESTA",
+    "color": "Blue",
+    "duration": 1
+   },
+   "1296": {
+    "name": "CIERRE",
+    "color": "Red",
+    "duration": 143
+   }
+  }
+ },
+ "TRAILER XV - 3min": {
+  "fps": 24.0,
+  "marcadores": {
+   "0": {
+    "name": "INTRO",
+    "color": "Yellow",
+    "duration": 120
+   },
+   "11": {
+    "name": "FOTOS",
+    "color": "Cyan",
+    "duration": 24
+   },
+   "134": {
+    "name": "FIN INTRO",
+    "color": "Yellow",
+    "duration": 1
+   },
+   "360": {
+    "name": "ACTO 2 - EPICA Y CEREMONIA",
+    "color": "Cyan",
+    "duration": 1
+   },
+   "607": {
+    "name": "MAQUILLAJE",
+    "color": "Purple",
+    "duration": 24
+   },
+   "1320": {
+    "name": "ACTO 3 - ROMANTICA",
+    "color": "Pink",
+    "duration": 1
+   },
+   "1385": {
+    "name": "IGLESIA",
+    "color": "Green",
+    "duration": 24
+   },
+   "2681": {
+    "name": "FIESTA",
+    "color": "Fuchsia",
+    "duration": 24
+   },
+   "2760": {
+    "name": "ACTO 4 - FIESTA",
+    "color": "Blue",
+    "duration": 1
+   },
+   "4176": {
+    "name": "CIERRE",
+    "color": "Red",
+    "duration": 143
+   }
+  }
+ },
+ "TRAILER XV - 15min": {
+  "fps": 24.0,
+  "marcadores": {
+   "0": {
+    "name": "INTRO",
+    "color": "Yellow",
+    "duration": 120
+   },
+   "46": {
+    "name": "FOTOS",
+    "color": "Cyan",
+    "duration": 24
+   },
+   "134": {
+    "name": "FIN INTRO",
+    "color": "Yellow",
+    "duration": 1
+   },
+   "360": {
+    "name": "ACTO 2 - EPICA Y LLEGADA",
+    "color": "Cyan",
+    "duration": 1
+   },
+   "3027": {
+    "name": "MAQUILLAJE",
+    "color": "Purple",
+    "duration": 24
+   },
+   "3600": {
+    "name": "ACTO 3 - CEREMONIA Y ROMANTICA",
+    "color": "Pink",
+    "duration": 1
+   },
+   "6915": {
+    "name": "IGLESIA",
+    "color": "Green",
+    "duration": 24
+   },
+   "13395": {
+    "name": "FIESTA",
+    "color": "Fuchsia",
+    "duration": 24
+   },
+   "17088": {
+    "name": "ACTO 4 - FIESTA",
+    "color": "Blue",
+    "duration": 1
+   },
+   "21456": {
+    "name": "CIERRE",
+    "color": "Red",
+    "duration": 143
+   }
+  }
+ },
+ "TRAILER XV - 30min": {
+  "fps": 24.0,
+  "marcadores": {
+   "0": {
+    "name": "INTRO",
+    "color": "Yellow",
+    "duration": 120
+   },
+   "89": {
+    "name": "FOTOS",
+    "color": "Cyan",
+    "duration": 24
+   },
+   "134": {
+    "name": "FIN INTRO",
+    "color": "Yellow",
+    "duration": 1
+   },
+   "360": {
+    "name": "ACTO 2 - EPICA Y LLEGADA",
+    "color": "Cyan",
+    "duration": 1
+   },
+   "6051": {
+    "name": "MAQUILLAJE",
+    "color": "Purple",
+    "duration": 24
+   },
+   "7200": {
+    "name": "ACTO 3 - CEREMONIA Y ROMANTICA",
+    "color": "Pink",
+    "duration": 1
+   },
+   "13827": {
+    "name": "IGLESIA",
+    "color": "Green",
+    "duration": 24
+   },
+   "26787": {
+    "name": "FIESTA",
+    "color": "Fuchsia",
+    "duration": 24
+   },
+   "34200": {
+    "name": "ACTO 4 - FIESTA",
+    "color": "Blue",
+    "duration": 1
+   },
+   "43056": {
+    "name": "CIERRE",
+    "color": "Red",
+    "duration": 143
+   }
+  }
+ }
+}

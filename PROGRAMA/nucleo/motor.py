@@ -137,50 +137,248 @@ def revisar_material():
     return {"cuenta": cuenta, "faltan": faltan, "ok": not faltan}
 
 
+RAW = {".cr2", ".cr3", ".nef", ".arw", ".dng", ".raf", ".orf", ".rw2", ".srw"}
+CARPETAS_DRON = ("dron", "drone", "aereo", "aéreo", "aerea", "aérea", "mavic")
+
+
 def tipo_de_archivo(ruta):
-    """'foto', 'video' o 'dron' segun la extension (los DJI_ van a DRON). None si no sirve."""
+    """'foto', 'video' o 'dron' segun la extension. Dron: archivos DJI_ o dentro de una carpeta llamada DRON, Drone,
+    Aereo, Mavic... None si no sirve."""
     ext = os.path.splitext(ruta)[1].lower()
     if ext in am.EXT["foto"]:
         return "foto"
     if ext in am.EXT["video"]:
-        return "dron" if os.path.basename(ruta).upper().startswith("DJI_") else "video"
+        if os.path.basename(ruta).upper().startswith(("DJI_", "DJI-")):
+            return "dron"
+        carpeta = os.path.basename(os.path.dirname(ruta)).lower()
+        return "dron" if any(p in carpeta for p in CARPETAS_DRON) else "video"
     return None
 
 
-def copiar_material(rutas_origen, avance=None, forzar_tipo=None):
-    """Copia archivos (o carpetas completas) a 1 MATERIAL/FOTOS|VIDEOS|DRON segun su tipo.
-    avance(hechos, total, nombre). Devuelve {tipo: copiados} y omite los que ya estan (mismo nombre y tamano)."""
-    import shutil
+class Cancelado(Exception):
+    pass
+
+
+def _fecha_rapida(ruta, tipo):
+    """El dia de un archivo sin analizarlo entero: EXIF de la foto, nombre (DJI, Pixel, Samsung) o fecha del archivo."""
+    import datetime
+    try:
+        if tipo == "foto" and am.Image is not None:
+            with am.Image.open(ruta) as im:
+                ex = im.getexif()
+                try:
+                    sub = ex.get_ifd(0x8769)
+                except Exception:
+                    sub = {}
+                d = am._fecha(sub.get(36867) or sub.get(36868) or ex.get(306))
+                if d:
+                    return am._jornada(d)
+        d = am._hora_de_nombre(os.path.basename(ruta))
+        if d:
+            return am._jornada(d)
+        return am._jornada(datetime.datetime.fromtimestamp(os.path.getmtime(ruta)))
+    except Exception:
+        return None
+
+
+def examinar_origen(rutas_origen, forzar_tipo=None):
+    """Mira lo que se quiere agregar SIN copiar nada: {"pares": [(ruta, tipo)], "cuenta": {tipo: n}, "bytes": total,
+    "otros": {".ext": n} (lo que no se usa: RAW, documentos...), "fecha": "AAAA-MM-DD" | None, "nombre": carpeta soltada}."""
+    from collections import Counter
     archivos = []
     for r in rutas_origen:
         if os.path.isdir(r):
-            for d, _, fs in os.walk(r):
+            for d, dirs, fs in os.walk(r):
+                dirs[:] = sorted(x for x in dirs if not x.startswith((".", "$")) and x.lower() != "anteriores")
                 archivos += [os.path.join(d, f) for f in sorted(fs)]
         elif os.path.isfile(r):
             archivos.append(r)
-    pares = []
+    pares, otros, total = [], Counter(), 0
     for a in archivos:
-        if os.path.basename(a).startswith((".", "~")):     # "._DSC0001.JPG" de la Mac en discos externos, temporales
-            continue
+        nombre = os.path.basename(a)
+        if nombre.startswith((".", "~")) or nombre.lower() in ("thumbs.db", "desktop.ini"):
+            continue                          # "._DSC0001.JPG" de la Mac en discos externos, temporales
         t = tipo_de_archivo(a)
+        if t is not None:
+            try:
+                tam = os.path.getsize(a)
+            except OSError:
+                continue
+            if tam == 0:
+                otros["vacíos"] += 1
+                continue
         if t is None:
+            otros[os.path.splitext(a)[1].lower() or "sin extensión"] += 1
             continue
         if forzar_tipo:                       # "Agregar" de una carpeta concreta: fotos con fotos, videos con videos
             if (forzar_tipo == "foto") != (t == "foto"):
                 continue
             t = forzar_tipo
         pares.append((a, t))
-    hechos = {t: 0 for t in CARPETAS}
-    for i, (a, t) in enumerate(pares, 1):
-        if avance:
-            avance(i, len(pares), os.path.basename(a))
-        destino = _destino_libre(CARPETAS[t], a)
-        if destino is None:                   # ya estaba (mismo nombre y tamano)
+        total += tam
+    cuenta = {t: sum(1 for _, x in pares if x == t) for t in CARPETAS}
+    votos = Counter()
+    for tipo, cuantos in (("foto", 16), ("video", 8), ("dron", 4)):
+        grupo = [a for a, t in pares if t == tipo]
+        paso = max(1, len(grupo) // cuantos)
+        for a in grupo[::paso][:cuantos]:
+            d = _fecha_rapida(a, tipo)
+            if d:
+                votos[d] += 2 if tipo == "foto" else 1
+    fecha = votos.most_common(1)[0][0].isoformat() if votos else None
+    primero = rutas_origen[0] if rutas_origen else ""
+    nombre = os.path.basename(primero.rstrip("\\/")) if os.path.isdir(primero) else ""
+    return {"pares": pares, "cuenta": cuenta, "bytes": total, "otros": dict(otros), "fecha": fecha, "nombre": nombre}
+
+
+def texto_otros(otros):
+    """'12 RAW (.nef) · 3 .txt' para avisar de lo que no se uso."""
+    if not otros:
+        return ""
+    raw = sum(n for e, n in otros.items() if e in RAW)
+    partes = []
+    if raw:
+        partes.append("%d RAW (%s): usa los JPG" % (raw, ", ".join(sorted(e for e in otros if e in RAW))))
+    resto = sorted(((n, e) for e, n in otros.items() if e not in RAW), reverse=True)
+    partes += [("%d vacío%s" % (n, "s" if n > 1 else "")) if e == "vacíos" else "%d %s" % (n, e) for n, e in resto[:4]]
+    return " · ".join(partes)
+
+
+def evento_actual():
+    """(nombre, fecha) del material que hay ahora en 1 MATERIAL, segun el ultimo analisis; (None, None) si esta vacio."""
+    if not any(resumen_carpetas().values()):
+        return None, None
+    fecha = None
+    try:
+        with open(os.path.join(rutas.ANALISIS, "material.json"), encoding="utf-8") as f:
+            fecha = json.load(f).get("fecha")
+    except Exception:
+        pass
+    if not fecha:                             # sin analizar todavia: una mirada rapida a lo que hay
+        from collections import Counter
+        votos = Counter()
+        lista = am.listar(BASE)
+        for tipo, ruta in lista[::max(1, len(lista) // 20)][:20]:
+            d = _fecha_rapida(ruta, tipo)
+            if d:
+                votos[d] += 1
+        fecha = votos.most_common(1)[0][0].isoformat() if votos else None
+    return leer_estado().get("evento") or fecha or "evento anterior", fecha
+
+
+def es_otro_evento(fecha_nueva, fecha_actual):
+    """True si lo que se suelta es de otro dia (mas de un dia de diferencia: la fiesta pasa de medianoche)."""
+    import datetime
+    if not fecha_nueva or not fecha_actual:
+        return False
+    try:
+        a, b = datetime.date.fromisoformat(fecha_nueva), datetime.date.fromisoformat(fecha_actual)
+    except ValueError:
+        return False
+    return abs((a - b).days) > 1
+
+
+def archivar_material(nombre):
+    """Evento nuevo: lo que hay en FOTOS / VIDEOS / DRON pasa a 1 MATERIAL/ANTERIORES/<nombre>/ (no se borra nada) y los
+    textos del evento (nombres, frase, fecha) quedan en blanco. Devuelve (carpeta, cuantos)."""
+    import re
+    import shutil
+    limpio = re.sub(r'[\\/:*?"<>|]+', " ", str(nombre or "evento anterior")).strip() or "evento anterior"
+    destino = os.path.join(rutas.MATERIAL, "ANTERIORES", limpio)
+    k = 2
+    while os.path.exists(destino) and os.listdir(destino):
+        destino = os.path.join(rutas.MATERIAL, "ANTERIORES", "%s (%d)" % (limpio, k))
+        k += 1
+    n = 0
+    for t, carpeta in CARPETAS.items():
+        if not os.path.isdir(carpeta):
             continue
-        os.makedirs(CARPETAS[t], exist_ok=True)
-        parcial = destino + ".copiando"       # si se corta (disco lleno, se desconecta), no queda un video a medias
+        for f in os.listdir(carpeta):
+            sub = os.path.join(destino, NOMBRE_CARPETA[t])
+            os.makedirs(sub, exist_ok=True)
+            shutil.move(os.path.join(carpeta, f), os.path.join(sub, f))
+            n += 1
+    if os.path.exists(rutas.CLASIFICACION):               # las correcciones a mano eran de ESE evento
+        os.makedirs(destino, exist_ok=True)
+        shutil.move(rutas.CLASIFICACION, os.path.join(destino, os.path.basename(rutas.CLASIFICACION)))
+    est = leer_estado()
+    for clave in ("nombre_xv", "frase", "fecha_lugar", "evento_manual", "evento", "huella", "timelines", "resumen_versiones"):
+        est.pop(clave, None)
+    guardar_estado(est)
+    return destino, n
+
+
+def _huella_rapida(ruta, tam):
+    """Huella de un archivo sin leerlo entero (tamano + primer y ultimo trozo): para no copiar dos veces lo mismo."""
+    import hashlib
+    h = hashlib.sha1(str(tam).encode())
+    with open(ruta, "rb") as f:
+        h.update(f.read(262144))
+        if tam > 524288:
+            f.seek(-262144, 2)
+            h.update(f.read(262144))
+    return h.hexdigest()
+
+
+def copiar_material(rutas_origen, avance=None, forzar_tipo=None, cancelado=None, examen=None):
+    """Copia archivos (o carpetas completas, con subcarpetas) a 1 MATERIAL/FOTOS|VIDEOS|DRON segun su tipo.
+    avance(bytes_hechos, bytes_total, nombre, i, n). No pisa nada: el mismo archivo (aunque tenga otro nombre) se omite, y
+    otro distinto con el mismo nombre (dos camaras con DSC_0001.JPG) queda como «DSC_0001 (2).JPG».
+    Devuelve {"copiados": {tipo: n}, "ya_estaban": n, "otros": {".ext": n}, "bytes": copiados}."""
+    import shutil
+    examen = examen or examinar_origen(rutas_origen, forzar_tipo)
+    pares, total = examen["pares"], max(1, examen["bytes"])
+    libre = shutil.disk_usage(rutas.MATERIAL if os.path.isdir(rutas.MATERIAL) else BASE).free
+    if examen["bytes"] > libre - 500e6:
+        raise RuntimeError("No hay espacio en el disco de 1 MATERIAL: hacen falta %.1f GB y quedan %.1f GB."
+                           % (examen["bytes"] / 1e9, libre / 1e9))
+    hechos = {t: 0 for t in CARPETAS}
+    ya, hecho_b, copiado_b = 0, 0, 0
+    indice = {}                                # tipo -> {tamano: [rutas ya en la carpeta]}
+
+    def tamanos(t):
+        if t not in indice:
+            d = {}
+            os.makedirs(CARPETAS[t], exist_ok=True)
+            for e in os.scandir(CARPETAS[t]):
+                if e.is_file():
+                    d.setdefault(e.stat().st_size, []).append(e.path)
+            indice[t] = d
+        return indice[t]
+
+    for i, (a, t) in enumerate(pares, 1):
+        if cancelado and cancelado():
+            raise Cancelado()
+        tam = os.path.getsize(a)
+        nombre = os.path.basename(a)
+        if avance:
+            avance(hecho_b, total, nombre, i, len(pares))
+        iguales = tamanos(t).get(tam) or []
+        if iguales:                            # mismo tamano: ¿es el mismo archivo con otro nombre?
+            h = _huella_rapida(a, tam)
+            if any(os.path.exists(x) and (os.path.samefile(x, a) or _huella_rapida(x, tam) == h) for x in iguales):
+                ya += 1
+                hecho_b += tam
+                continue
+        base, ext = os.path.splitext(nombre)
+        destino, k = os.path.join(CARPETAS[t], nombre), 2
+        while os.path.exists(destino):
+            destino = os.path.join(CARPETAS[t], "%s (%d)%s" % (base, k, ext))
+            k += 1
+        parcial = destino + ".copiando"        # si se corta (disco lleno, se desconecta), no queda un video a medias
         try:
-            shutil.copy2(a, parcial)
+            with open(a, "rb") as fo, open(parcial, "wb") as fd:
+                while True:
+                    if cancelado and cancelado():
+                        raise Cancelado()
+                    buf = fo.read(8 << 20)
+                    if not buf:
+                        break
+                    fd.write(buf)
+                    hecho_b += len(buf)
+                    if avance:
+                        avance(hecho_b, total, nombre, i, len(pares))
+            shutil.copystat(a, parcial)        # la fecha del archivo se conserva: el analizador la usa
             os.replace(parcial, destino)
         except BaseException:
             try:
@@ -188,25 +386,70 @@ def copiar_material(rutas_origen, avance=None, forzar_tipo=None):
             except OSError:
                 pass
             raise
+        tamanos(t).setdefault(tam, []).append(destino)
         hechos[t] += 1
-    return hechos
+        copiado_b += tam
+    if avance:
+        avance(total, total, "", len(pares), len(pares))
+    return {"copiados": hechos, "ya_estaban": ya, "otros": examen["otros"], "bytes": copiado_b}
 
 
-def _destino_libre(carpeta, origen):
-    """Donde copiar `origen` sin pisar nada: None si ese mismo archivo ya esta; si hay OTRO con el mismo nombre (dos
-    camaras con DSC_0001.JPG), «DSC_0001 (2).JPG»."""
-    nombre, ext = os.path.splitext(os.path.basename(origen))
-    tam = os.path.getsize(origen)
-    for k in range(1, 1000):
-        d = os.path.join(carpeta, "%s%s" % (nombre, ext) if k == 1 else "%s (%d)%s" % (nombre, k, ext))
-        if not os.path.exists(d):
-            return d
-        try:
-            if os.path.samefile(d, origen) or os.path.getsize(d) == tam:
-                return None
-        except OSError:
-            return None
-    return None
+# ------------------------------------------------------------------ plan sin DaVinci
+class _PlantillaFalsa:
+    def __init__(self, nombre, d):
+        self.nombre, self.d = nombre, d
+
+    def GetName(self):
+        return self.nombre
+
+    def GetSetting(self, clave):
+        return self.d.get("fps", 24.0) if clave == "timelineFrameRate" else None
+
+    def GetMarkers(self):
+        return {int(f): m for f, m in (self.d.get("marcadores") or {}).items()}
+
+
+class _ResolveFalso:
+    """Lo minimo de la API para PLANIFICAR sin DaVinci abierto: las 4 plantillas con sus marcadores (los que trae el
+    programa en recursos/plantillas_marcadores.json)."""
+    def __init__(self, plantillas):
+        self.tls = [_PlantillaFalsa(n, d) for n, d in plantillas.items()]
+
+    def GetProjectManager(self):
+        return self
+
+    def GetCurrentProject(self):
+        return self
+
+    def GetTimelineCount(self):
+        return len(self.tls)
+
+    def GetTimelineByIndex(self, i):
+        return self.tls[i - 1]
+
+
+def guardar_plan(rep):
+    """El ultimo plan previo queda en datos/analisis/plan_previo.json (lo lee la ventana y las pruebas)."""
+    if rep:
+        am._guardar_json(os.path.join(rutas.ANALISIS, "plan_previo.json"),
+                         {"evento": rep.get("evento"), "versiones": rep.get("versiones", [])})
+
+
+def plan_previo(analisis, log=print, solo=None, tipo_evento="xv", evento="", **_):
+    """El plan de cada version (cuantos planos por zona, camara lenta, estabilizar) SIN conectar con DaVinci: usa los
+    marcadores de las plantillas que trae el programa. Devuelve el reporte de build_trailers o None."""
+    try:
+        with open(os.path.join(rutas.RECURSOS, "plantillas_marcadores.json"), encoding="utf-8") as f:
+            plantillas = json.load(f)
+    except Exception:
+        return None
+    ruta = rutas.codigo("build_trailers.py")
+    g = {"__name__": "build_trailers", "resolve": _ResolveFalso(plantillas), "BASE": BASE, "ANALISIS": analisis,
+         "EVENTO": evento or None, "SOLO": solo or None, "REHACER": True, "DRY_RUN": True, "SIN_RESOLVE": True,
+         "TIPO_EVENTO": tipo_evento, "print": lambda *a, **k: log(" ".join(str(x) for x in a))}
+    with open(ruta, encoding="utf-8") as f:
+        exec(compile(f.read(), ruta, "exec"), g)
+    return g.get("result")
 
 
 def chequeo():
@@ -624,6 +867,12 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
         if sum(1 for i in analisis["items"] if i["tipo"] == "foto" and not i.get("descartar")) < MINIMOS["foto"]:
             log("Aviso: hay menos de %d fotos que se puedan leer: la intro repetira fotos." % MINIMOS["foto"])
         resumen = _resumen(analisis["items"])
+        try:                                  # el plan se ve ya, antes de abrir DaVinci (y aunque DaVinci falle)
+            log("== Plan previo ==")
+            previo = plan_previo(analisis, log, solo=solo, tipo_evento=tipo_evento, evento=evento)
+            guardar_plan(previo)
+        except Exception as ex:
+            log("Aviso: no pude calcular el plan previo (%s)" % ex)
         log("== Conectando con DaVinci Resolve ==")
         instalar_fuentes(log)
         resolve = conectar_resolve(log)

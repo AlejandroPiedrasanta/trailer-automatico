@@ -15,6 +15,7 @@ Uso:  doble clic en "ARMAR TRAILERS" (.bat en Windows, .command en Mac)
       python trailer_xv.py --seco        (solo el plan, no toca DaVinci)
 """
 import os
+import re
 import sys
 import math
 import time
@@ -35,6 +36,19 @@ VERSION_TEXTO = {"1min": "1 min", "3min": "3 min", "15min": "15 min", "30min": "
 PASOS_GO = [("timeline", "Revisar material"), ("voz", "Abrir DaVinci"), ("ia", "Plan y ritmo"),
             ("diseno", "Armar versiones"), ("sfx", "Renderizar"), ("resolve", "Audio final")]
 PESO_GO = [("timeline", 0.04), ("voz", 0.08), ("ia", 0.05), ("diseno", 0.27), ("sfx", 0.51), ("resolve", 0.05)]
+
+
+def _fecha_bonita(iso):
+    """'2026-11-07' -> 'sábado 7 de noviembre'."""
+    import datetime
+    try:
+        f = datetime.date.fromisoformat(str(iso))
+    except (ValueError, TypeError):
+        return str(iso or "otra fecha")
+    dias = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+    meses = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
+             "noviembre", "diciembre")
+    return "%s %d de %s" % (dias[f.weekday()], f.day, meses[f.month - 1])
 
 
 def opciones_guardadas():
@@ -155,6 +169,16 @@ def app():
     QScrollBar::handle:vertical { background: rgba(255,255,255,0.15); border-radius: 4px; min-height: 24px; }
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
     QToolTip { background: #0E1E26; color: %(t)s; border: 1px solid rgba(255,255,255,0.12); padding: 6px 8px; }
+    QFrame#hoja { background: rgba(12, 26, 34, 0.97); border: 1px solid rgba(34,196,126,0.55); border-radius: 22px; }
+    QFrame#hoja[modo="soltar"] { border: 2px dashed rgba(34,196,126,0.95); background: rgba(8, 32, 27, 0.94); }
+    QLabel#hoja_titulo { font-size: 24px; font-weight: 800; }
+    QLabel#hoja_texto { color: #B8C7CB; font-size: 15px; }
+    QLabel#hoja_icono { color: #22C47E; font-size: 44px; font-weight: 800; }
+    QMessageBox, QDialog { background: #0E1E26; }
+    QMessageBox QPushButton, QDialog QPushButton { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.16);
+                                                   border-radius: 10px; padding: 8px 16px; font-weight: 600; min-width: 84px; }
+    QMessageBox QPushButton:hover, QDialog QPushButton:hover { background: rgba(255,255,255,0.13); }
+    QMessageBox QPushButton:default, QDialog QPushButton:default { background: #22C47E; color: #04150D; border-color: #22C47E; }
     """ % {"t": TEXTO, "m": TENUE, "f": FUENTE}
 
     # ------------------------------------------------------------------ trabajos en segundo plano
@@ -174,22 +198,38 @@ def app():
                                        lambda p, t: self.avance.emit(int(p), str(t)), **self.op)
                 self.fin.emit(res)
             except Exception as ex:
-                self.linea.emit(traceback.format_exc())
+                registro.error("Armado: %s" % traceback.format_exc())      # la traza, al registro (no a la persona)
+                self.linea.emit("No se pudo terminar: %s" % ex)
                 self.fallo.emit(str(ex))
 
     class Copia(QThread):
-        avance = Signal(int, int, str)
+        """Copia ordenada a 1 MATERIAL. Si es un evento nuevo, antes guarda aparte el material del anterior."""
+        avance = Signal(float, str, int, int)            # fraccion (por bytes), archivo, i, n
         fin = Signal(object)
 
-        def __init__(self, archivos, tipo=None):
+        def __init__(self, archivos, tipo=None, examen=None, anterior=None):
             super().__init__()
-            self.archivos, self.tipo = archivos, tipo
+            self.archivos, self.tipo, self.examen, self.anterior = archivos, tipo, examen, anterior
+            self.cancelar = False
 
         def run(self):
             try:
-                self.fin.emit(motor.copiar_material(self.archivos, lambda i, n, f: self.avance.emit(i, n, f),
-                                                    self.tipo))
+                res = {}
+                if self.anterior is not None:
+                    res["archivado"] = motor.archivar_material(self.anterior)
+                ultimo = [0.0, 0]
+
+                def paso(hechos, total, nombre, i, n):   # sin inundar la ventana de avisos
+                    f = hechos / float(total or 1)
+                    if i != ultimo[1] or f - ultimo[0] >= 0.004:
+                        ultimo[0], ultimo[1] = f, i
+                        self.avance.emit(f, nombre, i, n)
+                res.update(motor.copiar_material(self.archivos, paso, self.tipo, lambda: self.cancelar, self.examen))
+                self.fin.emit(res)
+            except motor.Cancelado:
+                self.fin.emit({"error": "copia cancelada", "cancelada": True})
             except Exception as ex:
+                registro.error("Copia de material: %s" % traceback.format_exc())
                 self.fin.emit({"error": str(ex)})
 
     class Chequeo(QThread):
@@ -264,6 +304,88 @@ def app():
             p.setPen(QColor(TEXTO if self.isEnabled() else TENUE))
             p.drawText(QRectF(w + 14, 0, self.width() - w - 14, self.height()), Qt.AlignVCenter | Qt.AlignLeft,
                        self.text())
+
+    # ------------------------------------------------------------------ hoja sobre la ventana
+    class Hoja(QWidget):
+        """Fondo oscurecido + tarjeta al centro, sobre toda la ventana: «suelta aqui», preguntas, datos del evento y la
+        cuenta atras. Sin cuadros de dialogo del sistema."""
+        def __init__(self, padre):
+            super().__init__(padre)
+            self.modo = None
+            self.botones = []
+            fuera = QVBoxLayout(self)
+            fuera.setContentsMargins(24, 24, 24, 24)
+            fuera.addStretch(1)
+            fila = QHBoxLayout()
+            fila.addStretch(1)
+            self.tarjeta = QFrame(objectName="hoja")
+            self.tarjeta.setMinimumWidth(380)
+            self.tarjeta.setMaximumWidth(640)
+            fila.addWidget(self.tarjeta, 10)
+            fila.addStretch(1)
+            fuera.addLayout(fila)
+            fuera.addStretch(1)
+            v = QVBoxLayout(self.tarjeta)
+            v.setContentsMargins(32, 26, 32, 24)
+            v.setSpacing(12)
+            self.icono = QLabel("", objectName="hoja_icono")
+            self.icono.setAlignment(Qt.AlignCenter)
+            self.titulo = QLabel("", objectName="hoja_titulo")
+            self.titulo.setAlignment(Qt.AlignCenter)
+            self.titulo.setWordWrap(True)
+            self.texto = QLabel("", objectName="hoja_texto")
+            self.texto.setAlignment(Qt.AlignCenter)
+            self.texto.setWordWrap(True)
+            self.zona = QVBoxLayout()
+            self.fila_b = QHBoxLayout()
+            self.fila_b.setSpacing(10)
+            for x in (self.icono, self.titulo, self.texto):
+                v.addWidget(x)
+            v.addLayout(self.zona)
+            v.addSpacing(6)
+            v.addLayout(self.fila_b)
+            self.hide()
+
+        def mostrar(self, modo, titulo, texto="", botones=(), contenido=None, icono=""):
+            self.modo = modo
+            self.icono.setText(icono)
+            self.icono.setVisible(bool(icono))
+            self.titulo.setText(titulo)
+            self.texto.setText(texto)
+            self.texto.setVisible(bool(texto))
+            for lay in (self.zona, self.fila_b):
+                while lay.count():
+                    w = lay.takeAt(0).widget()
+                    if w is not None:
+                        w.setParent(None)
+                        w.deleteLater()
+            if contenido is not None:
+                self.zona.addWidget(contenido)
+            self.botones = []
+            if botones:
+                self.fila_b.addStretch(1)
+                for txt, accion, primario in botones:
+                    b = QPushButton(txt, objectName="boton" if primario else "borde")
+                    b.setCursor(Qt.PointingHandCursor)
+                    b.clicked.connect(accion)
+                    self.fila_b.addWidget(b)
+                    self.botones.append(b)
+                self.fila_b.addStretch(1)
+            repulir(self.tarjeta, modo=modo)
+            self.setGeometry(self.parentWidget().rect())
+            self.show()
+            self.raise_()
+
+        def ocultar(self, modo=None):
+            if modo is None or self.modo == modo:
+                self.modo = None
+                self.hide()
+
+        def paintEvent(self, _):
+            QPainter(self).fillRect(self.rect(), QColor(3, 9, 13, 190))
+
+        def mousePressEvent(self, e):
+            e.accept()                            # lo de abajo no recibe clics mientras la hoja esta abierta
 
     # ------------------------------------------------------------------ fondo: cielo con estrellas
     class Cielo(QWidget):
@@ -347,6 +469,8 @@ def app():
             self.setMinimumSize(880, 580)                 # cabe en una laptop de 1366 x 768 al 125 %
             self.resize(1240, 860)
             self.trabajo = self.copia = self.cheq = None
+            self.flujo = None                    # soltar una carpeta: None | mirando | pregunta | copiando | datos | cuenta
+            self._ultimo_fallo = None
             self.resultado = None
             self.material = {"ok": False, "cuenta": {"foto": 0, "video": 0, "dron": 0}, "faltan": []}
             self.est = motor.leer_estado()
@@ -457,6 +581,7 @@ def app():
             self.paginas.currentChanged.connect(self._pagina)
             QTimer.singleShot(0, lambda: self._pagina(self.paginas.currentIndex()))
             self.b_log.toggled.connect(self.registro.setVisible)
+            self.hoja = Hoja(self.cielo)             # «suelta aqui», preguntas y cuenta atras, sobre toda la ventana
 
             pie = QHBoxLayout()
             pie.addStretch(1)
@@ -522,6 +647,11 @@ def app():
             self.chip_videos.clicked.connect(self._abrir_videos)
             self.chip_videos.hide()
             fila_c.addWidget(self.chip_videos)
+            self.chip_cancelar = QPushButton("Cancelar la copia", objectName="chip")
+            self.chip_cancelar.setCursor(Qt.PointingHandCursor)
+            self.chip_cancelar.clicked.connect(self._cancelar_copia)
+            self.chip_cancelar.hide()
+            fila_c.addWidget(self.chip_cancelar)
             fila_c.addStretch(1)
             v.addLayout(fila_c)
             v.addSpacing(6)
@@ -831,8 +961,11 @@ def app():
             self.ch_render.setChecked(self.est.get("renderizar", True))
             self.ch_igualar = Interruptor("Igualar luz y balance de blancos de cada toma")
             self.ch_igualar.setChecked(self.est.get("igualar", True))
+            self.ch_auto = Interruptor("Al soltar una carpeta, ordenarla y armar el tráiler solo")
+            self.ch_auto.setChecked(self.est.get("auto_armar", True))
             g.addWidget(self.ch_render, 0, 0, 1, 3)
             g.addWidget(self.ch_igualar, 1, 0, 1, 3)
+            g.addWidget(self.ch_auto, 3, 0, 1, 3)
             l = QLabel("Quitar ruido")
             l.setStyleSheet("color:%s; font-weight:600;" % TENUE)
             self.s_ruido = QSlider(Qt.Horizontal)
@@ -1025,7 +1158,7 @@ def app():
             return [v for v, b in self.pills.items() if b.isChecked()]
 
         def _sub_material(self):
-            if self.trabajo is not None:
+            if self.trabajo is not None or self.flujo is not None:
                 return
             m = self.material
             c = m["cuenta"]
@@ -1068,6 +1201,8 @@ def app():
             self.cheq.fin.connect(self._fin_chequeo)
             self.cheq.start()
             self._ver_davinci()
+            if os.environ.get("TRAILER_PRUEBA_ARRASTRE"):                # en la prueba: sin internet ni tareas del sistema
+                return
             QTimer.singleShot(4000, self._buscar_actualizacion)          # actualizaciones: al abrir y cada 4 h
             self.t_act = QTimer(self)
             self.t_act.timeout.connect(self._buscar_actualizacion)
@@ -1111,37 +1246,195 @@ def app():
             archivos, _ = QFileDialog.getOpenFileNames(self, "Agregar a %s" % motor.NOMBRE_CARPETA[tipo],
                                                        os.path.expanduser("~"), filtros[tipo] + ";;Todo (*)")
             if archivos:
-                self._copiar(archivos, tipo)
+                self._recibir(archivos, tipo)
 
-        def _copiar(self, archivos, tipo=None):
-            if self.copia is not None:
+        # ---- soltar una carpeta: se mira, se pregunta lo justo, se copia ordenada y se arma el trailer solo
+        def dragEnterEvent(self, e):
+            if e.mimeData().hasUrls() and self.trabajo is None and self.flujo is None and self.copia is None:
+                e.acceptProposedAction()
+                self.hoja.mostrar("soltar", "Suelta aquí la carpeta del evento",
+                                  "La ordeno en fotos, videos y dron, la organizo por momentos\ny armo el tráiler.",
+                                  icono="⤓")
+
+        def dragLeaveEvent(self, e):
+            self.hoja.ocultar("soltar")
+
+        def dropEvent(self, e):
+            self.hoja.ocultar("soltar")
+            archivos = [u.toLocalFile() for u in e.mimeData().urls() if u.isLocalFile()]
+            if archivos:
+                e.acceptProposedAction()
+                self._recibir(archivos)
+
+        def _recibir(self, archivos, tipo=None):
+            """Lo soltado (o elegido con «Agregar…», con su tipo): primero se mira sin copiar nada."""
+            if self.trabajo is not None or self.copia is not None or self.flujo is not None:
+                self._avisar("Espera a que termine lo que está haciendo y vuelve a soltar el material.", "warn")
                 return
-            self.copia = Copia(archivos, tipo)
-            self.copia.avance.connect(lambda i, n, f: (self.l_copia.setText("Copiando %d de %d · %s" % (i, n, f)),
-                                                       self._avisar("Copiando material %d de %d…" % (i, n))))
+            self.flujo = "mirando"
+            self._soltado = (archivos, tipo)
+            self._ir("Inicio")
+            self.titulo.setText("Mirando lo que soltaste…")
+            self._sub("Contando fotos, videos y tomas de dron…")
+            qt_kit.correr_en_hilo(self, lambda: (motor.examinar_origen(archivos, tipo), motor.evento_actual()),
+                                  self._recibido)
+
+        def _recibido(self, r, error):
+            archivos, tipo = self._soltado
+            if error is not None or not r:
+                self._fin_flujo("No pude leer lo que soltaste: %s" % error, "error")
+                return
+            examen, (ev_nombre, ev_fecha) = r
+            c = examen["cuenta"]
+            otros = motor.texto_otros(examen["otros"])
+            if not sum(c.values()):
+                self._fin_flujo("Ahí no encontré fotos ni videos que sirvan%s." % ((" (" + otros + ")") if otros else ""),
+                                "warn")
+                return
+            if tipo is None and motor.es_otro_evento(examen["fecha"], ev_fecha):
+                self.flujo = "pregunta"
+                hay = self.material["cuenta"]
+                self.hoja.mostrar(
+                    "pregunta", "¿Es un evento nuevo?",
+                    "Lo que soltaste es del %s y en 1 MATERIAL hay material del %s (%d fotos, %d videos).\n\n"
+                    "Si es un evento nuevo, el anterior se guarda en 1 MATERIAL › ANTERIORES: no se borra nada."
+                    % (_fecha_bonita(examen["fecha"]), _fecha_bonita(ev_fecha), hay["foto"], hay["video"] + hay["dron"]),
+                    [("Evento nuevo", lambda: self._copiar(archivos, tipo, examen, ev_nombre), True),
+                     ("Es del mismo evento", lambda: self._copiar(archivos, tipo, examen, None), False),
+                     ("Cancelar", lambda: self._fin_flujo("No se copió nada."), False)], icono="?")
+            else:
+                self._copiar(archivos, tipo, examen, None)
+
+        def _copiar(self, archivos, tipo, examen, anterior):
+            self.hoja.ocultar()
+            self.flujo = "copiando"
+            self._evento_nuevo = anterior is not None or not any(self.material["cuenta"].values())
+            self._tipo_copia = tipo
+            c = examen["cuenta"]
+            self.titulo.setText("Copiando el material…")
+            self._sub("%d fotos · %d videos · %d dron  ·  %.1f GB" % (c["foto"], c["video"], c["dron"], examen["bytes"] / 1e9), "ok")
+            self.boton.poner_estado("trabajando", centro="Copiando")
+            self.boton.poner_progreso(0.0)
+            self.chip_evento.hide()
+            self.chip_cancelar.show()
+            self.copia = Copia(archivos, tipo, examen, anterior)
+            self.copia.avance.connect(self._avance_copia)
             self.copia.fin.connect(self._fin_copia)
             self.copia.start()
 
+        def _avance_copia(self, f, nombre, i, n):
+            self.boton.poner_progreso(min(0.99, f))
+            self._sub("%d %%  ·  %d de %d  ·  %s" % (int(f * 100), i, n, nombre[:44]), "ok")
+
+        def _cancelar_copia(self):
+            if self.copia is not None:
+                self.copia.cancelar = True
+                self._sub("Cancelando la copia…")
+
         def _fin_copia(self, res):
             self.copia = None
+            self.chip_cancelar.hide()
+            self.chip_evento.show()
+            self.boton.poner_estado("listo")
+            self.titulo.setText("Material ordenado")
             if "error" in res:
-                self._avisar("No se pudo copiar: %s" % res["error"], "error")
-            else:
-                hechos = ", ".join("%d %s" % (n, motor.NOMBRE_CARPETA[t].lower()) for t, n in res.items() if n)
-                self._avisar("Material agregado: %s." % (hechos or "nada nuevo (ya estaba)"))
-                self.l_copia.setText("Listo: %s" % (hechos or "ya estaba todo"))
-                self.l_copia.setStyleSheet("color:#7CF2C0; font-weight:600;")
+                self._revisar_material()
+                self._fin_flujo("Copia cancelada: lo ya copiado queda en 1 MATERIAL." if res.get("cancelada")
+                                else "No se pudo copiar: %s" % res["error"], "warn" if res.get("cancelada") else "error")
+                return
+            c = res["copiados"]
+            partes = ["%d %s" % (n, motor.NOMBRE_CARPETA[t].lower()) for t, n in c.items() if n]
+            resumen = "Ordenado: " + (" · ".join(partes) if partes else "nada nuevo")
+            if res["ya_estaban"]:
+                resumen += "  ·  %d ya estaban" % res["ya_estaban"]
+            otros = motor.texto_otros(res["otros"])
+            if otros:
+                resumen += "\nNo se usan: " + otros
+            if res.get("archivado") and res["archivado"][1]:
+                resumen += "\nEl evento anterior quedó en 1 MATERIAL › ANTERIORES."
+            if self._evento_nuevo and self._tipo_copia is None:      # los textos del evento anterior no valen
+                for w in (self.e_nombre, self.e_frase, self.e_fecha):
+                    w.setText("")
             self._revisar_material()
+            self.l_copia.setText(resumen.split("\n")[0])
+            if not self.material["ok"]:
+                self._fin_flujo(resumen.split("\n")[0] + "  ·  todavía falta: " + ", ".join(
+                    "%d %s" % (n, motor.NOMBRE_CARPETA[t].lower()) for t, n in self.material["faltan"]), "warn")
+            elif self._tipo_copia is not None or not self.ch_auto.isChecked():
+                self._fin_flujo(resumen.split("\n")[0] + "  ·  pulsa ▶ para armar.")
+            elif self._evento_nuevo or not self.e_nombre.text().strip():
+                self._pedir_datos(resumen)
+            else:
+                self._cuenta_atras(resumen)
 
-        def dragEnterEvent(self, e):
-            if e.mimeData().hasUrls() and self.trabajo is None:
-                e.acceptProposedAction()
+        def _pedir_datos(self, resumen):
+            """Evento nuevo: tipo y nombres para los titulos, y a armar."""
+            self.flujo = "datos"
+            w = QWidget()
+            g = QGridLayout(w)
+            g.setContentsMargins(0, 6, 0, 0)
+            g.setHorizontalSpacing(12)
+            g.setVerticalSpacing(10)
+            c = QComboBox()
+            for clave, texto in TIPOS:
+                c.addItem(texto, clave)
+            c.setCurrentIndex(self.c_tipo.currentIndex())
+            e = QLineEdit(self.e_nombre.text())
+            e.setPlaceholderText("Ej.: Valeria  ·  K & R")
+            for i, (etq, wid) in enumerate((("Tipo de evento", c), ("Nombres", e))):
+                l = QLabel(etq)
+                l.setStyleSheet("color:%s; font-weight:600;" % TENUE)
+                g.addWidget(l, i, 0)
+                g.addWidget(wid, i, 1)
+            g.setColumnStretch(1, 1)
 
-        def dropEvent(self, e):
-            archivos = [u.toLocalFile() for u in e.mimeData().urls() if u.isLocalFile()]
-            if archivos:
-                self._ir("Material")
-                self._copiar(archivos)
+            def armar():
+                self.c_tipo.setCurrentIndex(c.currentIndex())
+                self.e_nombre.setText(e.text().strip())
+                self._armar_flujo()
+            e.returnPressed.connect(armar)
+            self._form = (c, e)
+            self.hoja.mostrar("datos", "¿De quién es el evento?", resumen,
+                              [("Armar el tráiler", armar, True),
+                               ("Solo ordenar", lambda: self._fin_flujo("Material ordenado. Pulsa ▶ cuando quieras armar."),
+                                False)], contenido=w, icono="✓")
+            e.setFocus()
+
+        def _cuenta_atras(self, resumen):
+            """Mismo evento con material nuevo: arma solo en unos segundos, salvo que se cancele."""
+            self.flujo = "cuenta"
+            self._quedan = 6
+
+            def tic():
+                if self.flujo != "cuenta":
+                    self.t_cuenta.stop()
+                    return
+                self._quedan -= 1
+                if self._quedan <= 0:
+                    self.t_cuenta.stop()
+                    self._armar_flujo()
+                else:
+                    self.hoja.texto.setText("%s\n\nEmpiezo a armar el tráiler en %d…" % (resumen, self._quedan))
+            self.hoja.mostrar("cuenta", "Material ordenado", "%s\n\nEmpiezo a armar el tráiler en 5…" % resumen,
+                              [("Armar ya", self._armar_flujo, True),
+                               ("Ahora no", lambda: self._fin_flujo("Material ordenado. Pulsa ▶ cuando quieras armar."),
+                                False)], icono="✓")
+            self.t_cuenta = QTimer(self)
+            self.t_cuenta.timeout.connect(tic)
+            self.t_cuenta.start(1000)
+
+        def _armar_flujo(self):
+            self.hoja.ocultar()
+            self.flujo = None
+            self.titulo.setText("Un clic y listo")
+            self._play()
+
+        def _fin_flujo(self, texto, tipo="info"):
+            self.hoja.ocultar()
+            self.flujo = None
+            self.titulo.setText("Un clic y listo")
+            self._avisar(texto, tipo)
+            self._sub_material()
 
         # ============================================================== play
         def _guardar(self):
@@ -1150,7 +1443,8 @@ def app():
             d.update({"tipo_evento": self.c_tipo.currentData(), "nombre_xv": self.e_nombre.text().strip(),
                       "frase": self.e_frase.text().strip(), "fecha_lugar": self.e_fecha.text().strip(),
                       "versiones": versiones, "ruido": self.s_ruido.value(),
-                      "igualar": self.ch_igualar.isChecked(), "renderizar": self.ch_render.isChecked()})
+                      "igualar": self.ch_igualar.isChecked(), "renderizar": self.ch_render.isChecked(),
+                      "auto_armar": self.ch_auto.isChecked()})
             motor.guardar_estado(d)
             return dict(evento=d.get("evento_manual", ""), nombre_xv=d["nombre_xv"], fecha_lugar=d["fecha_lugar"],
                         frase=d["frase"], tipo_evento=d["tipo_evento"], ruido=d["ruido"], igualar=d["igualar"],
@@ -1279,6 +1573,12 @@ def app():
         def _linea(self, m):
             self.registro.appendPlainText(m)
             registro.info(m)
+            a = re.match(r"\s+(\d+)/(\d+)\s+(\S.*)$", m)         # avance del analisis: «  12/65  DSC_0012.MP4»
+            if a and int(a.group(2)) > 0 and self._prog < 0.12:
+                i, n = int(a.group(1)), int(a.group(2))
+                self._poner_prog(0.03 + 0.08 * i / float(n))
+                self._sub("Analizando %d de %d · %s" % (i, n, a.group(3)[:40]))
+                return
             for clave, pct, texto, fase in self.LINEAS:
                 if clave in m:
                     if self.pasos_go.get(fase) != "hecho":
@@ -1349,6 +1649,8 @@ def app():
             """El tamano del astrolabio sigue al espacio libre (como en CineCaptions)."""
             if hasattr(self, "escena"):
                 self.escena.setGeometry(self.cielo.rect())
+            if hasattr(self, "hoja") and self.hoja.isVisible():
+                self.hoja.setGeometry(self.cielo.rect())
             pag = self.paginas.widget(0)
             libre = self.hueco_boton.height() - 8
             self.boton.poner_lado(int(max(200, min(libre, pag.width() * 0.5))))
@@ -1426,6 +1728,7 @@ def app():
             activa = next((k for k, e in self.pasos_go.items() if e == "activo"), None)
             if activa:
                 self.escena.paso(activa, "error")
+            self._ultimo_fallo = texto
             self.escena.terminar(False, "ok")
             self.boton.poner_estado("error", centro="Error")
             self.titulo.setText("Un clic y listo")
@@ -1536,6 +1839,10 @@ def app():
     rutas.crear_carpetas()
     win = Ventana()
     win.show()
+    if os.environ.get("TRAILER_PRUEBA_ARRASTRE"):          # prueba de punta a punta: suelta una carpeta y mira que arme
+        import prueba_arrastre
+        win._guion = prueba_arrastre.Guion(win, qapp, os.environ["TRAILER_PRUEBA_ARRASTRE"],
+                                           os.environ.get("TRAILER_PRUEBA_SALIDA") or os.path.join(rutas.DATOS, "prueba"))
     return qapp.exec()
 
 

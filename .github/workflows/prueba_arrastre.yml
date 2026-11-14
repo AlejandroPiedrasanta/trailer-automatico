@@ -1,0 +1,115 @@
+# Tráiler automático · CINEMA PRODUCTIONS
+# Prueba «suelta la carpeta y listo» en varios equipos de GitHub: Windows Server 2022 y 2025, Windows 11 ARM (x64 emulado),
+# Mac Apple Silicon (macOS 15 y 26) y Mac Intel. En cada uno crea un evento de mentira (fotos, videos, dron, celular,
+# archivos rotos y basura), lo suelta en la ventana y comprueba que se ordene en FOTOS/VIDEOS/DRON, se organice por
+# momentos y empiece a armar las plantillas. Primero con el codigo y despues con el programa compilado ahi mismo.
+# Todo en local: sin DaVinci (no hay en GitHub) llega hasta el plan de las plantillas y el aviso claro.
+# Actions > "Prueba de arrastre" > Run workflow. Resultados y capturas en "Artifacts".
+name: Prueba de arrastre
+on:
+  workflow_dispatch:
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          architecture: x64
+      - name: Preparar (ffmpeg y librerias)
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress | Select-Object -Last 2
+          python -m pip install -q --disable-pip-version-check PySide6 numpy Pillow pyinstaller
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $so = Get-CimInstance Win32_OperatingSystem; $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+          "equipo: $($so.Caption) $($so.Version) · $($cpu.Name) · $([math]::Round($so.TotalVisibleMemorySize / 1MB)) GB"
+      - name: Codigo · soltar una carpeta
+        shell: pwsh
+        run: python PROGRAMA/herramientas/probar_arrastre.py --salida prueba/codigo
+      - name: Codigo · soltar un evento nuevo encima de otro
+        if: always()
+        shell: pwsh
+        run: python PROGRAMA/herramientas/probar_arrastre.py --dos-eventos --salida prueba/codigo_dos_eventos
+      - name: Compilar el programa (PyInstaller)
+        id: compilar
+        if: always()
+        shell: pwsh
+        run: |
+          $env:TRAILER_PROGRAMA = Join-Path $PWD "PROGRAMA"
+          $real = "C:\ProgramData\chocolatey\lib\ffmpeg\tools\ffmpeg\bin"
+          $ff = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          $env:TRAILER_FFMPEG = if (Test-Path "$real\ffmpeg.exe") { $real } elseif ($ff) { Split-Path $ff.Source } else { "" }
+          python -m PyInstaller --noconfirm --log-level WARN --distpath obra/dist --workpath obra/work PROGRAMA/compilar/windows/trailer.spec
+      - name: Compilado · soltar una carpeta
+        if: ${{ !cancelled() && steps.compilar.outcome == 'success' }}
+        shell: pwsh
+        run: python PROGRAMA/herramientas/probar_arrastre.py --programa obra/dist/TrailerAutomatico/TrailerAutomatico.exe --salida prueba/compilado
+      - name: Compilado · soltar un evento nuevo encima de otro
+        if: ${{ !cancelled() && steps.compilar.outcome == 'success' }}
+        shell: pwsh
+        run: python PROGRAMA/herramientas/probar_arrastre.py --dos-eventos --programa obra/dist/TrailerAutomatico/TrailerAutomatico.exe --salida prueba/compilado_dos_eventos
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: arrastre-${{ matrix.os }}
+          path: prueba/
+          retention-days: 5
+  mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - nombre: macos15-AppleSilicon
+            runner: macos-15
+          - nombre: macos26-AppleSilicon
+            runner: macos-26
+          - nombre: macos15-Intel
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Preparar (ffmpeg y librerias)
+        run: |
+          echo "equipo: $(sw_vers -productName) $(sw_vers -productVersion) · $(uname -m) · $(sysctl -n machdep.cpu.brand_string)"
+          brew install ffmpeg >/dev/null 2>&1 || brew install ffmpeg
+          python3 -m pip install -q --disable-pip-version-check PySide6 numpy Pillow
+      - name: Codigo · soltar una carpeta
+        run: python3 PROGRAMA/herramientas/probar_arrastre.py --salida prueba/codigo
+      - name: Codigo · soltar un evento nuevo encima de otro
+        if: always()
+        run: python3 PROGRAMA/herramientas/probar_arrastre.py --dos-eventos --salida prueba/codigo_dos_eventos
+      - name: Compilar el programa (TrailerAutomatico.app)
+        id: compilar
+        if: always()
+        env:
+          TRAILER_PYTHON: python3
+          TRAILER_SIN_PANTALLA: '1'
+          TRAILER_SIN_MUSICA: '1'
+        run: bash PROGRAMA/compilar/mac/construir_mac.sh
+      - name: Compilado · soltar una carpeta
+        if: ${{ !cancelled() && steps.compilar.outcome == 'success' }}
+        run: python3 PROGRAMA/herramientas/probar_arrastre.py --programa trailer_automatico_mac/dist/TrailerAutomatico.app/Contents/MacOS/TrailerAutomatico --salida prueba/compilado
+      - name: Compilado · soltar un evento nuevo encima de otro
+        if: ${{ !cancelled() && steps.compilar.outcome == 'success' }}
+        run: python3 PROGRAMA/herramientas/probar_arrastre.py --dos-eventos --programa trailer_automatico_mac/dist/TrailerAutomatico.app/Contents/MacOS/TrailerAutomatico --salida prueba/compilado_dos_eventos
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: arrastre-${{ matrix.nombre }}
+          path: prueba/
+          retention-days: 5

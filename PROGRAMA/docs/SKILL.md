@@ -192,11 +192,16 @@ La firma «CINEMA PRODUCTIONS / UN FILM DE» no se toca. El tipo se elige en la 
   - DCTL de corrección en el nodo PRE-CLIP del grupo y LUT del look en el POST-CLIP.
   - Media pool por momento y fuente, con colores. Respaldo `.drp` y render en cola.
   - Carpetas principales numeradas (`CARPETAS_RAIZ`): 01 PLANTILLAS, 02 EVENTOS\<EVENTO> (timelines), 03 VIDEO, 04 FOTOS, 05 MUSICA (INTRO Y EPICA / IGLESIA Y ROMANTICA / BAILE Y FIESTA) y 06 EFECTOS (PUBLICO / TRANSICIONES / ESPECIALES). `carpeta_raiz` las encuentra con o sin número; si existe el nombre viejo SECUENCIAS, lo usa como EVENTOS. No hay `Folder.SetName`: para renombrar una carpeta se crea la nueva, se mueve todo con `MoveClips`/`MoveFolders` y se borra la vieja.
-- **Color por plano**: `analizar_material._color` mide en cada medio segundo la luz, el negro (p2), la saturación y el RGB de los grises. En `build_trailers.cdl_para`, cada plano recibe `SetCDL` en el nodo 1:
-  - exposición al 75 % hacia la luz típica de su momento (`objetivos_de_luz`);
-  - mapeo de negros lechosos;
-  - balance de blancos solo si hay suficientes grises;
-  - saturación normalizada: `(SAT_OBJETIVO / sat) ** 0.5` limitada a `SAT_LIMITES` (sube las lavadas o log y baja las chillonas).
+- **Color: las tomas ya vienen en Rec.709 (color terminado de cámara) y se tocan POCO** (la persona, 2026-11-13: «son tomas Rec.709, no puedes manipularlo tanto»). Medido sobre la boda real (62 videos), la cadena completa deja saturación +6 a +11 % y contraste +2 a +14 %, sin nada quemado; antes daba saturación +18 a +31 %, contraste hasta +51 % y 3 a 7 % de altas luces quemadas. No subir estos márgenes sin volver a medir.
+  - **Por plano** (`build_trailers.cdl_para`, `SetCDL` en el nodo 1; `analizar_material._color` mide luz, negro p2, saturación y grises cada medio segundo). Solo EMPAREJA:
+    - exposición al 40 % hacia la luz típica de su momento (`objetivos_de_luz`), pendiente entre 0.92 y 1.12 (`PENDIENTE_LIMITES`);
+    - negros lechosos solo desde 0.08 (`NEGRO_LECHOSO`), con desplazo de −0.04 a 0.02;
+    - balance de blancos al 40 % y ±4 % por canal, solo si hay suficientes grises;
+    - saturación hacia la típica DEL EVENTO (`objetivo_de_saturacion`, no un número fijo): `(objetivo / sat) ** 0.5` entre 0.90 y 1.08.
+  - **Base** (`dctl/XV_CORRECCION_COLOR.dctl`, PRE-CLIP del grupo): casi neutra. Contraste 1.02 y rodilla en 0.90 para las altas luces; no mueve negros ni saturación.
+  - **Look** (POST-CLIP del grupo): `preparar_grupo` pone el `_REC709.cube` de `LOOK_REC709`, que es el look mezclado con «sin cambio» (`herramientas/suavizar_looks.py`: fuerza 0.5; el Kodak a 0.25). El `XV_15min_FILM_KODAK.cube` es el Film Look de Resolve y espera imagen **Cineon Log**: entero sobre Rec.709 subía el contraste +45 %. Los .cube originales no se tocan.
+  - El grupo de color es del proyecto: al armar cualquier evento, el look suave queda también en las líneas anteriores de esa versión.
+  - Para medir sin DaVinci: simular CDL + DCTL + LUT con numpy sobre cuadros de `1 MATERIAL` y comparar el módulo del croma y el contraste con el original (así se sacaron los números de arriba).
 - `zonas_de` hace empezar IGLESIA o FIESTA en su marcador ACTO (CEREMONIA/ROMANTICA o FIESTA) cuando está a menos de `AJUSTE_ACTO_S` (5 s).
 - Textos nuevos (`textos_extra`): capítulo por momento, frases repartidas según `CADA_FRASE` y «gracias» antes de la tarjeta final, en versiones de 3 min o más. Los textos salen de `perfiles_evento.json` (`capitulos`, `frases`, `gracias`). Cada texto es el PNG transparente `recursos/TEXTO_TRANSPARENTE.png`, que se importa a `06 EFECTOS\GRAFICOS` y se pone en V3 con `AppendToTimeline` (sobrescribe sin mover nada). Se recorta con `SetRightOffset`, lleva `AddFusionComp` con un TextPlus «Template» y `disenar_titulo(..., frase=True)` para las frases del tercio inferior, y entra y sale con `SetFades`. **No uses `InsertFusionTitleIntoTimeline`**: inserta en V1 y empuja toda la timeline (edición con ripple); con las pistas bloqueadas falla.
 - `sfx.py` (`sonorizar`): borra de las pistas CHISPA, CAMPANAS, PUBLICO y PUBLICO 2 los SFX de posición fija, salvo el grito invertido. Luego coloca por momento campanas, pétalos, entrada, chispa, vítores sobre los cortes y aplausos en el cierre, con `SetFades`.

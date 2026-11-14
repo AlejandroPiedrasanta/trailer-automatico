@@ -1,13 +1,13 @@
 // XV - CORRECCION DE COLOR (universal, va en el nodo PRE-CLIP del grupo de color)
-// Base suave para igualar camara, celular y dron antes del LOOK de cada version:
-// limpia negros lechosos, da un poco de contraste, cuida las altas luces y
-// sube la saturacion sin tocar los tonos de piel.
+// Las tomas ya vienen en Rec.709 (color terminado de camara): esta base casi no las toca.
+// Solo da un minimo de contraste y cuida las altas luces. No aplasta negros ni sube saturacion:
+// de emparejar cada toma se encarga la correccion por plano (CDL) y del estilo, el LOOK.
 
-__CONSTANT__ float NEGROS = 0.012f;        // limpia el velo en negros
-__CONSTANT__ float CONTRASTE = 1.06f;      // contraste alrededor del gris medio
+__CONSTANT__ float NEGROS = 0.0f;          // no mueve los negros
+__CONSTANT__ float CONTRASTE = 1.02f;      // contraste alrededor del gris medio
 __CONSTANT__ float PIVOTE = 0.42f;
-__CONSTANT__ float SATURACION = 1.04f;     // saturacion general
-__CONSTANT__ float RODILLA = 0.86f;        // desde aqui se suavizan las altas luces
+__CONSTANT__ float SATURACION = 1.0f;      // saturacion general: sin cambio
+__CONSTANT__ float RODILLA = 0.90f;        // desde aqui se suavizan las altas luces
 
 __DEVICE__ float suave(float v)
 {

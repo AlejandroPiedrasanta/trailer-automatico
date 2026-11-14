@@ -62,11 +62,17 @@ VOCES = {"1min": 1, "3min": 2, "15min": 3, "30min": 4}       # frases (votos, br
 USAR_VIDEOS_VERTICALES = False    # True = tambien usa videos de celular grabados en vertical
 # Igualacion automatica por plano (CDL en el nodo del clip): exposicion, negros, balance de blancos, saturacion
 IGUALAR = globals().get("IGUALAR", True)
-FUERZA_EXPOSICION = 0.75          # 0 = no toca, 1 = iguala del todo a la luz tipica del momento
-FUERZA_BLANCOS = 0.6              # cuanto corrige la dominante de color de los grises
+# Las tomas ya vienen en Rec.709 (color terminado de camara): la correccion por plano solo EMPAREJA, con poco margen.
+FUERZA_EXPOSICION = 0.4           # 0 = no toca, 1 = iguala del todo a la luz tipica del momento
+FUERZA_BLANCOS = 0.4              # cuanto corrige la dominante de color de los grises
 LUZ_OBJETIVO = (0.30, 0.50)       # limites de la luz tipica de cada momento
-SAT_OBJETIVO = 0.36               # saturacion media medida a la que se lleva cada toma (antes del look)
-SAT_LIMITES = (0.72, 1.25)        # cuanto puede bajar (LED de fiesta) o subir (tomas lavadas/log)
+PENDIENTE_LIMITES = (0.92, 1.12)  # cuanto puede oscurecer o aclarar una toma
+NEGRO_LECHOSO = 0.08              # desde aqui el negro se considera lavado y se limpia (antes 0.05: tocaba de mas)
+DESPLAZO_LIMITES = (-0.04, 0.02)  # cuanto baja unos negros lechosos
+BLANCOS_LIMITES = (0.96, 1.04)    # cuanto mueve cada canal al quitar una dominante
+SAT_OBJETIVO = 0.36               # respaldo; lo normal es la saturacion tipica del propio evento (objetivo_de_saturacion)
+SAT_OBJETIVO_LIMITES = (0.28, 0.38)
+SAT_LIMITES = (0.90, 1.08)        # cuanto puede bajar (LED de fiesta) o subir (tomas lavadas) la saturacion
 FUENTE_TITULO, FUENTE_SUB = "Great Vibes", "Montserrat"
 ESTILO_SUB = "Regular"            # peso del subtitulo (Light se pierde sobre vestidos blancos)
 VELO_TITULO = 0.42                # oscuridad del velo suave detras de los titulos (0 = sin velo)
@@ -80,6 +86,8 @@ DCTL_RUIDO = "MCP/XV_REDUCCION_RUIDO.dctl"
 DCTL_COLOR = "MCP/XV_CORRECCION_COLOR.dctl"
 DIR_LUT = rutas.DIR_LUT
 ACTIVAR_LUT = True
+LOOK_REC709 = {"1min": "MCP/XV_1min_CINE_TEAL_ORANGE_REC709.cube", "3min": "MCP/XV_3min_ROMANTICO_CALIDO_REC709.cube",
+               "15min": "MCP/XV_15min_FILM_KODAK_REC709.cube", "30min": "MCP/XV_30min_NATURAL_SUAVE_REC709.cube"}
 ACTIVAR_SIEMPRE = ["MULTITEXT"]   # titulos de la plantilla que se activan aunque esten apagados (firma)
 CORTAR_AL_RITMO = True
 ENCOLAR_RENDER = True
@@ -506,9 +514,17 @@ def objetivos_de_luz(items):
     return res
 
 
-def cdl_para(pieza, objetivo):
-    """CDL (slope / offset / saturacion) que iguala este plano: exposicion hacia la luz tipica de su momento,
-    negros limpios, balance de blancos con los grises de la escena y algo de saturacion si esta lavado."""
+def objetivo_de_saturacion(items):
+    """Saturacion tipica de los videos del evento: cada toma se acerca a ESA, no a un numero fijo, para emparejar sin
+    cambiarle el color a todo el evento."""
+    sats = [_mediana([s[2] for s in i["color"]]) for i in items if i["tipo"] != "foto" and i.get("color")]
+    sats = [x for x in sats if x > 0.02]
+    return _lim(_mediana(sats), *SAT_OBJETIVO_LIMITES) if sats else SAT_OBJETIVO
+
+
+def cdl_para(pieza, objetivo, sat_objetivo=None):
+    """CDL (slope / offset / saturacion) que empareja este plano con poco margen (son tomas Rec.709): exposicion hacia
+    la luz tipica de su momento, negros limpios, balance de blancos con los grises y saturacion hacia la del evento."""
     v = pieza["item"]
     col = v.get("color") or []
     if not col or pieza["tipo"] == "foto":
@@ -521,22 +537,22 @@ def cdl_para(pieza, objetivo):
     sat = _mediana([s[2] for s in m])
     grises = [s for s in m if s[6] >= 0.05 and min(s[3:6]) > 0.05]
     meta = luz + FUERZA_EXPOSICION * (objetivo - luz)
-    if negro > 0.05:                                   # negros lechosos: mapea negro->0.03 y luz->meta
+    if negro > NEGRO_LECHOSO:                          # negros lechosos: mapea negro->0.03 y luz->meta
         s = (meta - 0.03) / max(0.05, luz - negro)
     else:
         s = meta / max(0.02, luz)
-    s = _lim(s, 0.80, 1.35)
-    o = _lim(meta - luz * s, -0.08, 0.04) if negro > 0.05 else 0.0
+    s = _lim(s, *PENDIENTE_LIMITES)
+    o = _lim(meta - luz * s, *DESPLAZO_LIMITES) if negro > NEGRO_LECHOSO else 0.0
     gan = [1.0, 1.0, 1.0]
     if len(grises) >= max(1, len(m) // 3):            # hay suficientes grises: corrige la dominante
         rgb = [sum(x[k] for x in grises) / len(grises) for k in (3, 4, 5)]
         prom = sum(rgb) / 3.0
-        gan = [_lim(1 + FUERZA_BLANCOS * (prom / c - 1), 0.90, 1.10) for c in rgb]
+        gan = [_lim(1 + FUERZA_BLANCOS * (prom / c - 1), *BLANCOS_LIMITES) for c in rgb]
         l = 0.2126 * gan[0] + 0.7152 * gan[1] + 0.0722 * gan[2]
         gan = [g / l for g in gan]
-    # saturacion medida: cada toma se lleva hacia SAT_OBJETIVO (raiz = correccion suave), asi ninguna queda
-    # sobresaturada (luces LED) ni lavada (log, cielo nublado)
-    saturacion = _lim((SAT_OBJETIVO / sat) ** 0.5, *SAT_LIMITES) if sat > 0.02 else 1.0
+    # saturacion medida: cada toma se acerca a la tipica del evento (raiz = correccion suave), asi ninguna queda
+    # chillona (luces LED) ni lavada (cielo nublado), sin subirle el color a todo
+    saturacion = _lim(((sat_objetivo or SAT_OBJETIVO) / sat) ** 0.5, *SAT_LIMITES) if sat > 0.02 else 1.0
     pend = [s * g for g in gan]
     return {"NodeIndex": "1", "Slope": "%.4f %.4f %.4f" % tuple(pend), "Offset": "%.4f %.4f %.4f" % (o, o, o),
             "Power": "1.0 1.0 1.0", "Saturation": "%.3f" % saturacion}
@@ -1223,14 +1239,20 @@ def instalar_dctl(project):
         aviso("No se pudieron instalar los DCTL de color/ruido (%s)" % ex)
 
 
-def preparar_grupo(grupo):
-    """Grupo de color de la version: PRE-CLIP = correccion de color universal, POST-CLIP = LOOK."""
+def preparar_grupo(grupo, ver=None):
+    """Grupo de color de la version: PRE-CLIP = correccion de color universal, POST-CLIP = LOOK.
+    El look es el _REC709 (a media fuerza, ver herramientas/suavizar_looks.py): las tomas ya vienen en Rec.709 y el
+    look entero les sube demasiado el contraste y la saturacion."""
     try:
         pre, post = grupo.GetPreClipNodeGraph(), grupo.GetPostClipNodeGraph()
         pre.SetLUT(1, DCTL_COLOR)
         pre.SetNodeLabel(1, "CORRECCION DE COLOR")
         pre.SetNodeEnabled(1, True)
         if ACTIVAR_LUT:
+            look = LOOK_REC709.get((ver or {}).get("sufijo"))
+            if look and os.path.exists(os.path.join(DIR_LUT, look.replace("/", os.sep))):
+                if not post.SetLUT(1, look):
+                    aviso("Grupo %s: no se pudo poner el look suave (%s); queda el look entero." % (grupo.GetName(), look))
             post.SetNodeEnabled(1, True)
     except Exception as ex:
         aviso("Grupo %s: no se pudo preparar el color (%s)" % (grupo.GetName(), ex))
@@ -1468,6 +1490,7 @@ def main():
         aviso("No se pudo escribir la reduccion de ruido (%s)" % ex)
     reporte["ruido"] = ruido_n
     objetivos = objetivos_de_luz(items)
+    sat_evento = objetivo_de_saturacion(items)
     reporte["luz_objetivo"] = {k: round(v, 3) for k, v in objetivos.items()}
     pool = organizar_pool(mp, root, evento, items)
     print("Media pool: %d archivos en carpetas MAQUILLAJE / IGLESIA / FIESTA con colores" % len(pool))
@@ -1565,13 +1588,13 @@ def main():
                 if p["tipo"] != "foto":
                     rd.aplicar_a_item(x, ruido_n)
                     if IGUALAR:
-                        cdl = cdl_para(p, objetivos.get((p.get("momento") or p["item"].get("momento")), 0.42))
+                        cdl = cdl_para(p, objetivos.get((p.get("momento") or p["item"].get("momento")), 0.42), sat_evento)
                         if cdl and x.SetCDL(cdl):
                             info["igualados"] = info.get("igualados", 0) + 1
             except Exception:
                 pass
         if grupo:
-            preparar_grupo(grupo)
+            preparar_grupo(grupo, ver)
         info["camara_lenta"] = sum(1 for p, _ in puestos if p.get("lento_ok"))
         info["estabilizados"] = estabilizar(puestos)
         info["transiciones"] = transiciones(tl, pv, zonas, ver)

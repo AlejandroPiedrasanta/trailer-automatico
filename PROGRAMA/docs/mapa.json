@@ -370,7 +370,8 @@
   "archivos": [
    "PROGRAMA/armado/build_trailers.py",
    "PROGRAMA/armado/ruido.py",
-   "PROGRAMA/dctl"
+   "PROGRAMA/dctl",
+   "PROGRAMA/herramientas/suavizar_looks.py"
   ],
   "simbolos": [
    "cdl_para",
@@ -378,9 +379,13 @@
    "preparar_grupo",
    "instalar_dctl",
    "aplicar_a_item",
-   "escribir"
+   "escribir",
+   "objetivo_de_saturacion",
+   "suavizar"
   ],
-  "notas": []
+  "notas": [
+   "Tomas Rec.709: se tocan poco. Por plano solo empareja (pendiente 0.92-1.12, saturacion 0.90-1.08 hacia la del evento), DCTL casi neutro y look _REC709 a media fuerza (LOOK_REC709). Medir antes de subir margenes."
+  ]
  },
  {
   "id": "textos",

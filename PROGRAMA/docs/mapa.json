@@ -134,6 +134,64 @@
   ]
  },
  {
+  "id": "soltar",
+  "resumen": "Suelta la carpeta y listo: examinar, evento nuevo (ANTERIORES), copiar con avance, ordenar FOTOS/VIDEOS/DRON, armar solo; plan previo sin DaVinci y prueba de arrastre",
+  "claves": [
+   "soltar",
+   "arrastre",
+   "carpeta",
+   "copiar",
+   "ordenar",
+   "evento",
+   "nuevo",
+   "anteriores",
+   "cancelar",
+   "plan",
+   "previo",
+   "prueba",
+   "hoja"
+  ],
+  "archivos": [
+   "PROGRAMA/nucleo/motor.py",
+   "PROGRAMA/interfaz/trailer_xv.py",
+   "PROGRAMA/nucleo/prueba_arrastre.py",
+   "PROGRAMA/herramientas/probar_arrastre.py",
+   "PROGRAMA/recursos/plantillas_marcadores.json",
+   ".github/workflows/prueba_arrastre.yml"
+  ],
+  "simbolos": [
+   "examinar_origen",
+   "es_otro_evento",
+   "evento_actual",
+   "archivar_material",
+   "copiar_material",
+   "Cancelado",
+   "plan_previo",
+   "guardar_plan",
+   "Copia",
+   "Hoja",
+   "_recibir",
+   "_recibido",
+   "_copiar",
+   "_fin_copia",
+   "_pedir_datos",
+   "_cuenta_atras",
+   "_armar_flujo",
+   "crear_material",
+   "Guion",
+   "separar",
+   "_auto_contenido"
+  ],
+  "notas": [
+   "Flujo de la ventana (self.flujo): mirando -> pregunta (evento nuevo) -> copiando -> datos (tipo y nombres) o cuenta -> _play().",
+   "Ajuste 'auto_armar' (ch_auto): si esta apagado, al soltar solo copia y ordena.",
+   "plan_previo corre build_trailers con DRY_RUN y SIN_RESOLVE usando recursos/plantillas_marcadores.json; lo guarda en datos/analisis/plan_previo.json.",
+   "Prueba local: python PROGRAMA/herramientas/probar_arrastre.py [--programa <exe>] [--dos-eventos] [--con-davinci] [--salida <dir>]. Usa TRAILER_BASE y TRAILER_DATOS aparte: no toca 1 MATERIAL ni el proyecto de Resolve.",
+   "En GitHub: Actions > 'Prueba de arrastre' (Windows 2022/2025/ARM y Mac 15/26/Intel, con el codigo y con el programa compilado).",
+   "La prueba se activa con TRAILER_PRUEBA_ARRASTRE; en ese modo no se buscan actualizaciones ni se crea la tarea programada."
+  ]
+ },
+ {
   "id": "rutas",
   "resumen": "Todas las rutas: codigo vs instalado (.exe), DATOS, carpeta de trabajo, Resolve y LUT por sistema, ffmpeg",
   "claves": [

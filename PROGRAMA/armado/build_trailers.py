@@ -185,7 +185,8 @@ class Planificador:
         self.vids = validos if verticales else horizontales
         n_vert = len(validos) - len(horizontales)
         if n_vert and not verticales:
-            print("%d videos verticales quedan fuera del montaje (estan en el media pool)." % n_vert)
+            print("%d video%s fuera del montaje (%s en el media pool)."
+                  % (n_vert, " vertical queda" if n_vert == 1 else "s verticales quedan", "esta" if n_vert == 1 else "estan"))
         elif n_vert and not USAR_VIDEOS_VERTICALES:      # casi todo es de celular parado: mejor recortado que en negro
             print("Hay pocos videos horizontales: se usan tambien los %d verticales (llenando el cuadro)." % n_vert)
         self.fotos = self._sin_repetidas([i for i in items if i["tipo"] == "foto" and not i.get("descartar")

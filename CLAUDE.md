@@ -22,6 +22,7 @@
 - **inicio-escena**: Pantalla de Inicio = la de CineCaptions: esfera de particulas, astrolabio GO, cometas, explosion
 - **ventana**: Ventana sin marco: pestanas Material/Textos/Ajustes, bordes, chequeo de arranque, instancia unica
 - **material**: 1 MATERIAL: minimos, pedir lo que falta, arrastrar/agregar, y el panel 'Como quedo organizado' (linea del dia)
+- **soltar**: Suelta la carpeta y listo: examinar, evento nuevo (ANTERIORES), copiar con avance, ordenar FOTOS/VIDEOS/DRON, armar solo; plan previo sin DaVinci y prueba de arrastre
 - **rutas**: Todas las rutas: codigo vs instalado (.exe), DATOS, carpeta de trabajo, Resolve y LUT por sistema, ffmpeg
 - **analisis**: Analisis del material: relojes por camara (UTC, fecha mala), contenido, calidad/color/audio en 1 lectura, tramos
 - **resolve**: Conexion con DaVinci: abrir, cargar/importar proyecto, cuadros que bloquean, reenlazar medios

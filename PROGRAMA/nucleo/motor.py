@@ -443,13 +443,36 @@ def plan_previo(analisis, log=print, solo=None, tipo_evento="xv", evento="", **_
             plantillas = json.load(f)
     except Exception:
         return None
+    import re
+    repiten = {}                                # version -> planos que repiten video (un solo aviso al final, no uno por zona)
+
+    def decir(*a, **k):
+        t = " ".join(str(x) for x in a)
+        m = re.match(r"AVISO: (\S+) .*?: (\d+) planos repiten video", t)
+        if m:
+            repiten[m.group(1)] = repiten.get(m.group(1), 0) + int(m.group(2))
+        else:
+            log(t.replace(" | 0 cortes al ritmo", ""))      # el ritmo se mide despues, ya con la musica en DaVinci
+
     ruta = rutas.codigo("build_trailers.py")
     g = {"__name__": "build_trailers", "resolve": _ResolveFalso(plantillas), "BASE": BASE, "ANALISIS": analisis,
          "EVENTO": evento or None, "SOLO": solo or None, "REHACER": True, "DRY_RUN": True, "SIN_RESOLVE": True,
-         "TIPO_EVENTO": tipo_evento, "print": lambda *a, **k: log(" ".join(str(x) for x in a))}
+         "TIPO_EVENTO": tipo_evento, "print": decir}
     with open(ruta, encoding="utf-8") as f:
         exec(compile(f.read(), ruta, "exec"), g)
-    return g.get("result")
+    if repiten:
+        claves = sorted(repiten, key=lambda v: int(re.sub(r"\D", "", v) or 0))
+        vs = [re.sub(r"(\d+)", r"\1 ", v) for v in claves]              # «15min» -> «15 min»
+        lista = vs[0] if len(vs) == 1 else ", ".join(vs[:-1]) + " y " + vs[-1]
+        if len(vs) == 1:
+            log("Con el video que hay, la versión de %s repite %d tomas: con más video queda mejor." % (lista, repiten[claves[0]]))
+        else:
+            log("Con el video que hay, las versiones de %s repiten tomas (%s): con más video quedan mejor."
+                % (lista, " · ".join("%s: %d" % (v, repiten[k]) for v, k in zip(vs, claves))))
+    res = g.get("result")
+    if isinstance(res, dict):
+        res["repiten"] = repiten
+    return res
 
 
 def chequeo():

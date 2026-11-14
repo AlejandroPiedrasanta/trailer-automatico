@@ -91,6 +91,28 @@ Todo corre en local con el programa: `ARMAR TRAILERS.bat` (Windows) o `ARMAR TRA
   - La ventana tenía un mínimo de 818 px de alto por el astrolabio fijo en el layout. Ahora va en `hueco_boton` (fuera del layout), las páginas usan `QScrollArea` y el mínimo es 880×580.
   - Al copiar material, dos cámaras con `DSC_0001.JPG` se pisaban. Ahora la segunda se llama «(2)», se ignoran los `._` de la Mac y la copia pasa por un temporal.
 
+## Suelta la carpeta y listo (pedido 2026-11-13: «arrastrar una carpeta con de todo y que lo ordene y empiece a armar»)
+- **Flujo** (`trailer_xv.py`, `self.flujo`): soltar → `motor.examinar_origen` (cuenta fotos, videos, dron, lo que no sirve y la fecha) → si es de otro día que lo que hay, hoja «¿Es un evento nuevo?» → `Copia` (hilo, con avance y «Cancelar la copia») → hoja con tipo y nombres, o cuenta atrás → `_play()`.
+  - El interruptor de Ajustes «Al soltar una carpeta, ordenarla y armar el tráiler solo» (`auto_armar`) lo apaga: entonces solo copia y ordena.
+  - Evento nuevo: `motor.archivar_material` mueve lo anterior a `1 MATERIAL/ANTERIORES/<evento>` y limpia nombres, frase y líneas guardadas. Nunca borra.
+  - Los avisos y preguntas van en `Hoja` (tarjeta sobre la escena), no en `QMessageBox`.
+- **Ordenar** (`motor.copiar_material`): copia por trozos a `.copiando` y renombra al final; salta lo idéntico, renombra choques «(2)», revisa el espacio en disco e ignora basura (`._`, `Thumbs.db`, vacíos, RAW, documentos).
+  - Dron: nombre `DJI_`, carpeta llamada dron/drone/aéreo/mavic, o el codificador DJI en los metadatos (`_info_video`, no Osmo/Pocket/Action).
+- **Momentos** (`analizar_material._auto`): primero por contenido (`_auto_contenido`: programación dinámica MAQUILLAJE → IGLESIA → FIESTA, ajustada al hueco de 8 min o más que esté cerca); si no hay con qué, por huecos (`_auto_huecos`).
+  - Si la `CLASIFICACION` guardada es de otro día, se renombra a `.anterior` y se empieza de cero.
+- **Plan previo sin DaVinci** (`motor.plan_previo`): corre `build_trailers` con `DRY_RUN` y `SIN_RESOLVE` sobre `recursos/plantillas_marcadores.json` (marcadores de las 4 plantillas) y lo guarda en `datos/analisis/plan_previo.json`. Sale en el registro antes de conectar con DaVinci.
+  - Si se cambian los marcadores de una plantilla, volver a leerlos de EVENTOS CINEMA y actualizar ese JSON.
+- **Variedad** (`Planificador.separar`): separa cortes seguidos del mismo video (55 % → 11 % en la boda de prueba).
+- **Prueba de arrastre** (todo en local, no toca `1 MATERIAL` ni el proyecto de Resolve):
+  - `python PROGRAMA/herramientas/probar_arrastre.py` crea un evento de mentira (27 fotos, 17 videos, 3 de dron, archivos rotos y basura), abre el programa con `TRAILER_BASE` y `TRAILER_DATOS` aparte, suelta la carpeta con eventos de Qt y comprueba cada etapa. Deja `resultado.txt` y capturas.
+  - `--programa <exe>` prueba el instalado o compilado · `--dos-eventos` prueba la pregunta y ANTERIORES · `--con-davinci` arma de verdad la de 1 min (crea «BODA 2026-10-17 - 1min»; preguntar antes).
+  - Sin `--con-davinci` apunta `RESOLVE_SCRIPT_LIB` a una ruta que no existe: debe terminar en «No encuentro DaVinci Resolve Studio…».
+  - El guion vive en `nucleo/prueba_arrastre.py` (`Guion`), se activa con `TRAILER_PRUEBA_ARRASTRE` y en ese modo no busca actualizaciones ni crea la tarea programada.
+  - En GitHub: **«Prueba de arrastre»** (`.github/workflows/prueba_arrastre.yml`) en Windows 2022/2025/ARM y Mac 15/26/Intel, con el código y con el programa compilado ahí mismo.
+- Lecciones:
+  - En Windows `os._exit` con hilos de Qt vivos terminaba con 0xC0000005: la prueba sale con `TerminateProcess`.
+  - El error completo va al registro; en la ventana solo «No se pudo terminar: …».
+
 ## Carpetas (`rutas.py`, igual en Windows y Mac)
 ```
 TRAILER XV AUTOMATICO/

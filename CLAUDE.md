@@ -34,7 +34,7 @@
 - **entrega**: Render de la cola, audio a -14 LUFS con limitador, medicion de saturacion/luz del video final
 - **perfiles**: Tipos de evento (xv, boda, bautizo, graduacion, cumpleanos): titulos, capitulos, frases, gracias
 - **instalador**: Instalador .exe como el de CineCaptions: banner animado (astrolabio), PASOS, % y barra; PyInstaller + C#
-- **mac**: Mac: .dmg como el de CineCaptions (fondo de 2 pasos) con .pkg; se compila en una Mac o GitHub Actions
+- **mac**: Mac: .dmg de «Arrastralo a Aplicaciones» como CineCaptions (sin .pkg ni contrasena), primer arranque, servicio del usuario; se compila en una Mac o GitHub Actions
 - **registro**: Registro en archivo (registro.log), ganchos de errores, faulthandler; donde mirar cuando algo falla
 - **ia-resolve**: IA de Resolve Studio: escuchar votos/brindis (transcripcion + clasificacion), voz sobre la musica, camara lenta Speed Warp, estabilizar, IntelliSearch al final
 - **actualizaciones**: Actualizaciones como CineCaptions: version.json firmado en trailer-automatico-releases, descarga con huella, al cerrar o en segundo plano (tarea Windows / servicio Mac)

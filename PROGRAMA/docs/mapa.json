@@ -551,7 +551,7 @@
  },
  {
   "id": "mac",
-  "resumen": "Mac: .dmg como el de CineCaptions (fondo de 2 pasos) con .pkg; se compila en una Mac o GitHub Actions",
+  "resumen": "Mac: .dmg de «Arrastralo a Aplicaciones» como CineCaptions (sin .pkg ni contrasena), primer arranque, servicio del usuario; se compila en una Mac o GitHub Actions",
   "claves": [
    "mac",
    "command",
@@ -567,11 +567,21 @@
    "PROGRAMA/compilar/mac/dmg/ajustes_dmg.py",
    ".github/workflows/mac.yml",
    "ARMAR TRAILERS.command",
-   "PROGRAMA/herramientas/empaquetar.py"
+   "PROGRAMA/herramientas/empaquetar.py",
+   "PROGRAMA/compilar/mac/probar_arrastrar.sh",
+   "PROGRAMA/compilar/mac/probar_flujo.sh",
+   "PROGRAMA/nucleo/actualizar_fondo.py",
+   "PROGRAMA/nucleo/tareas.py"
   ],
   "simbolos": [
    "empaquetar",
-   "instalar_fuentes"
+   "instalar_fuentes",
+   "primer_arranque",
+   "_asegurar_agente_mac",
+   "_reemplazar_app",
+   "servicio_mac",
+   "app_de_paso",
+   "_instalar_mac"
   ],
   "notas": [
    "construir_mac.sh: venv -> ffmpeg estatico (martin-riedl) -> PyInstaller BUNDLE -> autoprueba -> pkgbuild/productbuild -> dmgbuild.",
@@ -674,8 +684,7 @@
    "PROGRAMA/herramientas/firmar_manifiesto.py",
    "PROGRAMA/herramientas/publicar_version.ps1",
    "PROGRAMA/interfaz/trailer_xv.py",
-   "PROGRAMA/compilar/mac/pkg/scripts/postinstall",
-   "PROGRAMA/compilar/mac/pkg/scripts/preinstall"
+   "PROGRAMA/compilar/mac/pkg/scripts/postinstall"
   ],
   "simbolos": [
    "comprobar",

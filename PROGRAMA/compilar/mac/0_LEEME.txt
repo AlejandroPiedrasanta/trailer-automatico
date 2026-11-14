@@ -1,9 +1,9 @@
-INSTALADOR DE MAC (como el de CineCaptions)
-============================================
-El .dmg se ve con dos pasos: «1 Doble clic para instalar» (el .pkg) y «2 Ábrelo desde Aplicaciones».
-El .pkg copia TrailerAutomatico.app a Aplicaciones y su postinstall deja: la carpeta de color de DaVinci con
-permiso, ffmpeg (si la app no lo trae: Homebrew), las fuentes de los títulos, las carpetas de trabajo y el
-color/ruido en DaVinci (TrailerAutomatico --tarea instalar).
+INSTALADOR DE MAC (como el de CineCaptions 5.91)
+================================================
+El .dmg es de «Arrástralo a Aplicaciones»: trae el programa y el enlace a Aplicaciones. No hay instalador .pkg que abrir
+(instalar con un .pkg siempre pide la contraseña de la Mac; arrastrar no).
+Lo que antes hacía el .pkg lo hace el programa la primera vez que se abre: carpetas de trabajo, música guardada aparte,
+fuentes de los títulos, color en DaVinci y el servicio de actualizaciones del usuario (se actualiza solo, sin contraseña).
 
 Solo se puede compilar EN UNA MAC (PyInstaller no compila para Mac desde Windows). Dos caminos:
 
@@ -11,16 +11,19 @@ Solo se puede compilar EN UNA MAC (PyInstaller no compila para Mac desde Windows
      bash PROGRAMA/compilar/mac/construir_mac.sh
    Deja "3 INSTALADORES/Mac/Instalar_Trailer_automatico_Mac_<AppleSilicon|Intel>_<version>.dmg
 
-2) En las Mac de GitHub (sin tener Mac): subir el proyecto a un repositorio PRIVADO de GitHub y correr
-   Actions > "Instaladores Mac" (.github/workflows/mac.yml). Los .dmg salen en Artifacts.
-   La mezcla de fiesta (>100 MB) se sube partida en trozos *.parte01, *.parte02 (construir_mac.sh la une).
+2) En las Mac de GitHub (sin tener Mac): Actions > "Instaladores Mac" (.github/workflows/mac.yml).
+   Los .dmg salen en Artifacts.
 
 Archivos:
-  construir_mac.sh ....... venv -> ffmpeg estático -> PyInstaller (.app) -> autoprueba -> .pkg -> .dmg
-  trailer_mac.spec ....... receta de PyInstaller (BUNDLE)
-  pkg/scripts/postinstall  tareas al instalar (como el usuario de la Mac)
-  pkg/recursos/*.html .... bienvenida y final del instalador de Apple
-  dmg/fondo_dmg.py ....... dibuja fondo.png y fondo@2x.png (660 x 460)
+  construir_mac.sh ....... venv -> ffmpeg estático -> PyInstaller (.app) -> autoprueba -> paquete oculto -> .dmg
+  trailer_mac.spec ....... receta de PyInstaller (BUNDLE); mete Desinstalar.command dentro de la app
+  dmg/fondo_dmg.py ....... dibuja fondo.png y fondo@2x.png (600 x 360)
   dmg/ajustes_dmg.py ..... ventana del .dmg (dmgbuild): dónde va cada icono
-  Desinstalar.command .... quita la app (las carpetas de trabajo no se tocan)
-Sin firma de Apple (Developer ID) la primera vez se abre con clic derecho > Abrir (lo dice el fondo del .dmg).
+  pkg/scripts/postinstall  el paquete OCULTO del disco, para las Mac que instalaron con el .pkg (hasta la 1.5.1): su
+                           servicio de root lo instala y él copia la app del mismo disco
+  Desinstalar.command .... quita la app y su servicio (las carpetas de trabajo no se tocan); va dentro de la app
+  probar_instalacion.sh .. prueba el .dmg en una Mac (si trae la app, sigue en probar_arrastrar.sh)
+  probar_arrastrar.sh .... el disco, arrastrar sin contraseña, primer arranque, servicio del usuario y reemplazo
+  probar_flujo.sh ........ lo que trae el programa instalado y soltar una carpeta (ordenar, organizar y plan)
+Sin firma de Apple (Developer ID) la primera vez macOS pide permitirlo en Ajustes del Sistema > Privacidad y seguridad >
+Abrir igualmente (lo dice el fondo del .dmg).

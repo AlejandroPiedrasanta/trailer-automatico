@@ -50,7 +50,7 @@ jobs:
         env:
           PROBAR_ACTUALIZACION: ${{ inputs.vieja != '' && '1' || '0' }}
           VIEJA: ${{ inputs.vieja }}
-          PROBAR_VIEJAS: '1'
+          PROBAR_VIEJAS: ${{ matrix.nombre == 'Intel' && '1' || '0' }}    # la de chip Apple, limpia: arrastrar en una Mac nueva
         run: bash PROGRAMA/compilar/mac/probar_instalacion.sh
       - name: Lo que trae el instalador y soltar una carpeta (programa instalado)
         if: ${{ !cancelled() }}

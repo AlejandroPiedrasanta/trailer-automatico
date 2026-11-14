@@ -74,7 +74,9 @@
    "ajustes",
    "textos",
    "qss",
-   "pyside6"
+   "pyside6",
+   "portada",
+   "voz original"
   ],
   "archivos": [
    "PROGRAMA/interfaz/trailer_xv.py"
@@ -91,7 +93,9 @@
   ],
   "notas": [
    "QSS: un QPushButton sin borde o con radio > alto/2 sale cuadrado: border 1px solid transparent.",
-   "Pruebas de la ventana: motor simulado (armar_todo falso) + grab() a PNG en el scratchpad."
+   "Pruebas de la ventana: motor simulado (armar_todo falso) + grab() a PNG en el scratchpad.",
+   "Portada (QSplashScreen) al instante mientras se construye la ventana (~1,5 s).",
+   "Ajustes > Voz original: un interruptor por version corta (1, 3 y 15 min); en 30 min va siempre."
   ]
  },
  {
@@ -237,7 +241,12 @@
    "contenido",
    "audio",
    "rafaga",
-   "tramos"
+   "tramos",
+   "quemado",
+   "enfoque",
+   "torcida",
+   "piso",
+   "vista"
   ],
   "archivos": [
    "PROGRAMA/analisis/analizar_material.py"
@@ -261,14 +270,18 @@
    "listar",
    "_reloj_corrido",
    "_ceremonia_tras_pausa",
-   "_auto_contenido"
+   "_auto_contenido",
+   "_vista_cuadros",
+   "_barrido_de",
+   "_quemado"
   ],
   "notas": [
    "Cache material.json con clave nombre|tamano (sobrevive a mover carpetas); VERSION sube y lo viejo se completa solo.",
    "Relojes: UTC se detecta comparando la fecha del ARCHIVO (hora local de la camara) con creation_time; fecha mala con hora buena se pasa al dia del evento; lo demas se ordena por contenido.",
    "Contenido: luz/negro/saturacion/calidez/grises en la escala de CADA camara + orden de sus archivos (DP MAQUILLAJE->IGLESIA->FIESTA). Los vecinos de otras camaras empeoraban (MEZCLA_VECINOS=0).",
    "Medido rompiendo relojes a proposito: UTC 100%, fecha mala 100%, fotos sin hora 97%, todo sin hora 92%, material real sin falsos positivos.",
-   "Reloj sin poner (otra fecha y otra hora, pero corre): _reloj_corrido lo alinea con las camaras fiables. Ceremonia: primer tramo de video casi seguido tras una pausa larga (_ceremonia_tras_pausa)."
+   "Reloj sin poner (otra fecha y otra hora, pero corre): _reloj_corrido lo alinea con las camaras fiables. Ceremonia: primer tramo de video casi seguido tras una pausa larga (_ceremonia_tras_pausa).",
+   "vista (v4): por cada medio segundo, medidas ABSOLUTAS: nit (enfoque), con, quem (luces reventadas), eje/giro/pico (camara torcida o al piso), pan (barrido) y hash (huella de la imagen). La 'calidad' vieja es relativa al propio video: un video entero malo puntuaba como bueno."
   ]
  },
  {
@@ -313,7 +326,15 @@
    "zonas",
    "marcadores",
    "cortes",
-   "versiones"
+   "versiones",
+   "relleno",
+   "fotos",
+   "dron",
+   "encuadre",
+   "accidental",
+   "piso",
+   "conformar",
+   "fluido"
   ],
   "archivos": [
    "PROGRAMA/armado/build_trailers.py"
@@ -328,11 +349,25 @@
    "main",
    "momento_en",
    "transiciones",
-   "zonas_de"
+   "zonas_de",
+   "vista",
+   "parte_buena",
+   "mismo_encuadre",
+   "_rellenar_fotos",
+   "_rellenar_dron",
+   "_parecidas",
+   "separar",
+   "zona"
   ],
   "notas": [
    "zonas_de: si el marcador ACTO esta a menos de 5 s, el momento empieza en el cambio de cancion.",
-   "Planificador: fotos sin rafagas (dHash) y el 70% mas nitido; videos solo en su tramo del momento; puntaje = calidad x emocion del audio."
+   "Planificador: fotos sin rafagas (dHash) y el 70% mas nitido; videos solo en su tramo del momento; puntaje = calidad x emocion del audio.",
+   "Tomas malas fuera (Planificador.vista): enfoque < 20 % del tipico de ESA camara, quemado >= 25 %, barrido, temblor fuerte, a oscuras o torcida/al piso; un video con < 15 % util es accidental y no entra. Umbrales validados a ojo con hojas de contacto.",
+   "Cada version elige de TODO el material (plan.usados = {} por version): antes la de 30 min se quedaba con las sobras.",
+   "Variedad: tope del 22 % de una zona para un mismo encuadre (videos del tripode agrupados por firma de 3 huellas) y 15 % de dron.",
+   "Relleno si no alcanzan las tomas buenas: dron libre, fotos del momento (solo 30 min, con zoom dinamico y encadenado) y al final repetir.",
+   "30 c/s en linea de 24: los planos van al 80 % (CONFORMAR_30_A_24) para ver todos los cuadros; los sincronizados con voz, al 100 %.",
+   "transiciones(): encadenado corto entre dos planos casi iguales (no en la apertura) y al entrar/salir de una foto de relleno."
   ]
  },
  {
@@ -369,7 +404,9 @@
    "balance",
    "lut",
    "dctl",
-   "ruido"
+   "ruido",
+   "quemado",
+   "gamma"
   ],
   "archivos": [
    "PROGRAMA/armado/build_trailers.py",
@@ -395,12 +432,15 @@
    "capturar_ruido_davinci",
    "drx_activo",
    "_guardar_ruido_dv",
-   "aplicar"
+   "aplicar",
+   "sin_subir_saturacion"
   ],
   "notas": [
    "Tomas Rec.709: se tocan poco. Por plano solo empareja (pendiente 0.92-1.12, saturacion 0.90-1.08 hacia la del evento), DCTL casi neutro y look _REC709 a media fuerza (LOOK_REC709). Medir antes de subir margenes.",
    "Ruido: cada video se mide (ruido_tomas) y recibe un nivel N1..N5 (ruido.py, un DCTL por nivel). El mismo proceso para cualquier toma; la fuerza entera solo en las sombras.",
-   "Ruido de DaVinci: Ajustes > «Guardar el del clip actual» captura el grado del clip bajo el cursor (datos/ruido_davinci/ruido.drx) y al armar se aplica a todas las tomas con ApplyGradeFromDRX; el DCTL queda transparente (N0)."
+   "Ruido de DaVinci: Ajustes > «Guardar el del clip actual» captura el grado del clip bajo el cursor (datos/ruido_davinci/ruido.drx) y al armar se aplica a todas las tomas con ApplyGradeFromDRX; el DCTL queda transparente (N0).",
+   "Saturacion: nunca por encima de la de camara. CDL 0,85-1,00 (solo baja), DCTL 0,93 + calma colores muy vivos y quita color a las luces casi quemadas, y los looks _REC709 no suben la saturacion de ningun color (suavizar_looks.sin_subir_saturacion).",
+   "Toma sobreexpuesta: gamma (Power <= 1,22) en vez de bajar la pendiente (que volvia grises las luces); con luces al tope no se aclara."
   ]
  },
  {
@@ -443,7 +483,11 @@
    "lufs",
    "ritmo",
    "whoosh",
-   "beats"
+   "beats",
+   "cruce",
+   "fundido",
+   "voz",
+   "rampa"
   ],
   "archivos": [
    "PROGRAMA/armado/sfx.py",
@@ -456,10 +500,19 @@
    "nivelar",
    "golpes",
    "_golpes_numpy",
-   "whooshes"
+   "whooshes",
+   "cruces_de_musica",
+   "bajar_musica",
+   "poner_voces",
+   "pulir_voz",
+   "_final_de_cancion",
+   "_mover_cancion"
   ],
   "notas": [
-   "Sin librosa en el .exe: ritmo de las canciones de plantilla en recursos/ritmo_plantillas.json."
+   "Sin librosa en el .exe: ritmo de las canciones de plantilla en recursos/ritmo_plantillas.json.",
+   "Musica bajo la voz SIN escalon: el tramo bajo va en la pista «MUSICA BAJA (voz)» con la misma cancion en fase y fundidos de 14 cuadros (la suma es una rampa).",
+   "VOZ a -10 LUFS medido en crudo: el aislamiento le quita el ambiente y con -15 quedaba 6 dB bajo la musica.",
+   "Cambio de cancion (cruces_de_musica mide el sonido con ffmpeg): si la que sale sigue sonando, se alarga 2,5 s y se apaga en 4 s; si se ACABA antes (huecos casi en silencio), se retrasa entera para terminar donde entra la otra, de la ultima a la primera: la primera se alarga y la musica de fiesta no se mueve de su marcador."
   ]
  },
  {
@@ -483,7 +536,9 @@
    "verificar_imagen",
    "medir"
   ],
-  "notas": []
+  "notas": [
+   "renderizar(solo=[...]): solo esas versiones; las demas que sigan en la cola no se vuelven a renderizar."
+  ]
  },
  {
   "id": "perfiles",
@@ -517,7 +572,10 @@
    "compilar",
    "csc",
    "version",
-   "desinstalar"
+   "desinstalar",
+   "dat",
+   "instante",
+   "antivirus"
   ],
   "archivos": [
    "PROGRAMA/compilar/icono/icono.py",
@@ -540,13 +598,16 @@
    "dibujar",
    "instalar",
    "limpiar",
-   "verificar"
+   "verificar",
+   "BuscarCarga"
   ],
   "notas": [
    "pwsh -File PROGRAMA/compilar/windows/construir.ps1 [-SoloInstalador] -> 3 INSTALADORES/Instalar Trailer automatico <ver>.exe.",
    "Instalador.cs = instalador_nucleo.cs.txt (motor + Ventana) + clases de interfaz de CineCaptions (Tema, Dibujo, BotonPildora, BarraModerna, BotonCirculo, Banner, ListaPasos).",
    "C# 5 (csc de .NET 4): sin $\"\" ni ?. ; la ventana se escala a mano por DPI (E()). Doble clic = instala solo; /desinstalar espera el boton.",
-   "Icono: la imagen EXACTA de la persona (recursos/icono_fuente.png, sin fondo con: python PROGRAMA/compilar/icono/icono.py limpiar <imagen>). icono_app.dibujar la escala; sin ese archivo dibuja la version vectorial."
+   "Icono: la imagen EXACTA de la persona (recursos/icono_fuente.png, sin fondo con: python PROGRAMA/compilar/icono/icono.py limpiar <imagen>). icono_app.dibujar la escala; sin ese archivo dibuja la version vectorial.",
+   "El instalador son DOS archivos: el .exe (1 MB, abre al instante) y el .dat de al lado (el programa). Con todo en un .exe de 560 MB el antivirus lo revisaba entero antes de arrancar (8 s sin ver nada). La actualizacion publica sigue siendo un solo .exe.",
+   "Sin autoprueba en el instalador ni espera al terminar: abre el programa y se queda hasta que su ventana se ve."
   ]
  },
  {
@@ -628,7 +689,11 @@
    "estabilizar",
    "clasificacion de audio",
    "voice isolation",
-   "ducking"
+   "ducking",
+   "pasajes",
+   "pastor",
+   "discurso",
+   "voz original"
   ],
   "archivos": [
    "PROGRAMA/analisis/escenas_ia.py",
@@ -651,7 +716,10 @@
    "pista_voz",
    "poner_lento",
    "poner_voces",
-   "tipo_de"
+   "tipo_de",
+   "pasajes_de",
+   "ubicar_voces",
+   "voz_activa"
   ],
   "notas": [
    "TranscribeAudio y PerformAudioClassification devuelven False si Resolve no esta en la pagina MEDIOS (entender la abre y vuelve).",
@@ -659,7 +727,10 @@
    "La clasificacion deja Category/Subcategory en GetMetadata(). La transcripcion alucina en musica ('¡Suscríbete!'): filtrar.",
    "No hay keyframes de volumen por script: bajar_musica parte el clip de musica en 3 con la misma fuente.",
    "Los Type del media pool vienen traducidos ('Video + audio'): no comparar con el ingles.",
-   "Voz sobre la musica: SOLO VOTOS/DECLARACION de la IGLESIA (TIPOS_VOZ), en la pista VOZ NATURAL de la plantilla. Pedido de la persona: nada de audios random."
+   "Voz sobre la musica: SOLO VOTOS/DECLARACION de la IGLESIA (TIPOS_VOZ), en la pista VOZ NATURAL de la plantilla. Pedido de la persona: nada de audios random.",
+   "Voz original = PASAJES: oraciones seguidas (pausa <= 1,6 s) de >= 5 s y >= 12 palabras a ritmo de habla: pastor, brindis, discursos. Nada de frases sueltas; en la fiesta un DISCURSO necesita palabras de discurso (si no, es la letra de una cancion).",
+   "Por version: siempre en 30 min, activada en 15, a elegir en 1 y 3 (Ajustes > Voz original -> VOZ). Cada voz entra en un corte y, si la imagen sirve, ese plano es quien habla, sincronizado.",
+   "Pulido por clip: AudioVoiceIsolation 70 + AudioDialogueLeveler (propiedades del TimelineItem, solo en la timeline activa)."
   ]
  },
  {

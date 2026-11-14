@@ -9,6 +9,7 @@ ganancia que lo lleva al objetivo de su pista:
   SFX CAMPANAS/GRITOS -23
   SFX CHISPA ........ -24
   SFX PUBLICO ....... -25        (ambiente bajo la musica)
+  VOZ ............... -10        (la voz original: pastor, brindis, discursos; ver la nota en OBJETIVOS)
 Los trozos cortos (cortes ritmicos de la intro) usan la ganancia de su misma cancion. El masterizado del
 render deja despues todo el video a -14 LUFS. Cache en PROGRAMA\\datos\\analisis\\volumen.json.
 """
@@ -18,7 +19,9 @@ import json
 import subprocess
 
 OBJETIVOS = [("MUSICA", -18.0), ("WHOOSH", -22.0), ("CAMPANAS", -23.0), ("GRITO", -23.0),
-             ("CHISPA", -24.0), ("PUBLICO", -25.0), ("SFX", -24.0), ("VOZ", -15.0)]
+             ("CHISPA", -24.0), ("PUBLICO", -25.0), ("SFX", -24.0), ("VOZ", -10.0)]
+# VOZ: se mide el audio de camara ENTERO (voz + ambiente), y despues el aislamiento de voz de Resolve le quita el
+# ambiente: con -15 la voz quedaba unos 6 dB por debajo de la musica de alrededor (medido en el video final).
 GANANCIA = (-18.0, 12.0)        # dB maximos que se baja / sube un clip
 MIN_SEG = 1.0                   # clips mas cortos usan la ganancia de su cancion
 import rutas
@@ -27,6 +30,8 @@ SIN_VENTANA = rutas.SIN_VENTANA
 
 def objetivo_de(pista):
     p = (pista or "").upper()
+    if "BAJA" in p:                 # la musica bajada debajo de la voz ya trae su nivel (build_trailers.bajar_musica)
+        return None
     return next((v for k, v in OBJETIVOS if k in p), None)
 
 

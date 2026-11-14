@@ -23,6 +23,10 @@ FIN_INTRO_S = 15.0                     # s: hasta aqui llega el bloque de intro 
 VITORES = ["cheer_big", "cheer_short", "applause", "sicilian"]
 CADA_VITOR_S = 25.0                    # s de fiesta por cada vitor (maximo MAX_VITORES)
 MAX_VITORES = 10
+# Los SFX PROPIOS del programa (recursos/sfx, los crea herramientas/hacer_sfx.py) van en su pista. Los de mas de 1 s
+# los nivela mezcla.py (objetivo SFX); a los cortos se les pone aqui el volumen.
+PISTA_MOMENTOS = "SFX MOMENTOS"
+VOL_PASO, VOL_OBTURADOR = -7.0, -12.0
 
 
 def _pista(tl, nombre):
@@ -127,4 +131,74 @@ def sonorizar(tl, mp, buscar, zonas, fps, cortes, log=print):
             poner(VITORES[k % len(VITORES)], "publico2" if k % 2 == 0 else "publico", t, 6 * S,
                   0.4 * S, 1.5 * S, "publico" if k % 2 == 0 else "publico2")
     poner("applause", "publico", cierre - 2 * S, total - cierre + 2 * S, 0.5 * S, 2.5 * S, "publico2")
+    return puestos
+
+
+def momentos(tl, mp, propios, fps, fotos_intro=(), log=print):
+    """Los momentos fuertes, con los SFX propios del programa (propios: {"XV_GOLPE": MediaPoolItem, ...}):
+      - entrada de la FIESTA (marcador ACTO ... FIESTA): subida de aire que termina en seco y golpe grave en el cambio;
+      - titulo con el nombre y tarjeta final: destellos;
+      - cada capitulo y la entrada de la imagen final: paso de aire corto;
+      - fotos de la intro: un clic de camara por foto (rafaga).
+    fotos_intro: cuadros (desde el inicio de la linea) en que empieza cada foto de la intro.
+    Devuelve [(sonido, segundo)]."""
+    if not propios:
+        return []
+    st = tl.GetStartFrame()
+    S = fps
+    t = _pista(tl, PISTA_MOMENTOS)
+    if not t:
+        if not tl.AddTrack("audio", "stereo"):
+            return []
+        t = tl.GetTrackCount("audio")
+        tl.SetTrackName("audio", t, PISTA_MOMENTOS)
+    tl.SetTrackLock("audio", t, False)
+    viejos = tl.GetItemListInTrack("audio", t) or []
+    if viejos:
+        tl.DeleteClips(viejos, False)
+    ocupado, puestos = [], []
+
+    def poner(nombre, ini, vol=None, fi=0, fo=0):
+        c = propios.get(nombre)
+        ini = int(ini)
+        if c is None or ini < 0:
+            return False
+        dur = max(2, _frames(c, fps))
+        if any(a < ini + dur and ini < b for a, b in ocupado):
+            return False
+        r = mp.AppendToTimeline([{"mediaPoolItem": c, "startFrame": 0, "endFrame": dur - 1, "mediaType": 2,
+                                  "trackIndex": t, "recordFrame": st + ini}])
+        if not r:
+            return False
+        try:
+            if vol is not None:
+                r[0].SetProperty("AudioVolume", vol)
+            if fi or fo:
+                r[0].SetFades({"FadeIn": int(fi), "FadeOut": int(fo)})
+        except Exception:
+            pass
+        ocupado.append((ini, ini + dur))
+        puestos.append((nombre, round(ini / float(S), 1)))
+        return True
+
+    marcas = sorted((int(f), (m.get("name") or "").strip().upper()) for f, m in (tl.GetMarkers() or {}).items())
+    fiesta = next((f for f, n in marcas if n.startswith("ACTO") and "FIESTA" in n), None)
+    if fiesta is not None and fiesta > 5 * S:
+        sub = propios.get("XV_SUBIDA")
+        largo = _frames(sub, fps) if sub is not None else 0
+        poner("XV_SUBIDA", fiesta - largo)
+        poner("XV_GOLPE", fiesta)
+    textos = []
+    for v in range(1, tl.GetTrackCount("video") + 1):
+        for it in tl.GetItemListInTrack("video", v) or []:
+            n = (it.GetName() or "").upper()
+            if n.startswith("TEXTO "):
+                textos.append((it.GetStart() - st, n))
+    for ini, n in sorted(textos):
+        if n.startswith("TEXTO NOMBRE") or n.startswith("TEXTO FINAL"):
+            poner("XV_BRILLO", ini + int(0.15 * S), fo=0.5 * S)
+        elif n.startswith("TEXTO CAPITULO"):
+            poner("XV_PASO", ini - int(0.2 * S), VOL_PASO)
+    for f in fotos_intro:
+        poner("XV_OBTURADOR", f, VOL_OBTURADOR)
     return puestos

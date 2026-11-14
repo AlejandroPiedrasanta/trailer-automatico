@@ -1,7 +1,10 @@
 # construir.ps1 - Compila el "Trailer automatico" y crea su instalador .exe para Windows.
 #   1. icono   2. PyInstaller (carpeta, sin consola, con ffmpeg y recursos)   3. autoprueba del .exe
-#   4. zip del programa   5. instalador C# (csc de Windows)   6. zip pegado al instalador + pie TRAILER1
-# Resultado: <carpeta principal>\3 INSTALADORES\Windows\Instalar Trailer automatico <version>.exe
+#   4. zip del programa   5. instalador C# (csc de Windows)   6. instalador (.exe de 1 MB) + programa (.dat)
+# Resultado: <carpeta principal>\3 INSTALADORES\Windows\Instalar Trailer automatico <version>.exe y su .dat
+#   El programa va en el .dat de al lado para que el .exe abra AL INSTANTE: con los 560 MB dentro, el antivirus de
+#   Windows lo revisaba entero antes de dejarlo arrancar (8 s o mas sin ver nada). Los dos archivos van juntos.
+#   La actualizacion publica (datos\publicar) sigue siendo un solo .exe con el zip pegado: se instala sola.
 # Uso:  pwsh -File PROGRAMA\compilar\windows\construir.ps1
 param([switch]$SoloInstalador)      # -SoloInstalador: reutiliza el programa ya compilado y solo rehace el instalador
 $ErrorActionPreference = "Stop"
@@ -23,6 +26,7 @@ New-Item -ItemType Directory -Force $trabajo, $salida | Out-Null
 if (-not $SoloInstalador) {
 Paso "Icono"
 python "$icono\icono.py" "$icono\icono.ico"
+python "$prog\herramientas\hacer_portada.py"      # recursos\portada.bmp: lo que se ve al instante al abrir el programa
 
 Paso "PyInstaller (unos minutos)"
 $env:TRAILER_PROGRAMA = $prog
@@ -92,11 +96,15 @@ function Unir($destino, $zipr) {          # instalador + programa.zip + pie (pos
     $s.Write($pie, 0, $pie.Length); $s.Close()
     Move-Item $tmp $destino -Force
 }
-Paso "Uniendo instalador + programa"
+Paso "Instalador (.exe que abre al instante) + programa (.dat)"
 $final = Join-Path $salida ("Instalar Trailer automatico {0}.exe" -f $ver)
-Unir $final $zip
-Get-ChildItem $salida -Filter "Instalar Trailer automatico *.exe" | Where-Object { $_.FullName -ne $final } | Remove-Item -Force
-Paso ("Listo: {0} ({1:N0} MB)" -f $final, ((Get-Item $final).Length / 1MB))
+$final_dat = [IO.Path]::ChangeExtension($final, ".dat")
+Copy-Item $base_exe $final -Force
+Copy-Item $zip $final_dat -Force
+Get-ChildItem $salida -Filter "Instalar Trailer automatico *" |
+    Where-Object { $_.FullName -ne $final -and $_.FullName -ne $final_dat } | Remove-Item -Force
+Paso ("Listo: {0} ({1:N1} MB) + {2} ({3:N0} MB)" -f $final, ((Get-Item $final).Length / 1MB),
+      (Split-Path $final_dat -Leaf), ((Get-Item $final_dat).Length / 1MB))
 # la de las actualizaciones publicas (sin musica, SFX ni fuente con licencia): la sube herramientas\publicar_version.ps1
 $pub_dir = Join-Path $prog "datos\publicar"
 New-Item -ItemType Directory -Force $pub_dir | Out-Null

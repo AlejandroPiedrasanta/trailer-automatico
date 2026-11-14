@@ -24,7 +24,7 @@ import unicodedata
 import rutas
 
 CACHE = os.path.join(rutas.ANALISIS, "escenas.json")
-VERSION = 2               # 2: votos mal oidos ("en la salud...") y sin discursos repetitivos
+VERSION = 3               # 2: votos mal oidos ("en la salud...") y sin discursos repetitivos; 3: pasajes de habla
 COLOR_MARCADOR = "Lavender"
 
 # lo que el modelo "oye" en musica o ruido (alucinaciones tipicas de los transcriptores): se descarta
@@ -47,6 +47,13 @@ PESO_TIPO = {"VOTOS": 1.0, "DECLARACION": 0.95, "AMOR": 0.85, "XV": 0.8, "BRINDI
 EMOCION = ("gracias", "familia", "orgullos", "siempre", "corazon", "felices", "juntos", "amor", "vida", "dios",
            "bendicion", "hija", "hijo", "papa", "mama", "sueno", "nunca", "mejor", "hermos", "lindo", "feliz")
 CLASES_DIALOGO = ("dialog", "dialogo", "speech", "voz", "habla")
+# pasajes de habla de corrido (para la voz original de los videos largos)
+FE = ("dios", "senor", "cristo", "jesus", "bendi", "oracion", "oremos", "amen", "biblia", "iglesia", "gloria",
+      "espiritu", "pastor", "salmo", "proverbio", "evangelio")
+PAUSA_PASAJE = 1.6          # s de silencio que aun es el mismo pasaje (respira, aplausos cortos)
+PASAJE_MIN_S = 5.0          # s minimos hablando de corrido
+PASAJE_MIN_PALABRAS = 12
+PESO_PASAJE = {"BRINDIS": 1.0, "VOTOS": 1.0, "PASTOR": 0.9, "DISCURSO": 0.8}
 
 
 def _normal(t):
@@ -130,6 +137,62 @@ def frases_de(transcripcion, inicio_tc, fps, dur):
     return out
 
 
+def pasajes_de(transcripcion, inicio_tc, fps, dur):
+    """Los tramos donde alguien HABLA DE CORRIDO (la palabra del pastor, un brindis, un discurso), no frases sueltas ni
+    voces del publico: oraciones seguidas (pausas de hasta PAUSA_PASAJE s) que juntas duran al menos PASAJE_MIN_S y
+    traen PASAJE_MIN_PALABRAS palabras a ritmo de habla. Devuelve [{ini, fin, texto, tipo, puntaje, oraciones}] con
+    `oraciones` = [[ini, fin, n_palabras]] para recortar el pasaje en limites de oracion (nunca a media palabra)."""
+    oraciones, previo = [], None
+    for seg in (transcripcion or {}).get("segments") or []:
+        texto = _limpio(seg.get("text"))
+        if es_alucinacion(texto) or _normal(texto) == previo:
+            continue
+        previo = _normal(texto)
+        a, b = _tc_seg(seg.get("start"), fps), _tc_seg(seg.get("end"), fps)
+        if a is None or b is None:
+            continue
+        if inicio_tc and a >= inicio_tc - 1:
+            a, b = a - inicio_tc, b - inicio_tc
+        a, b = max(0.0, a), min(dur or b, b)
+        n = len(re.findall(r"\w+", _normal(texto)))
+        if b - a < 0.4 or n < 1:
+            continue
+        oraciones.append((a, b, n, texto))
+    grupos = []
+    for o in oraciones:
+        if grupos and o[0] - grupos[-1][-1][1] <= PAUSA_PASAJE:
+            grupos[-1].append(o)
+        else:
+            grupos.append([o])
+    out = []
+    for g in grupos:
+        a, b = g[0][0], g[-1][1]
+        texto = " ".join(o[3] for o in g)
+        normal = _normal(texto)
+        palabras = re.findall(r"\w+", normal)
+        if b - a < PASAJE_MIN_S or len(palabras) < PASAJE_MIN_PALABRAS:
+            continue
+        ritmo = len(palabras) / (b - a)
+        distintas = len(set(palabras)) / float(len(palabras))
+        if not 1.0 <= ritmo <= 4.5 or distintas < 0.45:      # muy lento = palabras sueltas; muy repetido = un coro
+            continue
+        fe = sum(1 for w in palabras if w.startswith(FE))
+        emo = sum(1 for w in palabras if w.startswith(EMOCION))
+        if any(re.search(p, normal) for p in PATRONES["BRINDIS"]):
+            tipo = "BRINDIS"
+        elif any(re.search(p, normal) for p in PATRONES["VOTOS"] + PATRONES["DECLARACION"]):
+            tipo = "VOTOS"
+        elif fe >= 2:
+            tipo = "PASTOR"
+        else:
+            tipo = "DISCURSO"
+        puntaje = PESO_PASAJE[tipo] * min(1.0, (b - a) / 20.0) ** 0.5 * (0.6 + 0.4 * min(1.0, (fe + emo) / 6.0))
+        out.append({"ini": round(a, 2), "fin": round(b, 2), "texto": texto[:400], "tipo": tipo, "palabras": len(palabras),
+                    "claves": fe + emo, "puntaje": round(puntaje, 3),
+                    "oraciones": [[round(o[0], 2), round(o[1], 2), o[2]] for o in g]})
+    return out
+
+
 def _clave(ruta):
     return "%s|%d" % (os.path.basename(ruta), os.path.getsize(ruta))
 
@@ -189,7 +252,7 @@ def entender(resolve, project, pares, log=print, transcribir=True):
         t0 = time.time()
         try:
             for n, (k, c, it) in enumerate(pendientes, 1):
-                datos = {"categoria": "", "subcategoria": "", "frases": []}
+                datos = {"categoria": "", "subcategoria": "", "frases": [], "pasajes": []}
                 try:
                     meta = c.GetMetadata() or {}
                     if not meta.get("Category") and c.PerformAudioClassification():
@@ -209,10 +272,15 @@ def entender(resolve, project, pares, log=print, transcribir=True):
                         fps = float(c.GetClipProperty("FPS") or it.get("fps") or 30)
                         ini_tc = _tc_seg(c.GetClipProperty("Start TC"), fps) or 0.0
                         datos["frases"] = frases_de(tr, ini_tc, fps, it.get("dur", 0))
+                        datos["pasajes"] = pasajes_de(tr, ini_tc, fps, it.get("dur", 0))
                     except Exception as ex:
                         log("  %s: no se pudo transcribir (%s)" % (it["nombre"], ex))
                 cache[k] = datos
-                if datos["frases"]:
+                if datos["pasajes"]:
+                    log("  %s: %s" % (it["nombre"], " | ".join("%s %.0f s «%s»" % (f["tipo"], f["fin"] - f["ini"],
+                                                                                 f["texto"][:40])
+                                                               for f in datos["pasajes"][:2])))
+                elif datos["frases"]:
                     log("  %s: %s" % (it["nombre"], " | ".join("%s «%s»" % (f["tipo"], f["texto"][:50])
                                                                for f in datos["frases"][:2])))
                 if n % 10 == 0:
@@ -255,7 +323,7 @@ def entender(resolve, project, pares, log=print, transcribir=True):
 
 
 def aplicar(items, cache=None):
-    """Pega lo que entendio Resolve a los items del analisis: it['frases'], it['categoria_audio']."""
+    """Pega lo que entendio Resolve a los items del analisis: it['frases'], it['pasajes'], it['categoria_audio']."""
     cache = leer_cache() if cache is None else cache
     n = 0
     for it in items:
@@ -267,6 +335,7 @@ def aplicar(items, cache=None):
             d = None
         if d:
             it["frases"] = d.get("frases") or []
+            it["pasajes"] = d.get("pasajes") or []
             it["categoria_audio"] = d.get("categoria", "")
-            n += len(it["frases"])
+            n += len(it["frases"]) + 1000 * len(it["pasajes"])
     return n

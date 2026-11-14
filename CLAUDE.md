@@ -49,7 +49,10 @@
   - Los cambios de clips solo funcionan en la timeline activa y ya asentada.
 - **Plantillas:** `TRAILER XV - *` no se tocan; cada evento es un duplicado.
 - **Montaje:**
-  - Solo 8 fotos, en la intro; sin el audio original.
+  - 8 fotos en la intro. Fotos dentro del video solo como relleno en el de 30 min (cuando no alcanzan las tomas buenas), antes que repetir o meter una toma fea.
+  - Tomas malas fuera: desenfocadas, quemadas, torcidas o al piso (medidas `vista` del analizador, en absoluto).
+  - Voz original solo de quien habla de corrido (pastor, brindis, discursos), nunca ruidos ni voces sueltas: siempre en 30 min, activada en 15, a elegir en 1 y 3 (Ajustes › Voz original).
+  - Color: la saturación nunca pasa de la de cámara (ni el CDL ni el look la suben).
   - Colores: MAQUILLAJE morado, IGLESIA verde, FIESTA rosa.
   - Entrega en MOV H.265 a -14 LUFS.
 - **Ventana:** en su hilo no se llama a la API de Resolve ni se usa `subprocess`/`sleep`: eso va en hilos (`Trabajo`, `EstadoDV`, `qt_kit.correr_en_hilo`).

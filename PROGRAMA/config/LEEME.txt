@@ -2,7 +2,9 @@ TRAILER AUTOMATICO - CINEMA PRODUCTIONS
 =======================================
 
 INSTALAR (Windows)
-Doble clic en  3 INSTALADORES\Windows\Instalar Trailer automatico <version>.exe  > Instalar > Abrir.
+Doble clic en  3 INSTALADORES\Windows\Instalar Trailer automatico <version>.exe : abre al instante,
+se instala y abre el programa solo. El archivo .dat que está a su lado es el programa: van siempre juntos
+(si pasas el instalador a otra PC, copia los dos).
 No pide permisos de administrador. Crea "Tráiler automático" en el Escritorio y en el menú Inicio,
 instala las fuentes de los títulos y el color/ruido en DaVinci. Trae su propio ffmpeg, las
 plantillas, la música y los SFX. Para quitarlo: Configuración > Aplicaciones > Tráiler automático.

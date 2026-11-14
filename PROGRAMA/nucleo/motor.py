@@ -28,6 +28,9 @@ BASE_DATOS = "EVENTOS"          # base de datos de Resolve donde vive el proyect
 PROYECTO = "EVENTOS CINEMA"     # proyecto con las plantillas universales
 PROYECTOS_ANTERIORES = ["TRAILER DE XV"]   # nombre viejo: se sigue encontrando si no se ha renombrado
 VERSIONES = ["1min", "3min", "15min", "30min"]
+# Voz original (pastor, brindis, discursos) sobre la musica: como viene cada version en Ajustes. En la de 30 min va
+# siempre y no se pregunta (igual que VOZ_DEFECTO / VOZ_SIEMPRE de build_trailers.py).
+VOZ_DEFECTO = {"1min": False, "3min": False, "15min": True}
 CARPETAS = am.CARPETAS          # {"foto": .../1 MATERIAL/FOTOS, "video": .../VIDEOS, "dron": .../DRON}
 ESPERA_ESTABLE = 30             # segundos sin cambios antes de armar (copia terminada)
 ESTADO = rutas.ESTADO
@@ -917,8 +920,10 @@ def quitar_ruido_davinci():
 
 
 def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", frase="", tipo_evento="xv",
-          ruido=None, igualar=True):
-    """Analiza el material y lo arma en las plantillas. Devuelve el reporte."""
+          ruido=None, igualar=True, voz=None, verticales=False):
+    """Analiza el material y lo arma en las plantillas. Devuelve el reporte.
+    voz: {"1min": bool, "3min": bool, "15min": bool} = en que versiones va la voz original (None = lo de siempre:
+    activada en la de 15 min; en la de 30 min va siempre)."""
     with CANDADO:
         t0 = time.time()
         log("== Analizando material ==")
@@ -950,7 +955,8 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
         g = {"__name__": "build_trailers", "resolve": resolve, "BASE": BASE, "ANALISIS": analisis,
              "EVENTO": evento or None, "SOLO": solo or None, "REHACER": True, "DRY_RUN": seco,
              "NOMBRE_XV": nombre_xv, "FECHA_LUGAR": fecha_lugar, "FRASE": frase, "TIPO_EVENTO": tipo_evento,
-             "RUIDO": ruido, "IGUALAR": bool(igualar),
+             "RUIDO": ruido, "IGUALAR": bool(igualar), "VOZ": voz if isinstance(voz, dict) else None,
+             "VERTICALES": bool(verticales),
              "print": lambda *a, **k: log(" ".join(str(x) for x in a))}
         with open(ruta, encoding="utf-8") as f:
             exec(compile(f.read(), ruta, "exec"), g)
@@ -991,6 +997,6 @@ def armar_todo(log, avance=None, render=True, **op):
         paso(45, "Renderizando")
         import renderizar
         salida["videos"] = renderizar.renderizar(
-            log, evento, lambda pct, texto: paso(45 + int(pct * 0.5), texto))
+            log, evento, lambda pct, texto: paso(45 + int(pct * 0.5), texto), op.get("solo"))
         paso(100, "Listo")
         return salida

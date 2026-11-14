@@ -40,7 +40,7 @@
         "Capítulo I"
       ],
       "IGLESIA": [
-        "La misa",
+        "La ceremonia",
         "Capítulo II"
       ],
       "FIESTA": [
@@ -52,17 +52,26 @@
       "MAQUILLAJE": [
         "Cada detalle, pensado para este día",
         "Lista para brillar",
-        "Un sueño a punto de cumplirse"
+        "Un sueño a punto de cumplirse",
+        "El comienzo de un gran día",
+        "Entre risas y nervios",
+        "Así empieza la magia"
       ],
       "IGLESIA": [
         "Gracias, Dios, por mis quince años",
         "Con fe y con ilusión",
-        "Una bendición para mi nueva etapa"
+        "Una bendición para mi nueva etapa",
+        "Con el corazón agradecido",
+        "Rodeada de quienes más amo",
+        "Un momento para siempre"
       ],
       "FIESTA": [
         "Mi primer vals",
         "Que la fiesta nunca termine",
-        "Una noche para recordar"
+        "Una noche para recordar",
+        "Bailar, reír, celebrar",
+        "Momentos que se quedan en el corazón",
+        "Gracias por tanto cariño"
       ]
     },
     "gracias": "Gracias por ser parte de mis XV años"
@@ -119,17 +128,26 @@
       "MAQUILLAJE": [
         "Cada detalle, pensado para hoy",
         "Los nervios más bonitos",
-        "Todo listo para decir sí"
+        "Todo listo para decir sí",
+        "El comienzo de nuestro gran día",
+        "Entre risas y nervios",
+        "A unos pasos del altar"
       ],
       "IGLESIA": [
         "El amor es paciente, el amor es bondadoso",
         "Dos almas, un mismo camino",
-        "Hoy y para siempre"
+        "Hoy y para siempre",
+        "Sí, para toda la vida",
+        "Rodeados de quienes más amamos",
+        "El inicio de nuestra familia"
       ],
       "FIESTA": [
         "Que la fiesta nunca termine",
         "Bailar contigo toda la vida",
-        "Una noche para recordar"
+        "Una noche para recordar",
+        "Brindemos por el amor",
+        "Momentos que se quedan en el corazón",
+        "Gracias por tanto cariño"
       ]
     },
     "gracias": "Gracias por ser parte de nuestra historia"
@@ -185,16 +203,24 @@
     "frases": {
       "MAQUILLAJE": [
         "Pequeños detalles, gran amor",
-        "Listos para el gran día"
+        "Listos para el gran día",
+        "Todo listo para recibir su bendición",
+        "Con el corazón lleno de ilusión"
       ],
       "IGLESIA": [
         "Un regalo de Dios",
         "Bendecido desde hoy",
-        "Con amor y con fe"
+        "Con amor y con fe",
+        "Bienvenido a la familia de la fe",
+        "Un día que guardaremos siempre",
+        "Rodeado de amor"
       ],
       "FIESTA": [
         "Toda la familia reunida",
-        "Un día para celebrar la vida"
+        "Un día para celebrar la vida",
+        "Risas, abrazos y bendiciones",
+        "Gracias por acompañarnos",
+        "Un recuerdo para toda la vida"
       ]
     },
     "gracias": "Gracias por acompañarnos en este día"
@@ -250,16 +276,24 @@
     "frases": {
       "MAQUILLAJE": [
         "El último paso",
-        "Listos para el gran día"
+        "Listos para el gran día",
+        "Tantos años para llegar aquí",
+        "Con los nervios a flor de piel"
       ],
       "IGLESIA": [
         "El esfuerzo valió la pena",
         "Una meta cumplida",
-        "Hoy comienza un nuevo camino"
+        "Hoy comienza un nuevo camino",
+        "Orgullo de toda la familia",
+        "Gracias a quienes siempre creyeron",
+        "Un sueño alcanzado"
       ],
       "FIESTA": [
         "¡Lo logramos!",
-        "A celebrar el triunfo"
+        "A celebrar el triunfo",
+        "Brindemos por lo que viene",
+        "Amigos para toda la vida",
+        "Una noche para recordar"
       ]
     },
     "gracias": "Gracias a todos los que hicieron esto posible"
@@ -314,15 +348,23 @@
     },
     "frases": {
       "MAQUILLAJE": [
-        "Todo listo para celebrar"
+        "Todo listo para celebrar",
+        "Hoy es un día especial",
+        "Los últimos detalles"
       ],
       "IGLESIA": [
         "Un año más de vida",
-        "Rodeado de los que más quiero"
+        "Rodeado de los que más quiero",
+        "Gracias por un año más",
+        "Con los que hacen la vida mejor",
+        "Un momento para agradecer"
       ],
       "FIESTA": [
         "Que viva la fiesta",
-        "Una noche para recordar"
+        "Una noche para recordar",
+        "Risas que no se olvidan",
+        "Brindemos por la vida",
+        "Gracias por estar aquí"
       ]
     },
     "gracias": "Gracias por celebrar conmigo"

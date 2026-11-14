@@ -2,7 +2,8 @@
 """
 suavizar_looks.py - Hace la version SUAVE de cada LOOK (LUT .cube) de PROGRAMA/dctl mezclandolo con «sin cambio».
 Las tomas de los eventos ya vienen en Rec.709 (color terminado de camara): un look entero les sube demasiado el
-contraste y la saturacion. Con FUERZA 0.5 el look se nota pero la toma sigue siendo la de camara.
+contraste y la saturacion. Con FUERZA 0.5 el look se nota pero la toma sigue siendo la de camara, y ademas el
+look nunca sube la saturacion de un color (sin_subir_saturacion).
 
   python PROGRAMA/herramientas/suavizar_looks.py            escribe XV_*_REC709.cube junto a los originales
   python PROGRAMA/herramientas/suavizar_looks.py 0.4        con otra fuerza para todos
@@ -18,6 +19,28 @@ SUFIJO = "_REC709.cube"
 FUERZA = 0.5                                   # 0 = sin look, 1 = el look entero
 # el Kodak 2383 de Resolve espera imagen Cineon Log: sobre Rec.709 sube el contraste +45 %. Va a un cuarto.
 FUERZAS = {"FILM_KODAK": 0.25}
+# El look da el TONO (calido, frio en las sombras...) pero NO sube la saturacion: la persona ve chillon todo lo que
+# pasa de lo que trae la camara. Cada color sale, como mucho, con su saturacion de entrada mas este margen (que es lo
+# que deja tenir un poco los grises).
+MARGEN_SATURACION = 0.035
+
+
+def _sat(c):
+    mx = max(c)
+    return (mx - min(c)) / mx if mx > 1e-6 else 0.0
+
+
+def sin_subir_saturacion(entra, sale):
+    """Devuelve `sale` con la saturacion recortada a la de `entra` (+ margen), sin cambiarle la luz."""
+    tope = _sat(entra) + MARGEN_SATURACION * (1.0 - _sat(entra))
+    for _ in range(3):
+        s = _sat(sale)
+        if s <= tope + 1e-4:
+            break
+        y = 0.2126 * sale[0] + 0.7152 * sale[1] + 0.0722 * sale[2]
+        k = tope / s
+        sale = tuple(min(1.0, max(0.0, y + (x - y) * k)) for x in sale)
+    return sale
 
 
 def suavizar(ruta, fuerza):
@@ -43,7 +66,8 @@ def suavizar(ruta, fuerza):
                     ident = (r / (n - 1.0), g / (n - 1.0), b / (n - 1.0))
                     v = vals[i]
                     i += 1
-                    f.write("%.6f %.6f %.6f\n" % tuple(min(1.0, max(0.0, a + fuerza * (x - a))) for a, x in zip(ident, v)))
+                    mezcla = tuple(min(1.0, max(0.0, a + fuerza * (x - a))) for a, x in zip(ident, v))
+                    f.write("%.6f %.6f %.6f\n" % sin_subir_saturacion(ident, mezcla))
     return salida
 
 

@@ -19,6 +19,7 @@ import re
 import sys
 import math
 import time
+_T_ARRANQUE = time.perf_counter()        # para medir cuanto tarda en abrir (ver _tiempo)
 import random
 import traceback
 
@@ -56,7 +57,8 @@ def opciones_guardadas():
     return dict(evento=est.get("evento_manual", ""), nombre_xv=est.get("nombre_xv", ""),
                 fecha_lugar=est.get("fecha_lugar", ""), frase=est.get("frase", ""),
                 tipo_evento=est.get("tipo_evento", "xv"), ruido=est.get("ruido"),
-                igualar=est.get("igualar", True), solo=est.get("versiones") or None)
+                igualar=est.get("igualar", True), voz=est.get("voz"), verticales=est.get("verticales", False),
+                solo=est.get("versiones") or None)
 
 
 # ================================================================== sin ventana
@@ -78,7 +80,75 @@ def cli(args):
 
 
 # ================================================================== ventana
+def _tiempo(que):
+    """Con TRAILER_TIEMPOS=1 anota en el registro cuanto lleva el arranque (para medir que tarda en abrir)."""
+    if os.environ.get("TRAILER_TIEMPOS"):
+        registro.info("arranque %-22s %.2f s" % (que, time.perf_counter() - _T_ARRANQUE))
+
+
+def _portada_nativa():
+    """Windows: la portada (recursos/portada.bmp) en una ventanita del sistema, ANTES de cargar Qt. Qt tarda mas de
+    un segundo en poder mostrar su primera ventana (arma la lista de fuentes de la PC); esto se ve a las decimas del
+    doble clic. Devuelve el identificador de la ventanita (para quitarla con _quitar_portada) o None."""
+    if not rutas.ES_WIN:
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+        u, g = ctypes.windll.user32, ctypes.windll.gdi32
+        try:                                    # misma nitidez que tendra Qt (por monitor); si ya estaba puesta, da igual
+            u.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+        except Exception:
+            pass
+        u.LoadImageW.restype = wintypes.HANDLE
+        u.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT, ctypes.c_int, ctypes.c_int,
+                                 wintypes.UINT]
+        mapa = u.LoadImageW(None, os.path.join(rutas.RECURSOS, "portada.bmp"), 0, 0, 0, 0x0010)   # LR_LOADFROMFILE
+        if not mapa:
+            return None
+
+        class BITMAP(ctypes.Structure):
+            _fields_ = [("bmType", ctypes.c_long), ("bmWidth", ctypes.c_long), ("bmHeight", ctypes.c_long),
+                        ("bmWidthBytes", ctypes.c_long), ("bmPlanes", wintypes.WORD), ("bmBitsPixel", wintypes.WORD),
+                        ("bmBits", ctypes.c_void_p)]
+        bm = BITMAP()
+        g.GetObjectW.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p]
+        g.GetObjectW(mapa, ctypes.sizeof(bm), ctypes.byref(bm))
+        w, h = bm.bmWidth, bm.bmHeight
+        u.CreateWindowExW.restype = wintypes.HWND
+        u.CreateWindowExW.argtypes = [wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_int,
+                                      ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.HWND, wintypes.HMENU,
+                                      wintypes.HINSTANCE, wintypes.LPVOID]
+        # WS_EX_TOOLWINDOW | WS_EX_TOPMOST ; WS_POPUP | WS_VISIBLE | SS_BITMAP
+        v = u.CreateWindowExW(0x00000080 | 0x00000008, "STATIC", None, 0x80000000 | 0x10000000 | 0x0000000E,
+                              (u.GetSystemMetrics(0) - w) // 2, (u.GetSystemMetrics(1) - h) // 2, w, h,
+                              None, None, None, None)
+        if not v:
+            return None
+        u.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        u.SendMessageW(v, 0x0172, 0, mapa)       # STM_SETIMAGE, IMAGE_BITMAP
+        u.UpdateWindow.argtypes = [wintypes.HWND]
+        u.UpdateWindow(v)
+        return v
+    except Exception:
+        return None
+
+
+def _quitar_portada(v):
+    if v:
+        try:
+            import ctypes
+            from ctypes import wintypes
+            ctypes.windll.user32.DestroyWindow.argtypes = [wintypes.HWND]
+            ctypes.windll.user32.DestroyWindow(v)
+        except Exception:
+            pass
+
+
 def app():
+    _tiempo("app()")
+    nativa = None if os.environ.get("TRAILER_PRUEBA_ARRASTRE") else _portada_nativa()
+    _tiempo("portada nativa")
     from PySide6.QtCore import (Qt, QThread, Signal, QTimer, QPointF, QRectF, QFileSystemWatcher, QVariantAnimation,
                                 QEasingCurve, QEvent, QLockFile)
     from PySide6.QtGui import (QColor, QIcon, QPainter, QPixmap, QPolygonF, QPen, QBrush, QFont, QPainterPath,
@@ -88,6 +158,7 @@ def app():
                                    QPushButton, QSizeGrip, QSlider, QStackedWidget, QVBoxLayout, QWidget, QScrollArea, QSizePolicy,
                                    QButtonGroup)
     import qt_kit
+    _tiempo("PySide6 importado")
 
     ORO, ORO_CLARO, ORO_OSCURO = QColor("#C9A267"), QColor("#EBCB8F"), QColor("#6E4C24")
     ESMERALDA, ESMERALDA_CLARO, ESMERALDA_OSCURO = QColor("#22C47E"), QColor("#7CF2C0"), QColor("#06301F")
@@ -1042,6 +1113,32 @@ def app():
             g.addWidget(l_dv, 3, 0)
             g.addLayout(fila_dv, 3, 1, 1, 2)
             self._pintar_ruido_dv()
+            # la voz original (la palabra del pastor, brindis, discursos) sobre la musica: en que versiones va
+            l_voz = QLabel("Voz original")
+            l_voz.setStyleSheet("color:%s; font-weight:600;" % TENUE)
+            l_voz.setToolTip("Lo que se dice en el evento (la palabra del pastor, el brindis, los discursos) suena sobre "
+                             "la música. Solo entra cuando alguien habla de corrido: nada de ruidos ni voces sueltas.")
+            guardada = self.est.get("voz") if isinstance(self.est.get("voz"), dict) else {}
+            self.ch_voz = {}
+            fila_voz = QHBoxLayout()
+            fila_voz.setSpacing(18)
+            for clave, texto in (("1min", "1 min"), ("3min", "3 min"), ("15min", "15 min")):
+                ch = Interruptor(texto)
+                ch.setChecked(bool(guardada.get(clave, motor.VOZ_DEFECTO[clave])))
+                self.ch_voz[clave] = ch
+                fila_voz.addWidget(ch)
+            nota_voz = QLabel("En el de 30 min va siempre")
+            nota_voz.setStyleSheet("color:%s;" % TENUE)
+            fila_voz.addWidget(nota_voz)
+            fila_voz.addStretch(1)
+            g.addWidget(l_voz, 5, 0)
+            g.addLayout(fila_voz, 5, 1, 1, 2)
+            self.ch_vert = Interruptor("Usar también los videos verticales (de celular): llenan la pantalla recortados")
+            self.ch_vert.setChecked(bool(self.est.get("verticales", False)))
+            self.ch_vert.setToolTip("Apagado, los videos grabados en vertical quedan fuera del montaje (siguen en el "
+                                    "media pool). Encendido, entran recortados para llenar la pantalla y DaVinci "
+                                    "reencuadra siguiendo a la persona.")
+            g.addWidget(self.ch_vert, 6, 0, 1, 3)
             g.setColumnStretch(1, 1)
             v.addWidget(caja)
             fila = QHBoxLayout()
@@ -1176,7 +1273,10 @@ def app():
             self._avisar("Instalando la versión %s: el programa se cierra y se vuelve a abrir solo…"
                          % self.actualizacion["version"])
             if self._lanzar_instalacion(reabrir=True):
-                QTimer.singleShot(600, self.close)
+                # Windows: esta ventana la cierra el instalador cuando YA esta en pantalla (es su primer paso). Antes
+                # se cerraba a los 0,6 s y quedaban varios segundos sin nada a la vista mientras Windows revisaba el
+                # instalador recien bajado. Si no aparece, se cierra igual al cabo de un rato.
+                QTimer.singleShot(90000 if rutas.ES_WIN else 600, self.close)
             else:
                 self._instalando = False
                 self._avisar("No se pudo empezar la instalación: se intenta al cerrar.", "error")
@@ -1523,11 +1623,13 @@ def app():
                       "frase": self.e_frase.text().strip(), "fecha_lugar": self.e_fecha.text().strip(),
                       "versiones": versiones, "ruido": self.s_ruido.value(),
                       "igualar": self.ch_igualar.isChecked(), "renderizar": self.ch_render.isChecked(),
-                      "auto_armar": self.ch_auto.isChecked()})
+                      "auto_armar": self.ch_auto.isChecked(),
+                      "voz": {k: ch.isChecked() for k, ch in self.ch_voz.items()},
+                      "verticales": self.ch_vert.isChecked()})
             motor.guardar_estado(d)
             return dict(evento=d.get("evento_manual", ""), nombre_xv=d["nombre_xv"], fecha_lugar=d["fecha_lugar"],
                         frase=d["frase"], tipo_evento=d["tipo_evento"], ruido=d["ruido"], igualar=d["igualar"],
-                        solo=versiones if len(versiones) < len(motor.VERSIONES) else None, render=d["renderizar"])
+                        voz=d["voz"], verticales=d["verticales"], solo=versiones if len(versiones) < len(motor.VERSIONES) else None, render=d["renderizar"])
 
         def _pedir_material(self):
             faltan = self.material["faltan"]
@@ -1920,18 +2022,62 @@ def app():
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("CinemaProductions.Trailer")
         except Exception:
             pass
+    _tiempo("clases definidas")
     qapp = QApplication(sys.argv)
+    _tiempo("QApplication")
+    # Portada de Qt donde no hay nativa (Mac): mientras se construye la ventana completa (estilos, escena de Inicio).
+    # En Windows ya esta puesta la nativa (_portada_nativa), que sale mucho antes: Qt tarda ~1 s en su primera ventana.
+    portada = None
+    try:
+        if nativa:
+            raise RuntimeError("ya hay portada nativa")
+        from PySide6.QtWidgets import QSplashScreen
+        import icono_app as ic
+        ancho, alto = 440, 250
+        pm = QPixmap(ancho, alto)
+        pm.fill(QColor("#06131A"))
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.SmoothPixmapTransform)
+        g = QLinearGradient(0, 0, 0, alto)
+        g.setColorAt(0.0, QColor("#0D2630"))
+        g.setColorAt(1.0, QColor("#06131A"))
+        p.fillRect(0, 0, ancho, alto, QBrush(g))
+        p.setPen(QPen(QColor(201, 162, 103, 110), 1))
+        p.drawRect(0, 0, ancho - 1, alto - 1)
+        p.drawImage(QRectF(ancho / 2 - 52, 52, 104, 104), ic.dibujar(208))
+        p.end()
+        portada = QSplashScreen(pm)
+        portada.show()
+        qapp.processEvents()
+    except Exception:
+        portada = None
+    _tiempo("portada visible")
     qapp.setApplicationName(TITULO_APP)
     qapp.setStyle("Fusion")
     qapp.setStyleSheet(QSS)
     candado = QLockFile(os.path.join(rutas.DATOS, "programa.lock"))
     candado.setStaleLockTime(0)
     if not candado.tryLock(200):                           # una sola ventana abierta a la vez
+        _quitar_portada(nativa)
+        if portada is not None:
+            portada.close()
         QMessageBox.information(None, TITULO_APP, "El programa ya está abierto.")
         return 0
+    if portada is not None:
+        try:
+            portada.showMessage("Abriendo %s…" % TITULO_APP, Qt.AlignHCenter | Qt.AlignBottom, QColor(TENUE))
+            qapp.processEvents()
+        except Exception:
+            pass
     rutas.crear_carpetas()
     win = Ventana()
     win.show()
+    _tiempo("ventana visible")
+    qapp.processEvents()                                   # la ventana ya pintada: ahora si se quita la portada
+    _quitar_portada(nativa)
+    if portada is not None:
+        portada.finish(win)
     if os.environ.get("TRAILER_PRUEBA_ARRASTRE"):          # prueba de punta a punta: suelta una carpeta y mira que arme
         import prueba_arrastre
         win._guion = prueba_arrastre.Guion(win, qapp, os.environ["TRAILER_PRUEBA_ARRASTRE"],
@@ -1942,6 +2088,7 @@ def app():
 def main():
     args = sys.argv[1:]
     registro.preparar()
+    _tiempo("main()")
     if "--tarea" in args:                                   # trabajos del instalador / autoprueba
         import tareas
         i = args.index("--tarea")

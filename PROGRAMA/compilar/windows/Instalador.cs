@@ -75,8 +75,7 @@ static class Instalador
             new Paso("Cerrar la versión anterior", "Preparando la instalación...", 0.3),
             new Paso("Copiar el programa", "Copiando el programa...", 6.0),
             new Paso("Accesos directos", "Creando los accesos directos...", 0.4),
-            new Paso("Fuentes, color y carpetas", "Instalando fuentes, color y carpetas...", 1.2),
-            new Paso("Autoprueba", "Comprobando que todo funcione...", 1.0) };
+            new Paso("Fuentes, color y carpetas", "Instalando fuentes, color y carpetas...", 1.2) };
     }
 
     public static List<Paso> PasosDesinstalar()
@@ -103,6 +102,36 @@ static class Instalador
             long ini = BitConverter.ToInt64(pie, 0);
             return new long[] { ini, f.Length - 16 - ini };
         }
+    }
+
+    // Donde viene el programa:
+    //  (1) pegado al final de este .exe: las actualizaciones, que se instalan solas en segundo plano;
+    //  (2) en el archivo de al lado, con el mismo nombre y extension .dat: el instalador. Asi el .exe pesa 1 MB y
+    //      Windows lo abre al instante. Con los 560 MB dentro, el antivirus lo revisaba entero ANTES de dejarlo
+    //      arrancar: 8 s (o mas) sin que se viera nada despues del doble clic.
+    static string ArchivoCarga;
+    static long[] RangoCarga;
+
+    static bool BuscarCarga(string yo)
+    {
+        long[] c = Carga(yo);
+        if (c != null) { ArchivoCarga = yo; RangoCarga = c; return true; }
+        string dat = Path.ChangeExtension(yo, ".dat");
+        if (!File.Exists(dat))
+        {
+            dat = null;                 // el .exe renombrado ("Instalar (1).exe"): el .dat mas nuevo de la carpeta
+            try
+            {
+                foreach (string f in Directory.GetFiles(Path.GetDirectoryName(yo), "*.dat"))
+                    if (Path.GetFileName(f).StartsWith("Instalar Trailer automatico", StringComparison.OrdinalIgnoreCase)
+                        && (dat == null || File.GetLastWriteTimeUtc(f) > File.GetLastWriteTimeUtc(dat))) dat = f;
+            }
+            catch { }
+        }
+        if (dat == null) return false;
+        ArchivoCarga = dat;
+        RangoCarga = new long[] { 0, new FileInfo(dat).Length };
+        return true;
     }
 
     class Trozo : Stream    // vista de solo lectura de una parte del archivo (el zip), sin copiarlo
@@ -160,8 +189,9 @@ static class Instalador
         try
         {
             string yo = Assembly.GetExecutingAssembly().Location;
-            long[] c = Carga(yo);
-            if (c == null) return "Este instalador está incompleto (no trae el programa).";
+            if (!BuscarCarga(yo))
+                return "Falta el archivo «" + Path.GetFileNameWithoutExtension(yo) + ".dat»: va en la misma carpeta que este instalador.";
+            long[] c = RangoCarga;
             P(v, 0, EstadoPaso.EnCurso, -1);
             int cerrados = CerrarPrograma();
             if (cerrados > 0) L(v, "Se cerró el programa abierto (" + cerrados + ").");
@@ -172,7 +202,7 @@ static class Instalador
 
             paso = 1;
             P(v, 1, EstadoPaso.EnCurso, 0);
-            using (FileStream f = File.OpenRead(yo))
+            using (FileStream f = File.OpenRead(ArchivoCarga))
             using (ZipArchive z = new ZipArchive(new Trozo(f, c[0], c[1]), ZipArchiveMode.Read))
             {
                 long total = 0, hecho = 0;
@@ -204,7 +234,7 @@ static class Instalador
             using (FileStream w = File.Create(Path.Combine(Destino, "Desinstalar.exe")))
             {
                 byte[] buf = new byte[1 << 16];
-                long falta = c[0];
+                long falta = ArchivoCarga == yo ? c[0] : f.Length;      // este .exe sin el programa pegado
                 while (falta > 0)
                 {
                     int n = f.Read(buf, 0, (int)Math.Min(buf.Length, falta));
@@ -226,12 +256,8 @@ static class Instalador
             string res = Tarea(exe, "instalar", 180, v, 3);
             if (res != null && res.StartsWith("ERROR")) { P(v, 3, EstadoPaso.Aviso, -1); L(v, res); }
             else { P(v, 3, EstadoPaso.Hecho, -1); if (res != null) L(v, res.Substring(3)); }
-
-            paso = 4;
-            P(v, 4, EstadoPaso.EnCurso, 0);
-            res = Tarea(exe, "verificar", 120, v, 4);
-            if (res == null || !res.StartsWith("OK")) { P(v, 4, EstadoPaso.Aviso, -1); L(v, "Autoprueba: " + (res ?? "sin respuesta")); }
-            else { P(v, 4, EstadoPaso.Hecho, -1); L(v, "Autoprueba completa."); }
+            // sin autoprueba aqui: el paso anterior ya arranco el programa instalado, y al abrirse hace su chequeo
+            // de arranque y lo muestra. Eran varios segundos de espera antes de poder usarlo.
             return null;
         }
         catch (Exception ex)
@@ -361,12 +387,12 @@ static class Instalador
         }
     }
 
-    public static void Abrir()
+    public static Process Abrir()
     {
         ProcessStartInfo si = new ProcessStartInfo(Path.Combine(Destino, EXE));
         si.WorkingDirectory = Destino;          // leccion de CineCaptions: nunca heredar la carpeta del instalador
         si.UseShellExecute = true;
-        Process.Start(si);
+        return Process.Start(si);
     }
 }
 
@@ -669,15 +695,24 @@ class Ventana : Form, IVista
             {   // la persona: "cuando se termine de instalar se abre automaticamente y se cierra el instalador"
                 lblInfo.Text = (avisos ? "Se instaló con avisos (el programa te los muestra). " : "") +
                                "Abriendo " + Instalador.NOMBRE + "...";
-                System.Windows.Forms.Timer reloj = new System.Windows.Forms.Timer();
-                reloj.Interval = avisos ? 3000 : 1500;      // un momento para ver el "¡Listo!"
-                reloj.Tick += delegate
+                // sin esperas: el programa se abre YA y esta ventana se queda hasta que la suya se ve (asi no hay un
+                // momento con la pantalla vacia); con avisos, un instante mas para poder leerlos
+                bool conAvisos = avisos;
+                Thread abre = new Thread(delegate ()
                 {
-                    reloj.Stop();
-                    try { Instalador.Abrir(); } catch { }
-                    Close();
-                };
-                reloj.Start();
+                    Process p = null;
+                    try { p = Instalador.Abrir(); } catch { }
+                    DateTime fin = DateTime.Now.AddSeconds(25);
+                    while (p != null && DateTime.Now < fin)
+                    {
+                        try { p.Refresh(); if (p.HasExited || p.MainWindowHandle != IntPtr.Zero) break; } catch { break; }
+                        Thread.Sleep(100);
+                    }
+                    if (conAvisos) Thread.Sleep(2500);
+                    try { BeginInvoke((MethodInvoker)delegate { Close(); }); } catch { }
+                });
+                abre.IsBackground = true;
+                abre.Start();
             }
         }
     }

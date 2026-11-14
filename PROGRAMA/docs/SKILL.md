@@ -244,6 +244,22 @@ La firma «CINEMA PRODUCTIONS / UN FILM DE» no se toca. El tipo se elige en la 
 - `trailer_xv.py`: la ventana (Armar, Prueba en seco, Renderizar, Indexar). Sin ventana: `--una-vez`, `--seco`, `--vigilar`.
 - `dctl/`: `XV_REDUCCION_RUIDO.dctl` y `XV_CORRECCION_COLOR.dctl`. Se copian solos a `LUT\MCP`.
 
+## Calidad del montaje (1.5.3; la persona, 2026-11-14, tras ver los videos del XV)
+Lo que pidió: «hay tomas muy quemadas», «tomas que apuntan al piso», «tomas que nada que ver», «me saturas demasiado los colores», «los cortes entre tomas no es nada fluido», «entre canciones mejora los fundidos», «pule la voz original», «solo los audios importantes… no sonidos y voces randoms», «rellena con fotos para el de 30 minutos o con tomas con dron».
+- **Tomas malas** (`analizar_material._vista_cuadros` → `Planificador.vista`): el puntaje `calidad` es relativo al propio video, así que un video entero malo puntuaba como bueno. `vista` trae medidas absolutas por medio segundo: enfoque (contra lo típico de ESA cámara), luces quemadas, cámara torcida o al piso (histograma de orientaciones: `giro` ≥ 25°, `pico` ≥ 0,20, `eje` ≤ 0,16), barrido y temblor. Un video con menos del 15 % útil es accidental y no entra. Los umbrales se validaron mirando hojas de contacto de cada regla.
+- **Cada versión elige de todo el material** (`plan.usados = {}` por versión). Antes la de 30 min usaba solo lo que no habían tomado las otras.
+- **Relleno**: dron libre → fotos del momento (solo 30 min; zoom dinámico y encadenado) → repetir. Tope del 15 % de dron por zona.
+- **Mismo encuadre**: no hay forma fiable de saber por imagen que dos planos son «la misma escena» (probado con dHash y con color por zonas: las distancias de la misma escena y de escenas distintas se solapan). Lo que sí funciona: cuando un video 4K se usa varias veces en una zona, se alterna abierto / acercado ×1,28 (`marcar_acercados`), como dos cámaras.
+- **Fluidez**: 30 c/s en línea de 24 → cada plano al 80 % (un cuadro de fuente por cuadro de línea, sin saltos). Los planos con voz sincronizada van al 100 %.
+- **Color**: nunca más saturación que la cámara. Medido en el XV: mediana ×0,92 (antes ×1,02 y hasta ×1,30 en dron por el look). Sobreexpuestas: gamma, no pendiente.
+- **Voz original**: pasajes de habla de corrido (`escenas_ia.pasajes_de`), pulidos por clip con aislamiento de voz y nivelador de diálogo; la música baja en rampa con una copia en fase en la pista «MUSICA BAJA (voz)». Se comprobó «oyendo» la mezcla final con un transcriptor local: lo elegido era la oración, la lectura bíblica, el brindis y los agradecimientos.
+- **Cambio de canción** (`cruces_de_musica`, midiendo el sonido con ffmpeg): si la que sale sigue sonando hasta el corte, se alarga 2,5 s y se apaga en 4 s mientras la que entra sube en 2,5 s (con dos fundidos iguales de 2 s el volumen hacía un hueco de 3 dB). Si la que sale **se acaba antes** (termina sola, se va apagando o es más corta que su sitio en la plantilla) quedaban huecos casi en silencio de 3 a 6 s, uno de 4 s en silencio total en el de 30 min: se retrasa entera para que termine donde entra la otra. Se hace de la última a la primera, así el retraso se acumula hacia atrás, la primera canción (le sobra música) se alarga y la entrada de la música de fiesta no se mueve de su marcador. Adelantar las canciones no sirve: al adelantarse también se adelanta su final y el hueco reaparece en el siguiente cambio.
+
+## Abrir al instante (1.5.3; la persona: «le di instalar y tardó bastante… todo debe ser inmediato»)
+- **Instalador**: con el programa (560 MB) pegado al .exe, el antivirus de Windows lo revisaba entero antes de dejarlo arrancar: 7,7 s sin ver nada. Ahora el .exe pesa 1 MB (ventana a los 0,7 s) y el programa va en el `.dat` de al lado. Sin autoprueba ni espera al terminar: abre el programa y se queda hasta que se ve.
+- **Programa**: Qt tarda ~1 s en su primera ventana (arma la lista de fuentes de la PC). `trailer_xv._portada_nativa` pone `recursos/portada.bmp` con una ventanita de Windows (clase STATIC, ctypes) antes de cargar Qt: se ve a los 0,3 s. `TRAILER_TIEMPOS=1` anota cada fase del arranque en el registro.
+- **Ojo en Git Bash**: `/silencioso` y `/noabrir` se convierten en rutas (`C:/Program Files/Git/silencioso`) y el instalador corre con ventana. Lanzarlo desde PowerShell.
+
 ## Pasos (cuando lo pide la persona)
 1. `get_resolve_status`. Si Resolve está en otro proyecto, pregunta antes de cambiarlo.
 2. `python trailer_xv.py --seco`: plan, ritmo y planos repetidos.

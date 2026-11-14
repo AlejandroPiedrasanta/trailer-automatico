@@ -12,13 +12,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 import motor  # noqa: E402
 
 
-def renderizar(log=print, evento=None, progreso=None):
-    """Renderiza los trabajos en cola del evento. progreso(pct, texto) es opcional. Devuelve [(timeline, ok, ruta)]."""
+def renderizar(log=print, evento=None, progreso=None, solo=None):
+    """Renderiza los trabajos en cola del evento. progreso(pct, texto) es opcional. Devuelve [(timeline, ok, ruta)].
+    solo: ["3min", ...] = solo esas versiones (las demas que sigan en la cola de un armado anterior no se tocan)."""
     evento = evento or motor.leer_estado().get("evento")
     with motor.CANDADO:
         r = motor.conectar_resolve(log)
         p = r.GetProjectManager().GetCurrentProject()
         jobs = [j for j in p.GetRenderJobList() or [] if evento and j.get("TimelineName", "").startswith(evento + " - ")]
+        if solo:
+            jobs = [j for j in jobs if j["TimelineName"].split(" - ")[-1] in solo]
         if not jobs:
             log("No hay trabajos de render para %s en la cola." % evento)
             return []

@@ -1,13 +1,17 @@
 // XV - CORRECCION DE COLOR (universal, va en el nodo PRE-CLIP del grupo de color)
 // Las tomas ya vienen en Rec.709 (color terminado de camara): esta base casi no las toca.
-// Solo da un minimo de contraste y cuida las altas luces. No aplasta negros ni sube saturacion:
-// de emparejar cada toma se encarga la correccion por plano (CDL) y del estilo, el LOOK.
+// No sube contraste ni saturacion. Deja el color un poco POR DEBAJO del de camara (la persona lo ve chillon),
+// calma los colores mas vivos (luces LED, flores) y cuida las altas luces: las suaviza y les quita color para
+// que una zona quemada no se vea como un parche de color plano.
+// De emparejar cada toma se encarga la correccion por plano (CDL) y del estilo, el LOOK.
 
 __CONSTANT__ float NEGROS = 0.0f;          // no mueve los negros
-__CONSTANT__ float CONTRASTE = 1.02f;      // contraste alrededor del gris medio
+__CONSTANT__ float CONTRASTE = 1.0f;       // sin contraste extra
 __CONSTANT__ float PIVOTE = 0.42f;
-__CONSTANT__ float SATURACION = 1.0f;      // saturacion general: sin cambio
-__CONSTANT__ float RODILLA = 0.90f;        // desde aqui se suavizan las altas luces
+__CONSTANT__ float SATURACION = 0.93f;     // saturacion general: un poco menos que la camara
+__CONSTANT__ float VIVOS = 0.22f;          // cuanto mas se bajan los colores MUY vivos (0 = igual que el resto)
+__CONSTANT__ float RODILLA = 0.86f;        // desde aqui se suavizan las altas luces
+__CONSTANT__ float LUCES_SIN_COLOR = 0.55f; // cuanto color pierden las luces casi quemadas
 
 __DEVICE__ float suave(float v)
 {
@@ -21,15 +25,27 @@ __DEVICE__ float suave(float v)
     return _clampf(v, 0.0f, 1.0f);
 }
 
+__DEVICE__ float escalon(float a, float b, float x)
+{
+    float t = _saturatef((x - a) / (b - a));
+    return t * t * (3.0f - 2.0f * t);
+}
+
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
 {
+    float mx0 = _fmaxf(p_R, _fmaxf(p_G, p_B));
+    float mn0 = _fminf(p_R, _fminf(p_G, p_B));
+    float y0 = 0.2126f * p_R + 0.7152f * p_G + 0.0722f * p_B;
     float r = suave(p_R);
     float g = suave(p_G);
     float b = suave(p_B);
     float y = 0.2126f * r + 0.7152f * g + 0.0722f * b;
-    // tonos de piel: rojo > verde > azul con poca distancia entre ellos -> menos saturacion extra
+    float sat = (mx0 - mn0) / (mx0 + 0.0001f);
+    // tonos de piel: rojo > verde > azul con poca distancia entre ellos -> se les quita menos color
     float piel = _saturatef((r - b) * 4.0f) * _saturatef(1.0f - _fabs((g - b) / (r - b + 0.0001f) - 0.5f) * 2.0f);
-    float s = 1.0f + (SATURACION - 1.0f) * (1.0f - 0.7f * piel);
+    float s = SATURACION * (1.0f - VIVOS * escalon(0.45f, 0.95f, sat));
+    s = 1.0f - (1.0f - s) * (1.0f - 0.5f * piel);
+    s = s * (1.0f - LUCES_SIN_COLOR * escalon(0.82f, 1.0f, y0));
     r = _clampf(y + (r - y) * s, 0.0f, 1.0f);
     g = _clampf(y + (g - y) * s, 0.0f, 1.0f);
     b = _clampf(y + (b - y) * s, 0.0f, 1.0f);

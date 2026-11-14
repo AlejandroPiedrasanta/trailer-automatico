@@ -42,7 +42,10 @@ EXT["dron"] = EXT["video"]
 MOMENTOS = ["MAQUILLAJE", "IGLESIA", "FIESTA"]
 ARCHIVO_CLASIF = os.path.basename(rutas.CLASIFICACION)
 SIN_VENTANA = rutas.SIN_VENTANA        # que ffmpeg no abra ventanas negras
-VERSION = 3                            # sube cuando cambia lo que se mide: lo viejo se completa solo (3: temblor)
+VERSION = 5                            # sube cuando cambia lo que se mide: lo viejo se completa solo (3: temblor;
+#                                        4: "vista" de cada medio segundo: enfoque real, luces quemadas, camara
+#                                        torcida, barrido y huella de la imagen; 5: "capa" = el color por zonas,
+#                                        para saber si dos planos son la misma escena)
 PASO_CALIDAD = 0.5                     # segundos por muestra (calidad, color y audio)
 CONFIANZA = {"iphone": 3, "dji": 3, "exif": 2, "nombre": 1, "camara": 1, "archivo": 0}
 
@@ -152,6 +155,51 @@ def _color_cuadros(f):
                     round(float(rgb[0]), 4), round(float(rgb[1]), 4), round(float(rgb[2]), 4),
                     round(float(g.mean()), 4)])
     return res, negro
+
+
+def _quemado(f):
+    """Fraccion de la imagen con las luces reventadas (los tres colores pegados al tope): f (..., h, w, 3) en 0-1."""
+    return (f.min(axis=-1) >= 0.955).reshape(f.shape[:-3] + (-1,)).mean(axis=-1)
+
+
+def _vista_cuadros(f, g, lap):
+    """Lo que se VE en cada cuadro, en numeros absolutos (no comparado con su propio video: un video entero malo no
+    puede puntuar como uno bueno). f: (n, h, w, 3) y g: (n, h, w) en 0-1; lap: laplaciano de g.
+    Devuelve por cuadro: nit (enfoque: varianza del laplaciano x1000), con (contraste), quem (fraccion de luces
+    reventadas), eje (0-1: cuanto de los bordes va derecho, vertical u horizontal), giro (grados que se aparta de
+    derecho la direccion que mas se repite), pico (0-1: cuanto manda esa direccion), hash (huella de la imagen) y
+    capa (el color medio de una rejilla de 4 x 3, en hexadecimal: dos planos con la capa parecida son la misma
+    escena aunque la camara se haya movido un poco; la huella hash cambia demasiado con un paneo corto)."""
+    n = g.shape[0]
+    res = {"nit": (lap.reshape(n, -1).var(axis=1) * 1000.0).round(3).tolist(),
+           "con": g.reshape(n, -1).std(axis=1).round(3).tolist(),
+           "quem": _quemado(f).round(3).tolist(), "eje": [], "giro": [], "pico": [], "hash": [], "capa": []}
+    rejilla = (f.reshape(n, 3, 36, 4, 48, 3).mean(axis=(2, 4)) * 255.0).round().astype(np.uint8)
+    gx = g[:, 1:-1, 2:] - g[:, 1:-1, :-2]
+    gy = g[:, 2:, 1:-1] - g[:, :-2, 1:-1]
+    fuerza = gx * gx + gy * gy
+    cajon = np.minimum(8, (np.degrees(np.arctan2(gy, gx)) % 90.0 // 10).astype(np.int64))    # 9 cajones de 10 grados
+    chico = g[:, :104, :189].reshape(n, 8, 13, 9, 21).mean(axis=(2, 4))
+    bits = chico[:, :, 1:] > chico[:, :, :-1]
+    for k in range(n):
+        h = np.bincount(cajon[k].ravel(), weights=fuerza[k].ravel(), minlength=9)
+        tot = float(h.sum()) + 1e-12
+        j = int(h.argmax())
+        centro = 10 * j + 5
+        res["eje"].append(round(float(h[0] + h[8]) / tot, 3))
+        res["giro"].append(min(centro, 90 - centro))
+        res["pico"].append(round(float(h[j]) / tot, 3))
+        res["hash"].append("%016x" % int("".join("1" if b else "0" for b in bits[k].ravel()), 2))
+        res["capa"].append(rejilla[k].tobytes().hex())
+    return res
+
+
+def _barrido_de(desp):
+    """Cuanto se mueve la camara en cada medio segundo (dx, dy medios, en pixeles por cuadro de 192 de ancho a 10
+    cuadros por segundo): el paneo o el barrido, no el temblor."""
+    d = np.asarray(desp, dtype=np.float32).reshape(-1, 2)
+    n = len(d) // SUB + (1 if len(d) % SUB else 0)
+    return [[round(float(x), 2) for x in d[i * SUB:(i + 1) * SUB].mean(axis=0)] for i in range(n)]
 
 
 def _tramos_negros(fraccion_negra):
@@ -296,6 +344,7 @@ def _medir_video(ruta, dur, con_audio=True):
     desp, ultimo_g = [], None
     ultimo = None
     cuenta = 0
+    vista = {}
     pesos = np.array((0.299, 0.587, 0.114), dtype=np.float32)
     try:
         while True:
@@ -316,6 +365,8 @@ def _medir_video(ruta, dur, con_audio=True):
             g = gt[sel]
             lap = g[:, 1:-1, 2:] + g[:, 1:-1, :-2] + g[:, 2:, 1:-1] + g[:, :-2, 1:-1] - 4 * g[:, 1:-1, 1:-1]
             nit += lap.reshape(n, -1).var(axis=1).tolist()
+            for k, lista in _vista_cuadros(f, g, lap).items():
+                vista.setdefault(k, []).extend(lista)
             bri += g.reshape(n, -1).mean(axis=1).tolist()
             previo = g[:1] if ultimo is None else ultimo[None]
             dif = np.abs(np.diff(np.concatenate([previo, g]), axis=0)).reshape(n, -1).mean(axis=1)
@@ -337,8 +388,10 @@ def _medir_video(ruta, dur, con_audio=True):
             except OSError:
                 pass
         return _medir_video(ruta, dur, False)
+    todo_desp = np.concatenate(desp) if desp else []
+    vista["pan"] = _barrido_de(todo_desp)
     res = {"calidad": [], "color": color, "oscuros": _tramos_negros(negro),
-           "temblor": _temblor_de(np.concatenate(desp) if desp else [])}
+           "temblor": _temblor_de(todo_desp), "vista": vista}
     if nit:
         if len(mov) > 1:
             mov[0] = mov[1]
@@ -404,6 +457,7 @@ def _info_foto(ruta):
         a = np.asarray(im, dtype=np.float32) / 255.0
         g = a @ np.array((0.299, 0.587, 0.114), dtype=np.float32)
         d["brillo"] = round(float(g.mean()), 3)
+        d["quemado"] = round(float(_quemado(a)), 3)
         lap = g[1:-1, 2:] + g[1:-1, :-2] + g[2:, 1:-1] + g[:-2, 1:-1] - 4 * g[1:-1, 1:-1]
         d["nitidez"] = round(float(lap.var()) * 1000, 4)
         p = np.asarray(im.convert("L").resize((9, 8), Image.BILINEAR), dtype=np.int16)
@@ -511,7 +565,9 @@ def _analizar_archivo(tipo, ruta, previo=None):
         if d["dur"] <= 0:
             raise ValueError("no se pudo leer la duración (¿archivo incompleto?)")
         if np is not None:
-            if previo and previo.get("calidad") is not None and previo.get("color") is not None:
+            if previo and previo.get("calidad") is not None and previo.get("color") is not None \
+                    and (previo.get("vista") or {}).get("capa") is not None:
+                d["vista"] = previo["vista"]
                 for k in ("calidad", "color", "oscuros"):
                     d[k] = previo.get(k) or []
                 d["audio"] = previo["audio"] if previo.get("audio") is not None else \
@@ -520,7 +576,7 @@ def _analizar_archivo(tipo, ruta, previo=None):
             else:
                 d.update(_medir_video(ruta, d["dur"], d["audio_pista"]))
         else:
-            d.update({"calidad": [], "color": [], "oscuros": [], "audio": [], "temblor": []})
+            d.update({"calidad": [], "color": [], "oscuros": [], "audio": [], "temblor": [], "vista": {}})
     if d["hora"] is None:
         d["hora"] = datetime.datetime.fromtimestamp(st.st_mtime)
     d["hora"] = d["hora"].isoformat(timespec="seconds")

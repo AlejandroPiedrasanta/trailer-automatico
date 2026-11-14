@@ -23,6 +23,11 @@ DMG="$(ls "$BASE/3 INSTALADORES/Mac/"*.dmg 2>/dev/null | head -1)"
 echo "dmg: $DMG"
 echo "usuario frente a la Mac: $(stat -f%Su /dev/console)"
 MONTAJE="$(hdiutil attach "$DMG" -nobrowse -noverify | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1 | sed 's/[[:space:]]*$//')"
+if [ -d "$MONTAJE/TrailerAutomatico.app" ]; then        # disco de «Arrastralo a Aplicaciones» (desde la 1.5.2): otra prueba
+    hdiutil detach "$MONTAJE" -quiet 2>/dev/null || hdiutil detach "$MONTAJE" -force -quiet 2>/dev/null
+    exec bash "$AQUI/probar_arrastrar.sh"
+fi
+# de aqui en adelante: el disco con instalador .pkg (hasta la 1.5.1; lo sigue usando «Pruebas en varios equipos» con lo publicado)
 PKG="$MONTAJE/Instalar Trailer automatico.pkg"
 [ -f "$PKG" ] || { falla "no esta el .pkg en '$MONTAJE'"; ls -la "$MONTAJE"; exit 1; }
 ok "dmg montado en $MONTAJE"

@@ -207,9 +207,12 @@ def instalar(ruta, reabrir=True):
                          creationflags=0x00000008 | 0x00000200)   # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
         return "windows"
     if rutas.ES_MAC:
-        if servicio_mac_instalado():
-            os.makedirs(PEDIDOS_MAC, exist_ok=True)
-            pedido = os.path.join(PEDIDOS_MAC, "pedido_%d.json" % int(time.time() * 1000))
+        import actualizar_fondo                      # (aqui dentro: actualizar_fondo importa este modulo)
+        modo = actualizar_fondo.servicio_mac()       # "root" (instalada con .pkg) | "usuario" (arrastrada) | None
+        if modo:
+            carpeta = PEDIDOS_MAC if modo == "root" else actualizar_fondo.pedidos_usuario()
+            os.makedirs(carpeta, exist_ok=True)
+            pedido = os.path.join(carpeta, "pedido_%d.json" % int(time.time() * 1000))
             with open(pedido + ".tmp", "w", encoding="utf-8") as f:
                 json.dump({"dmg": ruta, "reabrir": bool(reabrir), "pid": os.getpid()}, f)
             os.replace(pedido + ".tmp", pedido)

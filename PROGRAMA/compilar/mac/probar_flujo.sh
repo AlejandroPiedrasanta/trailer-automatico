@@ -31,7 +31,7 @@ if [ ! -x "$BIN" ]; then
     falla "el programa no esta instalado en $APP"
     exit 1
 fi
-VERSION="$(find "$APP" -name version.txt -exec cat {} \; 2>/dev/null | head -1 | tr -d ' \r\n')"
+VERSION="$(cat "$(find "$APP" -name version.txt 2>/dev/null | head -1)" 2>/dev/null | tr -d ' \r\n')"
 ok "programa instalado: version $VERSION"
 
 # ---- 1. lo que trae el instalador

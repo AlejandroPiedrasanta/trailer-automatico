@@ -1,24 +1,32 @@
 # Tráiler automático · CINEMA PRODUCTIONS
-# compilar/mac/dmg/ajustes_dmg.py — la ventana del .dmg (dmgbuild), como la de CineCaptions: fondo con los dos pasos, donde va cada
-# icono y sin barras. Lo usa construir_mac.sh:
+# compilar/mac/dmg/ajustes_dmg.py — la ventana del .dmg (dmgbuild), igual que la de CineCaptions 5.91: «Arrástralo a Aplicaciones»,
+# el programa a la izquierda de la flecha y la carpeta Aplicaciones a la derecha, sin barras. Lo usa construir_mac.sh:
 #   dmgbuild -s ajustes_dmg.py -D stage=<carpeta> -D fondo=<fondo.tiff> -D icono=<.icns> "<volumen>" <salida.dmg>
-# El fondo (fondo.png + fondo@2x.png -> fondo.tiff con tiffutil) lo dibuja fondo_dmg.py: 660 x 460 puntos. Las coordenadas de los
+# El fondo (fondo.png + fondo@2x.png -> fondo.tiff con tiffutil) lo dibuja fondo_dmg.py: 600 x 360 puntos. Las coordenadas de los
 # iconos son su CENTRO, en puntos, desde arriba a la izquierda. El fondo es CLARO: asi el Finder escribe los nombres en negro.
+#
+# Desde la 1.5.2 (la persona, 2026-11-14: «así hazlo en Mac», con la captura del disco de CineCaptions): ya no hay un .pkg que abrir
+# (instalar en /Applications con un .pkg SIEMPRE pide la contrasena de la Mac). El disco trae la app y el enlace a Aplicaciones:
+# arrastrar no pide contrasena. Lo que hacia el .pkg lo hace el programa al abrirse (tareas.primer_arranque).
+#
+# El paquete OCULTO (nombre con punto: el Finder no lo ensena) es para las Mac que instalaron con el .pkg (hasta la 1.5.1): su
+# servicio de root busca un *.pkg en el disco y lo instala con `installer -target /`. Ese paquete no trae la app: su postinstall
+# la copia de este mismo disco.
 import os
 
 stage = defines['stage']                                   # noqa: F821 (lo pone dmgbuild)
 # nombres SIN tildes (como CineCaptions): con tildes, HFS+ los guarda en NFD y mac_alias/.DS_Store no los casan
-PKG = 'Instalar Trailer automatico.pkg'
-DESINSTALAR = 'Desinstalar.command'
+APP = 'TrailerAutomatico.app'
+PKG_OCULTO = '.Actualizar Trailer automatico.pkg'
 
 format = 'UDZO'
 filesystem = 'HFS+'
-files = [os.path.join(stage, PKG), os.path.join(stage, DESINSTALAR)]
+files = [os.path.join(stage, APP), os.path.join(stage, PKG_OCULTO)]
 symlinks = {'Aplicaciones': '/Applications'}
-hide_extensions = [PKG, DESINSTALAR]
+hide_extensions = [APP]
 icon = defines.get('icono') or None                        # noqa: F821
 background = defines['fondo']                              # noqa: F821
-window_rect = ((200, 280), (660, 488))                     # 460 del fondo + 28 de la barra del titulo
+window_rect = ((240, 300), (600, 388))                     # 360 del fondo + 28 de la barra del titulo (macOS 15)
 default_view = 'icon-view'
 show_status_bar = False
 show_tab_view = False
@@ -27,10 +35,10 @@ show_pathbar = False
 show_sidebar = False
 show_icon_preview = False
 arrange_by = None
-icon_size = 72
+icon_size = 104
 text_size = 12
 icon_locations = {
-    PKG: (165, 232),                                       # tarjeta 1: «Doble clic para instalar»
-    'Aplicaciones': (495, 232),                            # tarjeta 2: «Ábrelo desde Aplicaciones»
-    DESINSTALAR: (575, 400),                               # pie, a la derecha de los consejos
+    APP: (185, 168),                                       # a la izquierda de la flecha (x 258-342, y 168)
+    'Aplicaciones': (415, 168),                            # a la derecha
+    PKG_OCULTO: (560, 250),                                # (oculto; si alguien ensena los ocultos, que no tape nada)
 }

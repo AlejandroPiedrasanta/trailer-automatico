@@ -4,7 +4,8 @@
 # ============================================================================
 #   bash PROGRAMA/compilar/mac/construir_mac.sh                  todo de principio a fin
 #   bash PROGRAMA/compilar/mac/construir_mac.sh --solo-instalador   reusa la app ya compilada
-# Hace: venv -> ffmpeg (estatico, si se puede) -> PyInstaller (TrailerAutomatico.app) -> autoprueba -> .pkg -> .dmg con fondo.
+# Hace: venv -> ffmpeg (estatico, si se puede) -> PyInstaller (TrailerAutomatico.app) -> autoprueba -> paquete oculto -> .dmg
+#   de «Arrastralo a Aplicaciones» (la app y el enlace a Aplicaciones; sin instalador que pida contrasena).
 # Compila para la arquitectura de ESA Mac (Apple Silicon o Intel). Deja el .dmg en "3 INSTALADORES/Mac".
 # Variables opcionales: TRAILER_PYTHON (interprete), TRAILER_SIN_PANTALLA=1 (autoprueba sin pantalla, para GitHub Actions),
 #   FIRMA_APP / FIRMA_PKG (Developer ID de Apple; sin ellas: firma ad-hoc y la primera vez se abre con clic derecho > Abrir).
@@ -105,50 +106,22 @@ fi
 
 [ -d "$APP" ] || falla "No hay app compilada: corre el script sin --solo-instalador"
 
-paso "Instalador .pkg"
-PKGROOT="$OBRA/pkgroot"; rm -rf "$PKGROOT"; mkdir -p "$PKGROOT/Applications"
-ditto "$APP" "$PKGROOT/Applications/TrailerAutomatico.app"
+# Desde la 1.5.2 el disco es «Arrastralo a Aplicaciones» (como CineCaptions 5.91): sin un .pkg que abrir, porque instalar en
+# /Applications con un .pkg SIEMPRE pide la contrasena de la Mac. Pero las Mac que instalaron con el .pkg (hasta la 1.5.1)
+# tienen un servicio de root que busca un *.pkg en el disco y lo instala: este paquete SIN la app (solo su postinstall) la
+# copia del mismo disco y hace lo de siempre. Va OCULTO (nombre con punto).
+paso "Paquete oculto para las Mac que instalaron con el .pkg"
 chmod +x "$AQUI/pkg/scripts/postinstall"
-cat > "$OBRA/componente.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><array><dict>
-<key>RootRelativeBundlePath</key><string>Applications/TrailerAutomatico.app</string>
-<key>BundleIsRelocatable</key><false/>
-<key>BundleIsVersionChecked</key><false/>
-<key>BundleHasStrictIdentifier</key><false/>
-<key>BundleOverwriteAction</key><string>upgrade</string>
-</dict></array></plist>
-PLIST
 SELLO_PKG=(); [ -n "${FIRMA_PKG:-}" ] && SELLO_PKG=(--sign "$FIRMA_PKG")
-pkgbuild --root "$PKGROOT" --component-plist "$OBRA/componente.plist" --identifier com.cinemaproductions.trailerautomatico \
-    --version "$VERSION" --install-location / --scripts "$AQUI/pkg/scripts" --ownership recommended \
-    "$OBRA/TrailerAutomatico-componente.pkg" >/dev/null
-cat > "$OBRA/distribucion.xml" <<XML
-<?xml version="1.0" encoding="utf-8"?>
-<installer-gui-script minSpecVersion="2">
-    <title>Tráiler automático $VERSION</title>
-    <welcome file="welcome.html"/>
-    <conclusion file="conclusion.html"/>
-    <options customize="never" require-scripts="false" hostArchitectures="$ARQ"/>
-    <allowed-os-versions><os-version min="13.0"/></allowed-os-versions>
-    <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
-    <choices-outline><line choice="default"><line choice="com.cinemaproductions.trailerautomatico"/></line></choices-outline>
-    <choice id="default"/>
-    <choice id="com.cinemaproductions.trailerautomatico" visible="false"><pkg-ref id="com.cinemaproductions.trailerautomatico"/></choice>
-    <pkg-ref id="com.cinemaproductions.trailerautomatico" version="$VERSION" onConclusion="none">TrailerAutomatico-componente.pkg</pkg-ref>
-</installer-gui-script>
-XML
-PKG="$OBRA/Instalar_Trailer_automatico.pkg"; rm -f "$PKG"
-productbuild --distribution "$OBRA/distribucion.xml" --resources "$AQUI/pkg/recursos" --package-path "$OBRA" \
-    ${SELLO_PKG[@]+"${SELLO_PKG[@]}"} "$PKG" >/dev/null
+PKG="$OBRA/actualizar_instaladas.pkg"; rm -f "$PKG"
+pkgbuild --nopayload --scripts "$AQUI/pkg/scripts" --identifier com.cinemaproductions.trailerautomatico --version "$VERSION"     ${SELLO_PKG[@]+"${SELLO_PKG[@]}"} "$PKG" >/dev/null || falla "pkgbuild no pudo armar el paquete de las Mac ya instaladas"
 
-paso "Imagen de disco .dmg (ventana con los dos pasos)"
+paso "Imagen de disco .dmg (arrastrar a Aplicaciones)"
 STAGE="$OBRA/dmg"; rm -rf "$STAGE"; mkdir -p "$STAGE"
 # nombres y volumen SIN tildes: con «Tráiler automático» el punto de montaje queda en NFD, mac_alias lo compara en NFC, sale de
 # la imagen («..») y toma IDs de APFS de 64 bits -> struct.error en backgroundImageAlias (fallo del 2026-11-13 en GitHub)
-cp "$PKG" "$STAGE/Instalar Trailer automatico.pkg"
-cp "$AQUI/Desinstalar.command" "$STAGE/Desinstalar.command"; chmod +x "$STAGE/Desinstalar.command"
+ditto "$APP" "$STAGE/TrailerAutomatico.app"
+cp "$PKG" "$STAGE/.Actualizar Trailer automatico.pkg"
 FONDO="$OBRA/fondo_dmg.tiff"
 tiffutil -cathidpicheck "$AQUI/dmg/fondo.png" "$AQUI/dmg/fondo@2x.png" -out "$FONDO" >/dev/null || falla "No pude preparar el fondo del .dmg"
 SALIDA="${TRAILER_SALIDA:-$BASE/3 INSTALADORES/Mac}"; mkdir -p "$SALIDA"

@@ -14,6 +14,8 @@ propios = [f for g in GRUPOS for f in glob.glob(os.path.join(PROG, g, "*.py"))]
 datas = [(f, ".") for f in propios]
 for x in ("perfiles_evento.json", "version.txt", "LEEME.txt"):
     datas.append((os.path.join(PROG, "config", x), "."))
+# el desinstalador va DENTRO de la app (el disco solo trae la app y el enlace a Aplicaciones)
+datas.append((os.path.join(PROG, "compilar", "mac", "Desinstalar.command"), "."))
 for carpeta in ("recursos", "dctl"):
     ruta = os.path.join(PROG, carpeta)
     if not os.path.isdir(ruta):

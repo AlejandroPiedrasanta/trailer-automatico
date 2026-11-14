@@ -1,6 +1,9 @@
 # Tráiler automático · CINEMA PRODUCTIONS
 # Prueba en dos Mac de GitHub (chip Apple e Intel) el instalador COMPLETO, como lo recibe la persona:
-#   - al instalar el .dmg el programa se abre solo y el Instalador se cierra solo;
+#   - el disco es de «Arrástralo a Aplicaciones» (sin instalador que pida contraseña): la app se copia a Aplicaciones como
+#     la persona, se abre y en su primer arranque hace lo que antes hacía el instalador (música aparte, fuentes, servicio
+#     de actualizaciones del usuario); después se reemplaza sola desde el disco, también sin contraseña;
+#   - una Mac que instaló con el .pkg publicado se actualiza con el paquete oculto del disco nuevo;
 #   - el instalador lo trae todo (plantillas de DaVinci, musica y SFX, fuentes, looks, ffmpeg);
 #   - con el programa ya instalado, se suelta una carpeta con fotos, videos y dron: la ordena, la organiza y calcula el
 #     plan de las 4 plantillas. En GitHub no hay DaVinci Resolve: el armado dentro de DaVinci no se prueba aqui.
@@ -47,6 +50,7 @@ jobs:
         env:
           PROBAR_ACTUALIZACION: ${{ inputs.vieja != '' && '1' || '0' }}
           VIEJA: ${{ inputs.vieja }}
+          PROBAR_VIEJAS: '1'
         run: bash PROGRAMA/compilar/mac/probar_instalacion.sh
       - name: Lo que trae el instalador y soltar una carpeta (programa instalado)
         if: ${{ !cancelled() }}

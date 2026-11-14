@@ -10,6 +10,7 @@ lo va leyendo (mismo patron que CineCaptions).
                     y (Windows) la tarea programada de actualizaciones
   verificar         autoprueba: librerias, recursos, firma de actualizaciones, ffmpeg y el scripting de DaVinci (sin abrirlo)
   actualizar_fondo  actualizaciones con el programa cerrado (tarea programada de Windows / servicio de la Mac)
+  instalar_dmg      Mac: reemplaza la app instalada con la del .dmg que se le pasa (lo mismo que hace una actualizacion)
 """
 import os
 import sys
@@ -66,7 +67,15 @@ def instalar(est):
     est.progreso(85, "Trayendo los analisis anteriores")
     n_m = rutas.migrar_datos()
     n_t = ""
-    if rutas.ES_WIN and rutas.CONGELADO:
+    if rutas.ES_MAC:                               # la carpeta compartida sirve a cualquier usuario de la Mac
+        for raiz, carpetas, _ in os.walk(rutas.PROTEGIDOS):
+            for d in [raiz] + [os.path.join(raiz, c) for c in carpetas]:
+                try:
+                    os.chmod(d, 0o777)
+                except OSError:
+                    pass
+            break
+    if rutas.CONGELADO and (rutas.ES_WIN or rutas.ES_MAC):
         est.progreso(92, "Programando las actualizaciones automaticas")
         try:
             import actualizar_fondo
@@ -80,7 +89,40 @@ def instalar(est):
         registro.info("Instalacion: " + texto)
     except Exception:
         pass
+    try:                                           # hecho para esta version (ver primer_arranque)
+        os.makedirs(rutas.DATOS, exist_ok=True)
+        with open(MARCA_INSTALADO, "w", encoding="utf-8") as f:
+            f.write(rutas.version())
+    except OSError:
+        pass
     est.fin(True, texto)
+
+
+MARCA_INSTALADO = os.path.join(rutas.DATOS, "instalado.txt")
+
+
+def primer_arranque():
+    """Mac: el programa se arrastra a Aplicaciones (no hay instalador que pida contrasena), asi que lo que hacia el .pkg lo
+    hace el programa al abrirse: una vez por version, las tareas de instalar() (carpetas, musica guardada aparte, fuentes,
+    color en DaVinci); siempre, el servicio de actualizaciones del usuario. Corre en un hilo. Devuelve un texto para el registro."""
+    if not (rutas.ES_MAC and rutas.CONGELADO):
+        return "no aplica"
+    try:
+        with open(MARCA_INSTALADO, encoding="utf-8") as f:
+            hecho = f.read().strip()
+    except OSError:
+        hecho = ""
+    if hecho != rutas.version():
+        ruta = os.path.join(rutas.DATOS, "instalacion.txt")
+        os.makedirs(rutas.DATOS, exist_ok=True)
+        instalar(Estado(ruta))
+        try:
+            with open(ruta, encoding="utf-8") as f:
+                return "primer arranque de la %s: %s" % (rutas.version(), f.read().strip().splitlines()[-1])
+        except (OSError, IndexError):
+            return "primer arranque de la %s" % rutas.version()
+    import actualizar_fondo
+    return "actualizaciones: " + actualizar_fondo.asegurar_programada()
 
 
 def verificar(est):
@@ -138,6 +180,14 @@ def correr(nombre, archivo):
     if nombre == "actualizar_fondo":
         import actualizar_fondo
         return actualizar_fondo.correr()
+    if nombre == "instalar_dmg":                    # Mac: instala la version de ese .dmg (lo usa la prueba de arrastrar)
+        import actualizar_fondo
+        try:
+            actualizar_fondo._instalar_mac(archivo, reabrir=False)
+            return 0
+        except Exception as ex:
+            print("ERROR|%s" % ex, flush=True)
+            return 1
     if nombre == "material_prueba":                 # un evento de mentira para la prueba de arrastre (prueba_arrastre.py)
         import prueba_arrastre
         try:

@@ -1,18 +1,54 @@
 #!/bin/bash
 # Tráiler automático · CINEMA PRODUCTIONS
-# compilar/mac/pkg/scripts/postinstall — corre al terminar de copiar la app (como root; las tareas, como el usuario que esta frente a
-# la Mac): carpeta de color de DaVinci con permiso, ffmpeg (si la app no lo trae y no hay, con Homebrew), fuentes de los titulos,
-# carpetas de trabajo y el color/ruido en DaVinci. Nunca falla la instalacion: lo que no se pudo, el programa lo avisa al abrirse.
+# compilar/mac/pkg/scripts/postinstall — el paquete OCULTO del disco (desde la 1.5.2 el disco es «Arrastralo a Aplicaciones» y no
+# hay instalador a la vista). Lo usan las Mac que instalaron con el .pkg (hasta la 1.5.1): su servicio de root lo instala sin
+# contrasena. NO trae la app: la COPIA del mismo disco a /Applications y despues hace lo de siempre (como root; las tareas, como
+# el usuario que esta frente a la Mac): carpeta de color de DaVinci con permiso, ffmpeg si falta, fuentes, carpetas de trabajo y
+# el color/ruido en DaVinci. Si no puede copiar la app, falla y la instalada se queda como estaba.
 
 APP="/Applications/TrailerAutomatico.app"
 BIN="$APP/Contents/MacOS/TrailerAutomatico"
 LUT="/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/MCP"
+COMP="/Users/Shared/TrailerAutomatico"
+
+# (lo que hacia el preinstall) las versiones viejas traian la musica, los SFX y la fuente con licencia DENTRO de la app; las
+# actualizaciones publicas no los traen: se guardan aparte ANTES de reemplazar la app
+mkdir -p "$COMP/audio" "$COMP/fuentes" "$COMP/pedidos" && chmod 777 "$COMP" "$COMP/audio" "$COMP/fuentes" "$COMP/pedidos"
+if [ -d "$APP" ] && [ -z "$(ls -A "$COMP/audio" 2>/dev/null)" ]; then
+    AUD="$(find "$APP/Contents" -type d -path '*recursos/audio' 2>/dev/null | head -1)"
+    [ -n "$AUD" ] && cp -Rp "$AUD/." "$COMP/audio/" 2>/dev/null
+fi
+FUE="$(find "$APP/Contents" -type f -name 'FogtwoNo5.ttf' 2>/dev/null | head -1)"
+[ -n "$FUE" ] && [ ! -f "$COMP/fuentes/FogtwoNo5.ttf" ] && cp -p "$FUE" "$COMP/fuentes/" 2>/dev/null
+chmod -R a+rwX "$COMP" 2>/dev/null
+
+# la app nueva esta en el mismo disco que este paquete: se copia al lado («.nuevo») y se cambia de nombre (nunca queda a medias)
+ORIGEN_PKG="${PACKAGE_PATH:-$1}"
+NUEVA="$(dirname "$ORIGEN_PKG")/TrailerAutomatico.app"
+if [ ! -x "$NUEVA/Contents/MacOS/TrailerAutomatico" ]; then
+    echo "Trailer automatico: no encuentro la app en el disco ($NUEVA)" >&2
+    exit 1
+fi
+pkill -TERM -f "^$BIN\$" 2>/dev/null && sleep 3 && pkill -9 -f "^$BIN\$" 2>/dev/null
+rm -rf "$APP.nuevo" "$APP.viejo"
+if ! ditto "$NUEVA" "$APP.nuevo" || [ ! -x "$APP.nuevo/Contents/MacOS/TrailerAutomatico" ]; then
+    rm -rf "$APP.nuevo"
+    echo "Trailer automatico: no pude copiar la app a Aplicaciones" >&2
+    exit 1
+fi
+[ -d "$APP" ] && mv "$APP" "$APP.viejo"
+if ! mv "$APP.nuevo" "$APP"; then
+    [ -d "$APP.viejo" ] && mv "$APP.viejo" "$APP"
+    exit 1
+fi
+rm -rf "$APP.viejo"
+chown -R root:wheel "$APP" 2>/dev/null
+chmod -R go-w "$APP" 2>/dev/null
 
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null
 mkdir -p "$LUT" && chmod 777 "$LUT"                        # el programa escribe ahi la reduccion de ruido en cada armado
 
 # carpeta compartida: musica/SFX y fuente con licencia (fuera de la app: las actualizaciones no las traen) y pedidos al servicio
-COMP="/Users/Shared/TrailerAutomatico"
 mkdir -p "$COMP/pedidos" "$COMP/audio" "$COMP/fuentes" && chmod 777 "$COMP" "$COMP/pedidos" "$COMP/audio" "$COMP/fuentes"
 SIN_ABRIR=0; [ -f "$COMP/.sin_abrir" ] && SIN_ABRIR=1           # la instalacion la hace el servicio de actualizaciones
 
@@ -53,9 +89,6 @@ LOG="$CASA/Library/Logs/TrailerAutomatico_instalacion.log"
 mkdir -p "$CASA/Library/Logs"
 echo "== $(date '+%Y-%m-%d %H:%M:%S')  Tráiler automático: tareas de instalación" >> "$LOG"
 
-# el programa que estaba abierto se cierra (sus archivos ya se reemplazaron)
-pkill -TERM -f "^$BIN\$" 2>/dev/null && sleep 3 && pkill -9 -f "^$BIN\$" 2>/dev/null
-
 como_usuario() { launchctl asuser "$UID_U" sudo -u "$USUARIO" -H env HOME="$CASA" USER="$USUARIO" \
                  PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" "$@"; }
 
@@ -91,17 +124,10 @@ fi
 # Al terminar: se abre el programa y se cierra el Instalador (la persona: "cuando se termine de instalar se abre
 # automaticamente y se cierra el instalador"). Va en segundo plano y espera a que el Instalador escriba el recibo del
 # paquete (lo hace despues de este script), asi la instalacion queda completa antes de cerrarlo. Tambien expulsa el .dmg.
-RECIBO="/var/db/receipts/com.cinemaproductions.trailerautomatico.plist"
-INICIO=$(date +%s)
-ORIGEN="${PACKAGE_PATH:-$1}"
 VOL=""
-case "$ORIGEN" in /Volumes/*) VOL="/Volumes/$(echo "${ORIGEN#/Volumes/}" | cut -d/ -f1)" ;; esac
+case "$ORIGEN_PKG" in /Volumes/*) VOL="/Volumes/$(echo "${ORIGEN_PKG#/Volumes/}" | cut -d/ -f1)" ;; esac
 (
-    for i in $(seq 1 60); do
-        [ -f "$RECIBO" ] && [ "$(stat -f %m "$RECIBO" 2>/dev/null || echo 0)" -ge "$INICIO" ] && break
-        sleep 1
-    done
-    sleep 2
+    sleep 3                                                 # (este paquete no deja recibo: no hay que esperarlo)
     como_usuario /usr/bin/open "$APP"
     sleep 2
     como_usuario /usr/bin/osascript -e 'tell application "Installer" to quit'

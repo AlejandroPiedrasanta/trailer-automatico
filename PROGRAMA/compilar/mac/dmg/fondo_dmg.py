@@ -1,19 +1,24 @@
 # -*- coding: utf-8 -*-
-"""Fondo de la ventana del .dmg de la Mac (660 x 460 puntos; fondo.png y fondo@2x.png), como el de CineCaptions:
-logo + nombre arriba, dos tarjetas («1 Doble clic para instalar» y «2 Ábrelo desde Aplicaciones») con el sitio de cada icono
-y los consejos abajo. CLARO a proposito: con imagen de fondo el Finder escribe los nombres de los iconos en negro.
-Los iconos los coloca ajustes_dmg.py: Instalar (165, 232), Aplicaciones (495, 232), Desinstalar (555, 380)."""
+"""Fondo de la ventana del .dmg de la Mac (600 x 360 puntos; fondo.png y fondo@2x.png), igual que el de CineCaptions 5.91:
+«Arrástralo a Aplicaciones», la flecha entre el programa y la carpeta, y abajo que hacer si macOS no lo abre la primera vez.
+CLARO a proposito: con imagen de fondo el Finder escribe los nombres de los iconos en negro (tambien en modo oscuro).
+Los iconos los coloca ajustes_dmg.py: el programa en (185, 168) y Aplicaciones en (415, 168); la flecha va entre los dos.
+
+    python PROGRAMA/compilar/mac/dmg/fondo_dmg.py        vuelve a dibujar fondo.png y fondo@2x.png
+"""
 import os
 import sys
 from PySide6.QtCore import Qt, QPointF, QRectF
-from PySide6.QtGui import (QGuiApplication, QImage, QPainter, QColor, QLinearGradient, QRadialGradient, QPen, QFont,
-                           QPainterPath, QFontDatabase)
+from PySide6.QtGui import QGuiApplication, QImage, QPainter, QColor, QPen, QFont, QFontDatabase
 
-W, H = 660, 460
+W, H = 600, 360
+PIE = 285                                                  # desde aqui, la franja blanca del consejo
 AQUI = os.path.dirname(os.path.abspath(__file__))
+FUENTES = os.path.join(AQUI, "..", "..", "..", "recursos", "fuentes")
+TINTA, VERDE, GRIS = "#0F172A", "#10B77F", "#7B8494"
 
 
-def fuente(px, peso, familias=("Montserrat", "Segoe UI", "Helvetica Neue")):
+def fuente(px, peso, familias):
     hay = set(QFontDatabase.families())
     f = QFont(next((x for x in familias if x in hay), "Arial"))
     f.setPixelSize(int(px))
@@ -21,115 +26,56 @@ def fuente(px, peso, familias=("Montserrat", "Segoe UI", "Helvetica Neue")):
     return f
 
 
-def texto(p, x, y, t, px, peso, color, familias=("Montserrat", "Segoe UI", "Helvetica Neue"), ancho=600, centro=False):
+TITULOS = ("Montserrat", "Segoe UI", "Helvetica Neue")
+TEXTOS = ("Open Sans", "Segoe UI", "Helvetica Neue")
+
+
+def centrado(p, y, trozos, px, peso, familias):
+    """Escribe varios trozos (texto, color) en un renglon centrado en el ancho de la ventana."""
     p.setFont(fuente(px, peso, familias))
-    p.setPen(QColor(color))
-    r = QRectF(x - (ancho / 2 if centro else 0), y, ancho, px * 1.6)
-    p.drawText(r, (Qt.AlignHCenter if centro else Qt.AlignLeft) | Qt.AlignTop, t)
-    return p.fontMetrics().horizontalAdvance(t)
-
-
-def tarjeta(p, r, n, titulo, sub):
-    sombra = QPainterPath()
-    sombra.addRoundedRect(r.translated(0, 4), 20, 20)
-    p.fillPath(sombra, QColor(40, 60, 90, 22))
-    c = QPainterPath()
-    c.addRoundedRect(r, 20, 20)
-    p.fillPath(c, QColor(255, 255, 255, 242))
-    p.setBrush(Qt.NoBrush)
-    p.setPen(QPen(QColor(210, 222, 236), 1))
-    p.drawPath(c)
-    # numero en circulo verde + titulo, centrados
-    f = fuente(16.5, QFont.Weight.Bold)
-    p.setFont(f)
-    ancho_t = p.fontMetrics().horizontalAdvance(titulo)
-    total = 26 + 10 + ancho_t
-    x0 = r.center().x() - total / 2
-    y = r.top() + 22
-    g = QLinearGradient(QPointF(x0, y), QPointF(x0 + 26, y + 26))
-    g.setColorAt(0, QColor(52, 211, 153))
-    g.setColorAt(1, QColor(16, 163, 106))
-    p.setPen(Qt.NoPen)
-    p.setBrush(g)
-    p.drawEllipse(QRectF(x0, y, 26, 26))
-    p.setPen(QColor(255, 255, 255))
-    p.setFont(fuente(14, QFont.Weight.Bold))
-    p.drawText(QRectF(x0, y, 26, 26), Qt.AlignCenter, str(n))
-    p.setPen(QColor(20, 24, 32))
-    p.setFont(f)
-    p.drawText(QRectF(x0 + 36, y - 2, ancho_t + 4, 30), Qt.AlignLeft | Qt.AlignVCenter, titulo)
-    texto(p, r.center().x(), y + 32, sub, 11.5, QFont.Weight.Normal, "#6B7686", ("Segoe UI", "Helvetica Neue"), r.width(), True)
-    # flecha hacia el icono
-    pen = QPen(QColor(16, 185, 129), 2.4)
-    pen.setCapStyle(Qt.RoundCap)
-    pen.setJoinStyle(Qt.RoundJoin)
-    p.setPen(pen)
-    cx, cy = r.center().x(), y + 64
-    p.drawPolyline([QPointF(cx - 7, cy - 3), QPointF(cx, cy + 4), QPointF(cx + 7, cy - 3)])
-
-
-def icono(p, x, y, lado):
-    """El icono del programa (el mismo de la app: cuadro morado con el play), con una sombra suave."""
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("icono", os.path.join(AQUI, "..", "..", "icono", "icono.py"))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    c = QPainterPath()
-    c.addRoundedRect(QRectF(x + lado * 0.04, y + lado * 0.06, lado * 0.92, lado * 0.92), lado * 0.22, lado * 0.22)
-    p.fillPath(c, QColor(40, 20, 90, 40))
-    img = m.dibujar(int(lado * 4))
-    p.drawImage(QRectF(x, y, lado, lado), img)
+    m = p.fontMetrics()
+    x = (W - sum(m.horizontalAdvance(t) for t, _ in trozos)) / 2.0
+    for t, color in trozos:
+        p.setPen(QColor(color))
+        p.drawText(QRectF(x, y, W, px * 1.6), Qt.AlignLeft | Qt.AlignTop, t)
+        x += m.horizontalAdvance(t)
 
 
 def dibujar(esc):
     img = QImage(int(W * esc), int(H * esc), QImage.Format_ARGB32)
-    img.fill(QColor(246, 248, 252))
+    img.fill(QColor("#F7F8FC"))
     p = QPainter(img)
     p.setRenderHint(QPainter.Antialiasing)
     p.setRenderHint(QPainter.TextAntialiasing)
-    p.setRenderHint(QPainter.SmoothPixmapTransform)
     p.scale(esc, esc)
-    luz = QRadialGradient(QPointF(W - 40, 0), 360)
-    luz.setColorAt(0, QColor(178, 236, 240, 200))
-    luz.setColorAt(0.5, QColor(214, 236, 250, 110))
-    luz.setColorAt(1, QColor(246, 248, 252, 0))
-    p.fillRect(QRectF(0, 0, W, H), luz)
-    icono(p, 28, 22, 64)
-    x = 108
-    p.setFont(fuente(30, QFont.Weight.ExtraBold))
-    p.setPen(QColor(12, 16, 24))
-    p.drawText(QRectF(x, 22, 400, 40), Qt.AlignLeft | Qt.AlignVCenter, "Tráiler")
-    w1 = p.fontMetrics().horizontalAdvance("Tráiler ")
-    p.setPen(QColor(16, 163, 106))
-    p.drawText(QRectF(x + w1, 22, 400, 40), Qt.AlignLeft | Qt.AlignVCenter, "automático")
-    texto(p, x, 62, "Instalador para Mac · By Cinema Productions", 13, QFont.Weight.Medium, "#4B5563", ("Segoe UI", "Helvetica Neue"))
-    tarjeta(p, QRectF(22, 112, 286, 222), 1, "Doble clic para instalar", "Double-click to install")
-    tarjeta(p, QRectF(352, 112, 286, 222), 2, "Ábrelo desde Aplicaciones", "Then open it from Applications")
-    # pie con los consejos
-    p.fillRect(QRectF(0, 352, W, H - 352), QColor(232, 238, 246))
-    p.setPen(QPen(QColor(214, 222, 234), 1))
-    p.drawLine(QPointF(0, 352), QPointF(W, 352))
-    filas = [("¿macOS no lo deja abrir? ", "Clic derecho sobre «Instalar Trailer automatico» › Abrir.",
-              "macOS won’t open it? Right-click “Instalar Trailer automatico” › Open."),
-             ("En DaVinci Resolve: ", "Preferencias › Sistema › General › Scripting externo: Local.",
-              "In DaVinci Resolve: Preferences › System › General › External scripting: Local.")]
-    y = 366
-    for neg, resto, ingles in filas:
-        p.setFont(fuente(11.5, QFont.Weight.Bold))
-        p.setPen(QColor(15, 20, 30))
-        p.drawText(QRectF(26, y, 480, 18), Qt.AlignLeft | Qt.AlignVCenter, neg)
-        wn = p.fontMetrics().horizontalAdvance(neg)
-        p.setFont(fuente(11.5, QFont.Weight.Normal, ("Segoe UI", "Helvetica Neue")))
-        p.setPen(QColor(40, 48, 60))
-        p.drawText(QRectF(26 + wn, y, 500 - wn, 18), Qt.AlignLeft | Qt.AlignVCenter, resto)
-        texto(p, 26, y + 18, ingles, 10.5, QFont.Weight.Normal, "#8A94A6", ("Segoe UI", "Helvetica Neue"), 500)
-        y += 44
+    centrado(p, 22, [("Arrástralo a ", TINTA), ("Aplicaciones", VERDE)], 30, QFont.Weight.ExtraBold, TITULOS)
+    centrado(p, 62, [("Drag Tráiler automático to Applications", GRIS)], 14, QFont.Weight.Medium, TEXTOS)
+    pen = QPen(QColor(VERDE), 3)                           # la flecha, entre los dos iconos (x 258-342, y 168)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    p.setPen(pen)
+    p.drawLine(QPointF(258, 168), QPointF(341, 168))
+    p.drawPolyline([QPointF(331, 158), QPointF(342, 168), QPointF(331, 178)])
+    p.fillRect(QRectF(0, PIE, W, H - PIE), QColor("#FFFFFF"))
+    p.fillRect(QRectF(0, PIE, W, 1), QColor("#E3E7EF"))
+    centrado(p, PIE + 14, [("¿macOS no lo abre la primera vez?", "#374151")], 13, QFont.Weight.Bold, TEXTOS)
+    centrado(p, PIE + 34, [("Ajustes del Sistema › Privacidad y seguridad › Abrir igualmente", GRIS)], 12.5,
+             QFont.Weight.Normal, TEXTOS)
     p.end()
     return img
 
 
-if __name__ == "__main__":
-    QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
+def main():
+    app = QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
+    if os.path.isdir(FUENTES):                             # las mismas fuentes en cualquier computadora
+        for f in os.listdir(FUENTES):
+            if f.lower().endswith((".ttf", ".otf")):
+                QFontDatabase.addApplicationFont(os.path.join(FUENTES, f))
     dibujar(1).save(os.path.join(AQUI, "fondo.png"))
     dibujar(2).save(os.path.join(AQUI, "fondo@2x.png"))
-    print("fondo.png y fondo@2x.png listos")
+    print("fondo.png (%dx%d) y fondo@2x.png" % (W, H))
+    del app
+
+
+if __name__ == "__main__":
+    main()

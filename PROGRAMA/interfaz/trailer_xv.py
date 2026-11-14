@@ -1277,6 +1277,16 @@ def app():
                 import actualizar_fondo
                 qt_kit.correr_en_hilo(self, actualizar_fondo.asegurar_programada,
                                       lambda r, e: registro.info("Tarea de actualizaciones: %s" % (e or r)))
+            elif rutas.CONGELADO and rutas.ES_MAC:                        # Mac: se arrastra a Aplicaciones, sin instalador
+                import tareas                                             # lo que hacia el .pkg lo hace el programa al abrirse
+                qt_kit.correr_en_hilo(self, tareas.primer_arranque, self._fin_primer_arranque)
+
+        def _fin_primer_arranque(self, r, e):
+            import actualizar_fondo
+            registro.info("Primer arranque (Mac): %s" % (e or r))
+            if actualizar_fondo.app_de_paso():                            # abierta desde el disco, sin arrastrarla
+                QTimer.singleShot(6000, lambda: self._avisar(
+                    "Arrastra Tráiler automático a Aplicaciones y ábrelo desde ahí: así se actualiza solo.", "warn"))
 
         def _fin_chequeo(self, res):
             mal = [(n, d) for n, ok, d in res if not ok]

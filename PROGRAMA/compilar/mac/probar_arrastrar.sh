@@ -39,9 +39,16 @@ echo "dmg: $DMG"
 COMPLETO=1; case "$(basename "$DMG")" in Actualizar_*) COMPLETO=0 ;; esac     # el publico no trae musica
 
 # ---- 0. una Mac que instalo con el .pkg publicado se actualiza con el paquete oculto del disco nuevo
-if [ "${PROBAR_VIEJAS:-0}" = 1 ]; then
-    CLAVE="mac_arm64"; [ "$(uname -m)" = "x86_64" ] && CLAVE="mac_x86_64"
-    URL="$(curl -sL "$PUBLICADA_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['estable']['archivos']['$CLAVE']['url'])" 2>/dev/null)"
+#      PROBAR_VIEJAS=1: la version publicada ahora mismo.  PROBAR_VIEJAS=1.5.1: ESA version (su .dmg sigue en su release); si es
+#      mas vieja que la publicada, se deja que su servicio de root se actualice SOLO (la prueba de verdad de las Mac de antes).
+if [ "${PROBAR_VIEJAS:-0}" != 0 ]; then
+    CLAVE="mac_arm64"; ARQ_N="AppleSilicon"; [ "$(uname -m)" = "x86_64" ] && { CLAVE="mac_x86_64"; ARQ_N="Intel"; }
+    PUBLICADA="$(curl -sL "$PUBLICADA_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["estable"]["version"])' 2>/dev/null)"
+    if [ "$PROBAR_VIEJAS" = 1 ]; then
+        URL="$(curl -sL "$PUBLICADA_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['estable']['archivos']['$CLAVE']['url'])" 2>/dev/null)"
+    else
+        URL="https://github.com/AlejandroPiedrasanta/trailer-automatico-releases/releases/download/v$PROBAR_VIEJAS/Actualizar_Trailer_automatico_Mac_${ARQ_N}_$PROBAR_VIEJAS.dmg"
+    fi
     VIEJO="$SAL/publicado.dmg"
     curl -sL "$URL" -o "$VIEJO"
     M0="$(montar "$VIEJO" -nobrowse)"
@@ -54,6 +61,22 @@ if [ "${PROBAR_VIEJAS:-0}" = 1 ]; then
         V0="$(VER_TXT "$APP")"
         [ -n "$V0" ] && ok "Mac con la version publicada $V0 instalada con su .pkg (servicio de root)" || falla "no se instalo la publicada"
         sudo launchctl print "system/$ETQ" >/dev/null 2>&1 && ok "tiene el servicio de root de antes" || nota "sin servicio de root"
+        if [ -n "$V0" ] && [ -n "$PUBLICADA" ] && [ "$V0" != "$PUBLICADA" ]; then
+            # la prueba de verdad: su servicio de root (el codigo VIEJO) baja la publicada, que ya es un disco de arrastrar,
+            # y la instala con el paquete oculto, sin contrasena
+            pkill -f "$BIN" 2>/dev/null; sleep 4
+            sudo rm -f "/Library/Application Support/TrailerAutomatico/actualizar/fondo.json"
+            sudo launchctl kickstart -k "system/$ETQ"
+            INI=$(date +%s); V="$V0"
+            for i in $(seq 1 300); do V="$(VER_TXT "$APP")"; [ -n "$V" ] && [ "$V" != "$V0" ] && [ ! -e "$APP.nuevo" ] && break; sleep 2; done
+            sleep 8
+            sudo cat "/Library/Application Support/TrailerAutomatico/actualizar/fondo.log" > "$SAL/viejas_fondo.log" 2>/dev/null
+            [ "$V" = "$PUBLICADA" ] && ok "la Mac de antes se actualizo SOLA de $V0 a $V con su servicio de root (en $(( $(date +%s) - INI )) s, sin contrasena)" \
+                || falla "la Mac de antes no se actualizo (sigue en $V, publicada $PUBLICADA): $(tail -1 "$SAL/viejas_fondo.log" 2>/dev/null | cut -c1-150)"
+            [ "$(stat -f%Su "$APP")" = "root" ] && ok "la app sigue siendo del sistema (root)" || falla "la app quedo de $(stat -f%Su "$APP")"
+            sudo launchctl print "system/$ETQ" >/dev/null 2>&1 && ok "su servicio de root sigue cargado" || falla "se perdio el servicio de root"
+            [ -f "$AGENTE" ] && falla "se creo ademas un servicio del usuario (no debia)" || ok "no se creo un segundo servicio"
+        fi
         M1="$(montar "$DMG" -nobrowse)"
         # lo mismo que hace su servicio de root: el primer *.pkg del disco, con installer
         sudo touch /Users/Shared/TrailerAutomatico/.sin_abrir

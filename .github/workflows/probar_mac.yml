@@ -18,6 +18,10 @@ on:
         description: "Version vieja para probar la actualizacion (vacio = solo la instalacion)"
         type: string
         default: ""
+      publicada_vieja:
+        description: "Mac «de antes»: instala ESTA version publicada (p. ej. 1.5.1) y deja que su servicio se actualice solo"
+        type: string
+        default: ""
 jobs:
   probar:
     strategy:
@@ -50,7 +54,7 @@ jobs:
         env:
           PROBAR_ACTUALIZACION: ${{ inputs.vieja != '' && '1' || '0' }}
           VIEJA: ${{ inputs.vieja }}
-          PROBAR_VIEJAS: ${{ matrix.nombre == 'Intel' && '1' || '0' }}    # la de chip Apple, limpia: arrastrar en una Mac nueva
+          PROBAR_VIEJAS: ${{ inputs.publicada_vieja != '' && inputs.publicada_vieja || (matrix.nombre == 'Intel' && '1' || '0') }}
         run: bash PROGRAMA/compilar/mac/probar_instalacion.sh
       - name: Lo que trae el instalador y soltar una carpeta (programa instalado)
         if: ${{ !cancelled() }}

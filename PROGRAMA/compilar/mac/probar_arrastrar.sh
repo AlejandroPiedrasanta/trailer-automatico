@@ -34,6 +34,28 @@ OCULTO=".Actualizar Trailer automatico.pkg"
 INSTALADOR="Instalar Trailer automatico.app"
 # la app en el disco: en la raiz (arrastrar) o dentro del instalador (doble clic para instalar, desde la 1.5.7)
 app_disco() { if [ -d "$1/TrailerAutomatico.app" ]; then echo "$1/TrailerAutomatico.app"; else echo "$1/$INSTALADOR/Contents/Resources/TrailerAutomatico.app"; fi; }
+# si el instalador se cayo: el informe de macOS (DiagnosticReports/instalar-*.ips) con el motivo y las primeras funciones
+informe_fallo() {
+    for f in "$HOME"/Library/Logs/DiagnosticReports/instalar*.ips; do
+        [ -f "$f" ] && [ "$(stat -f%m "$f")" -ge "$1" ] || continue
+        cp "$f" "$SAL/"
+        falla "el instalador se cayo: $(python3 - "$f" <<'PY'
+import json, sys
+crudo = open(sys.argv[1], encoding="utf-8", errors="replace").read().split("\n", 1)
+b = json.loads(crudo[1]) if len(crudo) > 1 else {}
+e = b.get("exception", {})
+asi = " ".join(" ".join(v) if isinstance(v, list) else str(v) for v in b.get("asi", {}).values())[:300]
+imgs = b.get("usedImages", [])
+hilos = [t for t in b.get("threads", []) if t.get("triggered")]
+fr = []
+for x in (hilos[0].get("frames", []) if hilos else [])[:10]:
+    im = imgs[x["imageIndex"]].get("name", "?") if "imageIndex" in x and x["imageIndex"] < len(imgs) else "?"
+    fr.append("%s:%s" % (im, x.get("symbol", "?")))
+print(e.get("type"), e.get("signal"), "|", asi, "|", " < ".join(fr))
+PY
+)"
+    done
+}
 VER_TXT() { cat "$(find "$1" -name version.txt 2>/dev/null | head -1)" 2>/dev/null | tr -d ' \r\n'; }
 montar() { hdiutil attach "$1" -noverify ${2:-} | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1 | sed 's/[[:space:]]*$//'; }
 PUBLICADA_JSON="https://github.com/AlejandroPiedrasanta/trailer-automatico-releases/releases/latest/download/version.json"
@@ -116,7 +138,8 @@ VISIBLES="$(ls "$MONTAJE" | tr '\n' '|')"
 if [ -d "$MONTAJE/$INSTALADOR" ]; then
     MODO=instalador
     [ "$VISIBLES" = "$INSTALADOR|" ] && ok "a la vista solo esta «Instalar Trailer automatico» (doble clic para instalar)" || falla "a la vista hay: $VISIBLES"
-    codesign -v --deep "$MONTAJE/$INSTALADOR" 2>/dev/null && ok "el instalador esta firmado" || falla "la firma del instalador no se verifica"
+    FIRMA="$(codesign -v --deep "$MONTAJE/$INSTALADOR" 2>&1)" && ok "el instalador esta firmado" \
+        || falla "la firma del instalador no se verifica: $(echo "$FIRMA" | tail -1 | cut -c1-160)"
 else
     MODO=arrastrar
     [ "$(readlink "$MONTAJE/Aplicaciones" 2>/dev/null)" = "/Applications" ] && ok "trae el enlace a Aplicaciones" || falla "falta el enlace a Aplicaciones"
@@ -140,6 +163,7 @@ if [ "$MODO" = instalador ]; then
     sleep 3
     foto 3_instalador_termino
     cp "$DATOS/registro/instalador_mac.log" "$SAL/instalador_mac.log" 2>/dev/null
+    informe_fallo "$INI"
     pgrep -f "$INSTALADOR/Contents/MacOS/instalar" >/dev/null && falla "el instalador sigue abierto despues de 4 minutos" \
         || ok "el instalador termino y se cerro solo (en $SEG s, sin contrasena)"
     grep -q "listo:" "$SAL/instalador_mac.log" 2>/dev/null && ok "registro del instalador: $(grep -m1 'tarea instalar' "$SAL/instalador_mac.log" | cut -c22-160)" \

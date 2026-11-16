@@ -53,7 +53,9 @@ icon_locations = {
 if MODO == 'instalador':                                   # «Doble clic para instalar» (fondo_instalar.png)
     files = [os.path.join(stage, INSTALADOR), os.path.join(stage, PKG_OCULTO)]
     symlinks = {}
-    hide_extensions = [INSTALADOR]
+    # SIN ocultar la extension: dmgbuild lo hace con SetFile (com.apple.FinderInfo en la carpeta de la app) y codesign ya no
+    # verifica la firma («Disallowed xattr»): con cuarentena macOS diria «esta danado». El Finder no ensena .app igual.
+    hide_extensions = []
     icon_size = 128
     text_size = 13
     icon_locations = {

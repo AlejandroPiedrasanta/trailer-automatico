@@ -17,6 +17,7 @@
 // Lo compila construir_mac.sh con swiftc (en una Mac: Windows no puede).
 // =============================================================================================================================
 import AppKit
+import Metal
 import SwiftUI
 
 extension Color {
@@ -857,6 +858,42 @@ final class Instalacion {
     }
 }
 
+// ---------------------------------------------------------------------------------------------------------------- respaldo
+/// Ventana sencilla de AppKit (título, estado y barra) para una Mac sin gráfica Metal (máquinas virtuales, como la Mac Intel
+/// de GitHub): ahí la ventana animada de SwiftUI se cae al dibujarse. Instala igual. También con «instalar --sencilla».
+final class VistaSencilla {
+    let ventana: NSWindow
+    let estado = NSTextField(labelWithString: "Preparando la instalación…")
+    let barra = NSProgressIndicator()
+
+    init(titulo: String) {
+        ventana = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 150), styleMask: [.titled, .miniaturizable],
+                           backing: .buffered, defer: false)
+        ventana.title = titulo
+        let t = NSTextField(labelWithString: titulo)
+        t.font = NSFont.boldSystemFont(ofSize: 18)
+        t.frame = NSRect(x: 24, y: 98, width: 472, height: 26)
+        estado.frame = NSRect(x: 24, y: 66, width: 472, height: 20)
+        estado.textColor = .secondaryLabelColor
+        estado.lineBreakMode = .byTruncatingTail
+        barra.isIndeterminate = false
+        barra.minValue = 0
+        barra.maxValue = 100
+        barra.style = .bar
+        barra.frame = NSRect(x: 24, y: 30, width: 472, height: 20)
+        ventana.contentView?.addSubview(t)
+        ventana.contentView?.addSubview(estado)
+        ventana.contentView?.addSubview(barra)
+        ventana.center()
+        ventana.makeKeyAndOrderFront(nil)
+    }
+
+    func actualizar(_ m: Modelo) {
+        barra.doubleValue = m.mostrado * 100
+        estado.stringValue = m.fase == 3 ? m.titulo : "\(m.titulo)  ·  \(Int((m.mostrado * 100).rounded())) %"
+    }
+}
+
 // ---------------------------------------------------------------------------------------------------------------- app
 final class VentanaSinMarco: NSWindow {
     override var canBecomeKey: Bool { true }
@@ -870,6 +907,9 @@ final class Instalador: NSObject, NSApplicationDelegate {
     var reloj: Timer?
     var antes = Date()
     var abierto = false
+    var instalando = false
+    var sencilla: VistaSencilla?
+    var avisoError = false
     var demo: [(Double, () -> Void)] = []
     var tDemo = Date()
     let args = CommandLine.arguments
@@ -889,20 +929,25 @@ final class Instalador: NSObject, NSApplicationDelegate {
         }
         let titulo = "Instalar " + NOMBRE
         let ficha = "v\(version)  ·  todo incluido  ·  no pide contraseña"
-        let vista = VistaInstalador(m: m, r: Recursos(recursos), escena: escena, titulo: titulo, ficha: ficha,
-                                    verRegistro: { [weak self] in self?.verRegistro() },
-                                    cerrar: { NSApp.terminate(nil) })
-        let w = VentanaSinMarco(contentRect: NSRect(x: 0, y: 0, width: ANCHO, height: ALTO), styleMask: [.borderless],
-                                backing: .buffered, defer: false)
-        w.isOpaque = false
-        w.backgroundColor = .clear
-        w.hasShadow = true
-        w.isMovableByWindowBackground = true
-        w.title = titulo
-        w.contentView = NSHostingView(rootView: vista)
-        w.center()
-        w.makeKeyAndOrderFront(nil)
-        ventana = w
+        let sinMetal = MTLCreateSystemDefaultDevice() == nil
+        if sinMetal || args.contains("--sencilla") {
+            sencilla = VistaSencilla(titulo: titulo + " " + version)
+        } else {
+            let vista = VistaInstalador(m: m, r: Recursos(recursos), escena: escena, titulo: titulo, ficha: ficha,
+                                        verRegistro: { [weak self] in self?.verRegistro() },
+                                        cerrar: { NSApp.terminate(nil) })
+            let w = VentanaSinMarco(contentRect: NSRect(x: 0, y: 0, width: ANCHO, height: ALTO), styleMask: [.borderless],
+                                    backing: .buffered, defer: false)
+            w.isOpaque = false
+            w.backgroundColor = .clear
+            w.hasShadow = true
+            w.isMovableByWindowBackground = true
+            w.title = titulo
+            w.contentView = NSHostingView(rootView: vista)
+            w.center()
+            w.makeKeyAndOrderFront(nil)
+            ventana = w
+        }
         NSApp.activate(ignoringOtherApps: true)
         m.info = "Se instala en Aplicaciones sin contraseña. Trae ffmpeg, las plantillas, la música, los SFX y las fuentes. " +
                  "Tus carpetas y tus videos no se tocan."
@@ -910,6 +955,8 @@ final class Instalador: NSObject, NSApplicationDelegate {
             empezarDemo()
         } else {
             let inst = Instalacion(m: m, origen: origen, version: version)
+            if sencilla != nil { inst.anotar("ventana sencilla (\(sinMetal ? "esta Mac no tiene gráfica Metal" : "--sencilla"))") }
+            instalando = true
             DispatchQueue.global(qos: .userInitiated).async { inst.correr() }
         }
         antes = Date()
@@ -917,7 +964,8 @@ final class Instalador: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ s: NSApplication) -> NSApplication.TerminateReply {
-        return (m.fase == 1 && !esDemo) ? .terminateCancel : .terminateNow     // no se cierra a media instalación
+        // no se cierra a media instalación (si solo abrió el programa ya instalado, sí: nunca empezó a instalar)
+        return (instalando && m.fase == 1 && !esDemo) ? .terminateCancel : .terminateNow
     }
 
     func tic() {
@@ -926,6 +974,19 @@ final class Instalador: NSObject, NSApplicationDelegate {
         antes = ahora
         if esDemo { alimentarDemo() }
         m.avanzar(dt)
+        if let s = sencilla {
+            s.actualizar(m)
+            if m.fase == 3 && !avisoError && !esDemo {          // en la ventana sencilla, el error va en un aviso
+                avisoError = true
+                let a = NSAlert()
+                a.messageText = m.titulo
+                a.informativeText = m.info
+                a.addButton(withTitle: "Cerrar")
+                a.addButton(withTitle: "Ver registro")
+                if a.runModal() == .alertSecondButtonReturn { verRegistro() }
+                NSApp.terminate(nil)
+            }
+        }
         // al terminar: la barra llega al 100 %, se ven las ondas un momento y se abre el programa
         if m.fase == 2 && !abierto && !esDemo && ahora.timeIntervalSince(m.tFase) > 1.2 {
             abierto = true

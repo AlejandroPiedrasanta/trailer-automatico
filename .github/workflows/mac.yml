@@ -52,6 +52,7 @@ jobs:
           "$INST" --demo-error & P=$!
           sleep 10; screencapture -x capturas/4_error.png
           kill $P 2>/dev/null || true
+          cp "$HOME"/Library/Logs/DiagnosticReports/instalar*.ips capturas/ 2>/dev/null || true
       - uses: actions/upload-artifact@v7
         if: ${{ !inputs.publico }}
         with:

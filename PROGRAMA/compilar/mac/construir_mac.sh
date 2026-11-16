@@ -196,4 +196,15 @@ for intento in 1 2 3 4 5; do                      # hdiutil a veces responde «R
     echo "    hdiutil ocupado (intento $intento de 5): reintento en 15 s"; sleep 15
 done
 [ -n "${FIRMA_APP:-}" ] && codesign --sign "$FIRMA_APP" "$DMG"
+if [ "$MODO" = instalador ]; then
+    # la firma, tal como queda DENTRO del disco: si no verifica, una Mac que lo baja de internet dice «esta danado» (sin
+    # «Abrir igualmente»)
+    paso "Firma del instalador dentro del disco"
+    MNT="$(hdiutil attach "$DMG" -nobrowse -noverify -readonly | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1 | sed 's/[[:space:]]*$//')"
+    COD=0; VERIF="$(codesign -v --deep --verbose=2 "$MNT/Instalar Trailer automatico.app" 2>&1)" || COD=$?
+    echo "$VERIF" | sed 's/^/    /' | tail -4
+    xattr -l "$MNT/Instalar Trailer automatico.app" 2>/dev/null | sed 's/^/    xattr: /' | cut -c1-120
+    hdiutil detach "$MNT" -quiet 2>/dev/null || hdiutil detach "$MNT" -force -quiet 2>/dev/null
+    if [ $COD != 0 ]; then rm -f "$DMG"; falla "La firma del instalador no verifica dentro del .dmg: $(echo "$VERIF" | tail -1)"; fi
+fi
 paso "LISTO  $DMG  ($(du -h "$DMG" | cut -f1))"

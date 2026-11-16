@@ -65,3 +65,11 @@ jobs:
           name: prueba-instalador-mac-${{ matrix.nombre }}
           path: prueba/
           retention-days: 3
+      # el mismo .dmg que se probo (si paso la prueba, sirve de instalador sin volver a compilar)
+      - uses: actions/upload-artifact@v7
+        if: ${{ inputs.vieja == '' }}
+        with:
+          name: Trailer-automatico-Mac-${{ matrix.nombre }}
+          path: "3 INSTALADORES/Mac/*.dmg"
+          if-no-files-found: ignore
+          retention-days: 3

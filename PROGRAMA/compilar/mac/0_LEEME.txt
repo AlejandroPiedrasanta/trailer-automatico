@@ -3,7 +3,9 @@ INSTALADOR DE MAC (como el de CineSlide 9.62)
 Desde la 1.5.7 el .dmg es de «Doble clic para instalar»: trae una sola app, «Instalar Trailer automatico». Al abrirla sale al
 instante la ventana del instalador (nativa, la misma de Windows: banner con el astrolabio que gira, PASOS, % y barra) y sola:
   1. cierra la versión anterior si está abierta;
-  2. copia el programa a Aplicaciones SIN contraseña (si no se puede escribir ahí, a ~/Applications), sin cuarentena;
+  2. descomprime el programa (Resources/TrailerAutomatico.zip) en Aplicaciones SIN contraseña (si no se puede escribir ahí,
+     a ~/Applications), sin cuarentena. Va en .zip porque el disco (HFS+) cambia los nombres con tildes de la música y la
+     firma dejaba de verificar; construir_mac.sh comprueba la firma con el disco montado;
   3. lo fija en el Dock;
   4. fuentes, color y carpetas: el programa recién copiado hace `--tarea instalar` (música aparte, fuentes, color de DaVinci,
      servicio de actualizaciones del usuario);
@@ -26,7 +28,9 @@ Compilar (PyInstaller no compila para Mac desde Windows):
 Archivos:
   construir_mac.sh ............ venv -> ffmpeg estático -> PyInstaller (.app) -> autoprueba -> instalador -> .dmg
   construir_desde_windows.ps1 . lanza mac.yml en GitHub, espera y baja los .dmg a 3 INSTALADORES/Mac
-  instalador/instalador_mac.swift  la ventana del instalador (Contents/MacOS/instalar); --demo / --demo-error la simulan
+  instalador/instalador_mac.swift  la ventana del instalador (Contents/MacOS/instalar); --demo / --demo-error la simulan;
+                                sin Metal o con la gráfica virtual de una Mac Intel usa una ventana sencilla (--sencilla)
+  .github/workflows/probar_ventana_mac.yml  prueba rápida (5 min) de la ventana en las Mac de GitHub, con el motivo si se cae
   trailer_mac.spec ............ receta de PyInstaller (BUNDLE); mete Desinstalar.command dentro de la app
   dmg/fondo_dmg.py ............ dibuja fondo_instalar.png (doble clic) y fondo.png (arrastrar), 600 x 360, y sus @2x
   dmg/ajustes_dmg.py .......... ventana del .dmg (dmgbuild): -D modo=instalador | arrastrar

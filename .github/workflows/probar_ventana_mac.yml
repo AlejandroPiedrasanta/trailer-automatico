@@ -1,0 +1,98 @@
+# Tráiler automático · CINEMA PRODUCTIONS
+# Prueba RÁPIDA (unos 5 min, sin compilar el programa) de la ventana del instalador de Mac (compilar/mac/instalador):
+# la compila sola, la abre en simulación (--demo y --demo --sencilla), saca capturas y, si se cae, guarda el motivo
+# (salida de error, informe .ips de macOS y el registro del sistema). Dice qué gráfica Metal tiene la Mac.
+#   gh workflow run probar_ventana_mac.yml      Artifacts: ventana-mac-<AppleSilicon|Intel>
+name: Probar ventana del instalador Mac
+on:
+  workflow_dispatch:
+    inputs:
+      solo:
+        description: "Solo una Mac (Intel | AppleSilicon); vacio = las dos"
+        required: false
+        default: ""
+jobs:
+  ventana:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - nombre: AppleSilicon
+            runner: macos-15
+          - nombre: Intel
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        if: ${{ inputs.solo == '' || inputs.solo == matrix.nombre }}
+      - name: Compilar la ventana
+        if: ${{ inputs.solo == '' || inputs.solo == matrix.nombre }}
+        run: |
+          A="$RUNNER_TEMP/Instalar Trailer automatico.app"
+          mkdir -p "$A/Contents/MacOS" "$A/Contents/Resources" salida
+          swiftc -O -parse-as-library -target "$(uname -m)-apple-macos13.0" \
+            PROGRAMA/compilar/mac/instalador/instalador_mac.swift -o "$A/Contents/MacOS/instalar"
+          for f in banner.jpg astro_runas.png astro_engr.png astro_fili.png astro_nucleo.png marca.png; do
+            cp "PROGRAMA/compilar/windows/banner/$f" "$A/Contents/Resources/"
+          done
+          cp PROGRAMA/compilar/icono/icono.png "$A/Contents/Resources/logo.png"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string instalar" \
+            -c "Add :CFBundleIdentifier string com.cinemaproductions.trailerautomatico.instalador" \
+            -c "Add :CFBundlePackageType string APPL" -c "Add :CFBundleShortVersionString string 9.9.9" \
+            "$A/Contents/Info.plist"
+          codesign --force --deep -s - "$A"
+          echo "APPI=$A" >> "$GITHUB_ENV"
+      - name: Grafica Metal de esta Mac
+        if: ${{ inputs.solo == '' || inputs.solo == matrix.nombre }}
+        run: |
+          printf 'import Metal\nlet d = MTLCreateSystemDefaultDevice()\nprint("Metal:", d?.name ?? "NO HAY", "| sin pantalla:", d?.isHeadless ?? false, "| baja potencia:", d?.isLowPower ?? false)\n' > m.swift
+          swiftc m.swift -o m && ./m | tee salida/metal.txt
+          system_profiler SPDisplaysDataType 2>/dev/null | head -25 | tee -a salida/metal.txt
+      - name: Abrir la ventana (simulacion)
+        if: ${{ inputs.solo == '' || inputs.solo == matrix.nombre }}
+        run: |
+          B="$APPI/Contents/MacOS/instalar"
+          n=0
+          for modo in "--demo" "--demo --sencilla" "--demo-error"; do
+            n=$((n+1)); nom="$(echo "$modo" | tr -d ' -')"
+            INI=$(date +%s)
+            "$B" $modo > "salida/${n}_${nom}_salida.txt" 2>&1 &
+            P=$!
+            sleep 3; screencapture -x "salida/${n}_${nom}_3s.png"
+            sleep 6; screencapture -x "salida/${n}_${nom}_9s.png"
+            if kill -0 $P 2>/dev/null; then
+              echo "OK     $modo: la ventana sigue abierta a los 9 s" | tee -a salida/resultado.txt
+              kill $P 2>/dev/null; wait $P 2>/dev/null
+            else
+              wait $P; COD=$?
+              echo "FALLA  $modo: se cerro solo (codigo $COD): $(tail -3 "salida/${n}_${nom}_salida.txt" | tr '\n' ' ' | cut -c1-300)" | tee -a salida/resultado.txt
+              for i in $(seq 1 45); do ls "$HOME"/Library/Logs/DiagnosticReports/instalar*.ips >/dev/null 2>&1 && break; sleep 2; done
+              log show --last 3m --style compact --predicate 'process == "instalar"' 2>/dev/null | tail -60 > "salida/${n}_${nom}_registro.txt"
+            fi
+            for f in "$HOME"/Library/Logs/DiagnosticReports/instalar*.ips; do
+              [ -f "$f" ] && [ "$(stat -f%m "$f")" -ge "$INI" ] || continue
+              cp "$f" "salida/${n}_${nom}.ips"
+              python3 - "$f" <<'PY' | tee -a salida/resultado.txt
+          import json, sys
+          crudo = open(sys.argv[1], encoding="utf-8", errors="replace").read().split("\n", 1)
+          b = json.loads(crudo[1]) if len(crudo) > 1 else {}
+          e = b.get("exception", {})
+          asi = " ".join(" ".join(v) if isinstance(v, list) else str(v) for v in b.get("asi", {}).values())[:400]
+          imgs = b.get("usedImages", [])
+          hilos = [t for t in b.get("threads", []) if t.get("triggered")]
+          fr = []
+          for x in (hilos[0].get("frames", []) if hilos else [])[:14]:
+              i = x.get("imageIndex", -1)
+              fr.append("%s:%s" % (imgs[i].get("name", "?") if 0 <= i < len(imgs) else "?", x.get("symbol", "?")))
+          print("INFORME", e.get("type"), e.get("signal"), "|", asi, "|", " < ".join(fr))
+          PY
+            done
+          done
+          cat salida/resultado.txt
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() && (inputs.solo == '' || inputs.solo == matrix.nombre) }}
+        with:
+          name: ventana-mac-${{ matrix.nombre }}
+          path: salida/
+          retention-days: 3

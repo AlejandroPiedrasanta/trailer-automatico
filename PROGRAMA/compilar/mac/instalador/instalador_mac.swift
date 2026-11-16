@@ -570,7 +570,7 @@ struct Cuerpo: View {
             }
         }
         .buttonStyle(.plain)
-        .disabled(!activo)
+        .allowsHitTesting(activo)                     // (con .disabled SwiftUI lo apaga también en «ABRIENDO…»)
     }
 
     var firma: some View {

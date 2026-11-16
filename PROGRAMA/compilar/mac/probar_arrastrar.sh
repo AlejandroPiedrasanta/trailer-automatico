@@ -33,7 +33,12 @@ DATOS="$HOME/Library/Application Support/TrailerAutomatico"
 OCULTO=".Actualizar Trailer automatico.pkg"
 INSTALADOR="Instalar Trailer automatico.app"
 # la app en el disco: en la raiz (arrastrar) o dentro del instalador (doble clic para instalar, desde la 1.5.7)
-app_disco() { if [ -d "$1/TrailerAutomatico.app" ]; then echo "$1/TrailerAutomatico.app"; else echo "$1/$INSTALADOR/Contents/Resources/TrailerAutomatico.app"; fi; }
+# (en este va COMPRIMIDA, Resources/TrailerAutomatico.zip: la version es la del Info.plist del instalador)
+tiene_app() { [ -d "$1/TrailerAutomatico.app" ] || [ -f "$1/$INSTALADOR/Contents/Resources/TrailerAutomatico.zip" ]; }
+ver_disco() {
+    if [ -d "$1/TrailerAutomatico.app" ]; then VER_TXT "$1/TrailerAutomatico.app"
+    else /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$1/$INSTALADOR/Contents/Info.plist" 2>/dev/null | tr -d ' \r\n'; fi
+}
 # si el instalador se cayo: el informe de macOS (DiagnosticReports/instalar-*.ips) con el motivo y las primeras funciones
 informe_fallo() {
     for f in "$HOME"/Library/Logs/DiagnosticReports/instalar*.ips; do
@@ -110,7 +115,7 @@ if [ "${PROBAR_VIEJAS:-0}" != 0 ]; then
         sudo installer -pkg "$M1/$OCULTO" -target / > "$SAL/oculto_installer.txt" 2>&1 \
             && ok "el paquete oculto se instalo con installer (como lo hace el servicio de root)" \
             || falla "el paquete oculto fallo: $(tail -3 "$SAL/oculto_installer.txt" | tr '\n' ' ')"
-        V1="$(VER_TXT "$APP")"; VN="$(VER_TXT "$(app_disco "$M1")")"
+        V1="$(VER_TXT "$APP")"; VN="$(ver_disco "$M1")"
         [ "$V1" = "$VN" ] && ok "la Mac ya instalada quedo en la version del disco nuevo ($V0 -> $V1)" || falla "sigue en $V1 (el disco trae $VN)"
         [ "$(stat -f%Su "$APP")" = "root" ] && ok "la app sigue siendo del sistema (root): su servicio la seguira actualizando" \
             || falla "la app quedo de $(stat -f%Su "$APP")"
@@ -131,7 +136,7 @@ fi
 
 # ---- 1. el disco
 MONTAJE="$(montar "$DMG")"
-[ -d "$(app_disco "$MONTAJE")" ] || { falla "el disco no trae la app"; ls -la "$MONTAJE"; exit 1; }
+tiene_app "$MONTAJE" || { falla "el disco no trae la app"; ls -la "$MONTAJE"; exit 1; }
 ok "disco montado en $MONTAJE con la app"
 [ -f "$MONTAJE/$OCULTO" ] && ok "trae el paquete oculto para las Mac ya instaladas" || falla "falta el paquete oculto"
 VISIBLES="$(ls "$MONTAJE" | tr '\n' '|')"
@@ -148,7 +153,7 @@ fi
 [ -n "$(find "$MONTAJE" -maxdepth 2 -name '*.tiff' 2>/dev/null | head -1)" ] && ok "trae el fondo de la ventana" || nota "no veo el fondo (disco sencillo, sin fondo)"
 open "$MONTAJE"; sleep 6
 foto "1_disco_$MODO"
-VN="$(VER_TXT "$(app_disco "$MONTAJE")")"
+VN="$(ver_disco "$MONTAJE")"
 
 if [ "$MODO" = instalador ]; then
     # ---- 2. doble clic en «Instalar Trailer automatico», como la persona: la ventana copia, fija en el Dock, prepara y abre
@@ -172,6 +177,8 @@ if [ "$MODO" = instalador ]; then
     [ -x "$BIN" ] && ok "la app quedo en Aplicaciones ($(VER_TXT "$APP"))" || falla "no esta $APP"
     [ "$(stat -f%Su "$APP")" = "$(id -un)" ] && ok "la app es del usuario (se podra actualizar sin contrasena)" || falla "la app es de $(stat -f%Su "$APP")"
     xattr -p com.apple.quarantine "$APP" >/dev/null 2>&1 && falla "la app quedo en cuarentena" || ok "la app no quedo en cuarentena"
+    FIRMA_APP="$(codesign -v --deep "$APP" 2>&1)" && ok "la firma de la app instalada verifica (descomprimida del .zip)" \
+        || falla "la firma de la app instalada no verifica: $(echo "$FIRMA_APP" | tail -1 | cut -c1-160)"
     defaults read com.apple.dock persistent-apps 2>/dev/null | grep -q "TrailerAutomatico.app" && ok "fijada en el Dock" || falla "no quedo en el Dock"
     for i in $(seq 1 30); do pgrep -f "$BIN" >/dev/null && break; sleep 1; done
     pgrep -f "$BIN" >/dev/null && ok "el instalador abrio el programa" || falla "el programa no se abrio al terminar"

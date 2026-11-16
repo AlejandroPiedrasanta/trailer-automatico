@@ -248,6 +248,7 @@ def _instalar_mac(dmg, reabrir=False):
     De root (Mac instaladas con .pkg): instala el .pkg del disco sin contrasena (desde la 1.5.2 es uno oculto que copia la
     app del mismo disco). Del usuario (app arrastrada): reemplaza SU app con la del disco, sin contrasena."""
     montaje = tempfile.mkdtemp(prefix="trailer_dmg_")
+    descomprimido = None
     root = _es_root()
     if root:
         os.makedirs(COMPARTIDO_MAC, exist_ok=True)
@@ -259,8 +260,14 @@ def _instalar_mac(dmg, reabrir=False):
             raise RuntimeError("no se pudo abrir el .dmg: %s" % r.stderr[-200:])
         pkgs = [f for f in os.listdir(montaje) if f.endswith(".pkg")]
         app = os.path.join(montaje, "TrailerAutomatico.app")
-        if not os.path.isdir(app):                     # disco de «Doble clic para instalar» (1.5.7): dentro del instalador
-            app = os.path.join(montaje, "Instalar Trailer automatico.app", "Contents", "Resources", "TrailerAutomatico.app")
+        zip_app = os.path.join(montaje, "Instalar Trailer automatico.app", "Contents", "Resources", "TrailerAutomatico.zip")
+        if not os.path.isdir(app) and os.path.isfile(zip_app) and not (root and pkgs):
+            # disco de «Doble clic para instalar» (1.5.7): la app va comprimida dentro del instalador
+            descomprimido = tempfile.mkdtemp(prefix="trailer_zip_")
+            app = os.path.join(descomprimido, "TrailerAutomatico.app")
+            r = subprocess.run(["/usr/bin/ditto", "-x", "-k", zip_app, app], capture_output=True, text=True, timeout=1800)
+            if r.returncode != 0:
+                raise RuntimeError("no se pudo descomprimir el programa del .dmg: %s" % r.stderr[-200:])
         if root and pkgs:
             r = subprocess.run(["/usr/sbin/installer", "-pkg", os.path.join(montaje, pkgs[0]), "-target", "/"],
                                capture_output=True, text=True, timeout=1800)
@@ -280,6 +287,8 @@ def _instalar_mac(dmg, reabrir=False):
             os.rmdir(montaje)
         except OSError:
             pass
+        if descomprimido:
+            shutil.rmtree(descomprimido, ignore_errors=True)
         if root:
             try:
                 os.remove(SIN_ABRIR_MAC)

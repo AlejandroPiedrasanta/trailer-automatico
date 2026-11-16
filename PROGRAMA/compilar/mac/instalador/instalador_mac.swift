@@ -5,8 +5,9 @@
 // Es la misma ventana que el instalador de Windows (compilar/windows/Instalador.cs): banner con el astrolabio que gira, PASOS,
 // % y barra. Empieza sola (sin botón INSTALAR) y no pide contraseña:
 //   1. Cerrar la versión anterior
-//   2. Copiar el programa: Resources/TrailerAutomatico.app -> /Applications (si no se puede escribir ahí, ~/Applications), con
-//      ditto a «.nuevo» y cambio de nombre (nunca queda a medias); sin cuarentena y registrada en Launch Services
+//   2. Copiar el programa: Resources/TrailerAutomatico.zip -> /Applications/TrailerAutomatico.app (si no se puede escribir
+//      ahí, ~/Applications), con «ditto -x -k» a «.nuevo» y cambio de nombre (nunca queda a medias); sin cuarentena y
+//      registrada en Launch Services
 //   3. Aplicaciones y Dock: la fija en el Dock (y quita las de otras rutas)
 //   4. Fuentes, color y carpetas: TrailerAutomatico --tarea instalar (lo de tareas.instalar: música aparte, fuentes, color de
 //      DaVinci, servicio de actualizaciones del usuario); si falla es solo un aviso: el programa lo repite al abrirse
@@ -43,6 +44,9 @@ let FIRMA = Color(78, 96, 126)
 let NOMBRE = "Tráiler automático"
 let ID_APP = "com.cinemaproductions.trailerautomatico"
 let NOMBRE_APP = "TrailerAutomatico.app"
+// el programa va en un .zip DENTRO del instalador: el disco es HFS+, que guarda los nombres con tildes («Extrañaré») de otra
+// forma (NFD); con el programa suelto en el disco, la firma no verificaba («file missing») y macOS diría «está dañado»
+let ZIP_APP = "TrailerAutomatico.zip"
 let INSTALADOR = "Instalar Trailer automatico.app"
 let HOME = NSHomeDirectory()
 let DATOS = HOME + "/Library/Application Support/TrailerAutomatico"
@@ -615,7 +619,7 @@ struct Fallo: Error {
 /// La instalación de verdad (en un hilo aparte; la ventana se entera por el Modelo, en el hilo principal).
 final class Instalacion {
     let m: Modelo
-    let origen: String                       // Resources/TrailerAutomatico.app
+    let origen: String                       // Resources/TrailerAutomatico.zip
     let version: String
     var destino = ""
     var registro: FileHandle?
@@ -695,8 +699,8 @@ final class Instalacion {
     // ---- 2. copiar el programa a Aplicaciones
     func copiar() throws {
         let fm = FileManager.default
-        guard fm.isExecutableFile(atPath: origen + "/Contents/MacOS/TrailerAutomatico") else {
-            throw Fallo(texto: "Al instalador le falta el programa (\(NOMBRE_APP)). Vuelve a bajar el instalador.")
+        guard fm.fileExists(atPath: origen) else {
+            throw Fallo(texto: "Al instalador le falta el programa (\(ZIP_APP)). Vuelve a bajar el instalador.")
         }
         let enApps = "/Applications/" + NOMBRE_APP
         let enUsuario = HOME + "/Applications/" + NOMBRE_APP
@@ -716,14 +720,15 @@ final class Instalacion {
         info("Se instala en \(destino.replacingOccurrences(of: HOME, with: "~")) sin contraseña. Trae ffmpeg, las plantillas, " +
              "la música, los SFX y las fuentes. Tus carpetas y tus videos no se tocan." +
              (versionDe(destino).map { " Reemplaza la versión \($0)." } ?? ""))
-        let total = max(1, tamano(origen))
+        // el .zip va sin comprimir (el .dmg ya comprime): mide lo mismo que el programa descomprimido, sirve para el avance
+        let total = max(1, ((try? fm.attributesOfItem(atPath: origen)[.size] as? NSNumber)?.int64Value) ?? 1)
         let nuevo = destino + ".nuevo", viejo = destino + ".viejo"
         let p = Process()
         if admin {
             // un guion temporal (ruta sin espacios ni comillas) que corre con la contraseña de un administrador
             let guion = NSTemporaryDirectory() + "trailer_instalar_\(getpid()).sh"
             func q(_ s: String) -> String { return "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
-            let texto = "#!/bin/bash\nset -e\nrm -rf \(q(nuevo)) \(q(viejo))\n/usr/bin/ditto \(q(origen)) \(q(nuevo))\n" +
+            let texto = "#!/bin/bash\nset -e\nrm -rf \(q(nuevo)) \(q(viejo))\n/usr/bin/ditto -x -k \(q(origen)) \(q(nuevo))\n" +
                 "[ -d \(q(destino)) ] && mv \(q(destino)) \(q(viejo))\nmv \(q(nuevo)) \(q(destino))\nrm -rf \(q(viejo))\n" +
                 "/usr/bin/xattr -dr com.apple.quarantine \(q(destino)) 2>/dev/null || true\n"
             try texto.write(toFile: guion, atomically: true, encoding: .utf8)
@@ -733,7 +738,7 @@ final class Instalacion {
             try? fm.removeItem(atPath: nuevo)
             try? fm.removeItem(atPath: viejo)
             p.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-            p.arguments = [origen, nuevo]
+            p.arguments = ["-x", "-k", origen, nuevo]
         }
         let errores = Pipe()
         p.standardError = errores
@@ -915,8 +920,8 @@ final class Instalador: NSObject, NSApplicationDelegate {
     let args = CommandLine.arguments
     var esDemo: Bool { args.contains("--demo") || args.contains("--demo-error") }
     lazy var recursos = Bundle.main.resourcePath ?? "."
-    lazy var origen = recursos + "/" + NOMBRE_APP
-    lazy var version = versionDe(origen) ?? (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?"
+    lazy var origen = recursos + "/" + ZIP_APP
+    lazy var version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?"
 
     func applicationDidFinishLaunching(_ n: Notification) {
         // ya instalada esa versión (o una más nueva) y su primer arranque hecho: solo se abre el programa
@@ -1001,7 +1006,7 @@ final class Instalador: NSObject, NSApplicationDelegate {
         }
         let expulsar = Process()
         expulsar.executableURL = URL(fileURLWithPath: "/bin/sh")
-        expulsar.arguments = ["-c", "sleep 3; for v in /Volumes/*; do [ -d \"$v/\(INSTALADOR)/Contents/Resources/\(NOMBRE_APP)\" ] || continue; " +
+        expulsar.arguments = ["-c", "sleep 3; for v in /Volumes/*; do [ -f \"$v/\(INSTALADOR)/Contents/Resources/\(ZIP_APP)\" ] || continue; " +
                               "/usr/bin/hdiutil detach \"$v\" -quiet || /usr/bin/hdiutil detach \"$v\" -force -quiet; done; exit 0"]
         expulsar.standardInput = FileHandle.nullDevice
         expulsar.standardOutput = FileHandle.nullDevice

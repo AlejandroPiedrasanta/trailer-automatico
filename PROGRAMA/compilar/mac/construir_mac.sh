@@ -134,7 +134,12 @@ if [ "$MODO" = instalador ]; then
     mkdir -p "$INST/Contents/MacOS" "$INST/Contents/Resources"
     swiftc -O -parse-as-library -target "$ARQ-apple-macos13.0" "$AQUI/instalador/instalador_mac.swift" \
         -o "$INST/Contents/MacOS/instalar" || falla "swiftc no pudo compilar la ventana del instalador"
-    ditto "$APP" "$INST/Contents/Resources/TrailerAutomatico.app"
+    # el programa va COMPRIMIDO (zip sin compresion: el .dmg ya comprime) y no suelto: el disco es HFS+, que guarda los nombres
+    # con tildes («Extrañaré») en NFD; con la app suelta en el disco su firma no verificaba («file missing», 2026-11-16) y una
+    # Mac que lo baja de internet diria «esta danado». El instalador lo descomprime en Aplicaciones (APFS) con los nombres de
+    # siempre. Sin --keepParent: el zip trae Contents/..., y «ditto -x -k zip X.app» deja la app en X.app
+    ditto -c -k --zlibCompressionLevel 0 "$APP" "$INST/Contents/Resources/TrailerAutomatico.zip" \
+        || falla "No pude comprimir el programa para el instalador"
     for f in banner.jpg astro_runas.png astro_engr.png astro_fili.png astro_nucleo.png marca.png; do
         cp "$COMPILAR/windows/banner/$f" "$INST/Contents/Resources/" || falla "Falta $f del banner"
     done

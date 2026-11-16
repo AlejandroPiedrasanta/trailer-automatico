@@ -53,8 +53,9 @@ icon_locations = {
 if MODO == 'instalador':                                   # «Doble clic para instalar» (fondo_instalar.png)
     files = [os.path.join(stage, INSTALADOR), os.path.join(stage, PKG_OCULTO)]
     symlinks = {}
-    # SIN ocultar la extension: dmgbuild lo hace con SetFile (com.apple.FinderInfo en la carpeta de la app) y codesign ya no
-    # verifica la firma («Disallowed xattr»): con cuarentena macOS diria «esta danado». El Finder no ensena .app igual.
+    # SIN ocultar la extension (dmgbuild lo hace con SetFile: com.apple.FinderInfo en la app firmada); el Finder no ensena
+    # «.app» de todos modos. La firma rota de la primera prueba era por los nombres con tildes en HFS+: por eso el programa va
+    # en un .zip dentro del instalador (construir_mac.sh), y construir_mac.sh comprueba la firma con el disco montado.
     hide_extensions = []
     icon_size = 128
     text_size = 13

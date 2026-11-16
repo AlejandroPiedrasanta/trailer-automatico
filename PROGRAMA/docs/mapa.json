@@ -789,16 +789,22 @@
  },
  {
   "id": "mac",
-  "resumen": "Mac: .dmg de «Arrastralo a Aplicaciones» como CineCaptions (sin .pkg ni contrasena), primer arranque, servicio del usuario; se compila en una Mac o GitHub Actions",
+  "resumen": "Mac: .dmg de «Doble clic para instalar» como CineSlide: ventana nativa (Swift) igual a la de Windows que copia a Aplicaciones sin contrasena, Dock, primer arranque, abre y expulsa; se compila desde Windows en GitHub Actions",
   "claves": [
    "mac",
    "command",
    "zip",
    "empaquetar",
-   "homebrew"
+   "homebrew",
+   "instalador",
+   "dmg",
+   "swift",
+   "dock"
   ],
   "archivos": [
    "PROGRAMA/compilar/mac/construir_mac.sh",
+   "PROGRAMA/compilar/mac/instalador/instalador_mac.swift",
+   "PROGRAMA/compilar/mac/construir_desde_windows.ps1",
    "PROGRAMA/compilar/mac/trailer_mac.spec",
    "PROGRAMA/compilar/mac/pkg/scripts/postinstall",
    "PROGRAMA/compilar/mac/dmg/fondo_dmg.py",
@@ -822,9 +828,11 @@
    "_instalar_mac"
   ],
   "notas": [
-   "construir_mac.sh: venv -> ffmpeg estatico (martin-riedl) -> PyInstaller BUNDLE -> autoprueba -> pkgbuild/productbuild -> dmgbuild.",
-   "La mezcla de fiesta (>100 MB) va partida *.parte01.. para GitHub; construir_mac.sh la une.",
-   "Sin Mac: repositorio PRIVADO en GitHub + Actions 'Instaladores Mac' (.github/workflows/mac.yml)."
+   "construir_mac.sh: venv -> ffmpeg estatico (martin-riedl) -> PyInstaller BUNDLE -> autoprueba -> «Instalar Trailer automatico.app» (swiftc + la app dentro de Resources) -> dmgbuild -D modo=instalador.",
+   "El disco PUBLICO (actualizaciones, TRAILER_SIN_MUSICA=1) sigue de arrastrar (app en la raiz): asi lo encuentran 1.5.2-1.5.6. _instalar_mac y el postinstall buscan la app en la raiz o dentro del instalador.",
+   "Desde Windows: pwsh -File PROGRAMA/compilar/mac/construir_desde_windows.ps1 (lanza mac.yml, baja los .dmg a 3 INSTALADORES/Mac y las capturas a datos/capturas_mac).",
+   "La ventana: instalar --demo | --demo-error; registro en ~/Library/Application Support/TrailerAutomatico/registro/instalador_mac.log.",
+   "La mezcla de fiesta (>100 MB) va partida *.parte01.. para GitHub; construir_mac.sh la une."
   ]
  },
  {

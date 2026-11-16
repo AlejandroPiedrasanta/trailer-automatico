@@ -37,6 +37,27 @@ jobs:
           TRAILER_SIN_MUSICA: ${{ inputs.publico && '1' || '0' }}
           TRAILER_CLAVE: ${{ !inputs.publico && secrets.TRAILER_CLAVE || '' }}
         run: bash PROGRAMA/compilar/mac/construir_mac.sh
+      # la ventana nativa del instalador (1.5.7) en una simulacion, para ver el diseno sin instalar nada
+      - name: Capturas de la ventana del instalador
+        if: ${{ !inputs.publico }}
+        continue-on-error: true
+        run: |
+          mkdir -p capturas
+          INST="$GITHUB_WORKSPACE/trailer_automatico_mac/dmg/Instalar Trailer automatico.app/Contents/MacOS/instalar"
+          "$INST" --demo & P=$!
+          sleep 3; screencapture -x capturas/1_instalando.png
+          sleep 4; screencapture -x capturas/2_copiando.png
+          sleep 5; screencapture -x capturas/3_listo.png
+          kill $P 2>/dev/null || true
+          "$INST" --demo-error & P=$!
+          sleep 10; screencapture -x capturas/4_error.png
+          kill $P 2>/dev/null || true
+      - uses: actions/upload-artifact@v7
+        if: ${{ !inputs.publico }}
+        with:
+          name: Capturas-instalador-${{ matrix.nombre }}
+          path: capturas
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         with:
           name: Trailer-automatico-Mac-${{ matrix.nombre }}${{ inputs.publico && '-publico' || '' }}

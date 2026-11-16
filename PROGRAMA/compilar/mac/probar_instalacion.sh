@@ -23,7 +23,8 @@ DMG="$(ls "$BASE/3 INSTALADORES/Mac/"*.dmg 2>/dev/null | head -1)"
 echo "dmg: $DMG"
 echo "usuario frente a la Mac: $(stat -f%Su /dev/console)"
 MONTAJE="$(hdiutil attach "$DMG" -nobrowse -noverify | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1 | sed 's/[[:space:]]*$//')"
-if [ -d "$MONTAJE/TrailerAutomatico.app" ]; then        # disco de «Arrastralo a Aplicaciones» (desde la 1.5.2): otra prueba
+# disco de «Arrastralo a Aplicaciones» (desde la 1.5.2) o de «Doble clic para instalar» (desde la 1.5.7): otra prueba
+if [ -d "$MONTAJE/TrailerAutomatico.app" ] || [ -d "$MONTAJE/Instalar Trailer automatico.app" ]; then
     hdiutil detach "$MONTAJE" -quiet 2>/dev/null || hdiutil detach "$MONTAJE" -force -quiet 2>/dev/null
     exec bash "$AQUI/probar_arrastrar.sh"
 fi

@@ -5,7 +5,9 @@
 #   0. (PROBAR_VIEJAS=1) una Mac que instalo con el .pkg publicado: el paquete OCULTO del disco nuevo la actualiza (lo instala
 #      su servicio de root con `installer`), y despues se desinstala todo para seguir con la Mac limpia;
 #   1. el disco: la app, el enlace a Aplicaciones, el paquete oculto y el fondo; captura de la ventana;
-#   2. «arrastrar»: se copia la app a /Applications como la persona (SIN sudo: no pide contrasena) y se abre;
+#   2. «arrastrar»: se copia la app a /Applications como la persona (SIN sudo: no pide contrasena) y se abre; o, en el disco de
+#      «Doble clic para instalar» (desde la 1.5.7), doble clic en el instalador: copia, Dock, primer arranque, abre el programa,
+#      se cierra y expulsa el disco; la segunda vez solo abre el programa;
 #   3. primer arranque: lo que hacia el instalador lo hace el programa (musica aparte, fuentes, servicio de actualizaciones
 #      del usuario cargado, sin servicio de root);
 #   4. actualizacion sin contrasena: el servicio del usuario atiende un pedido y `--tarea instalar_dmg` reemplaza la app;
@@ -29,6 +31,9 @@ ETQ="com.cinemaproductions.trailerautomatico.actualizar"
 AGENTE="$HOME/Library/LaunchAgents/$ETQ.plist"
 DATOS="$HOME/Library/Application Support/TrailerAutomatico"
 OCULTO=".Actualizar Trailer automatico.pkg"
+INSTALADOR="Instalar Trailer automatico.app"
+# la app en el disco: en la raiz (arrastrar) o dentro del instalador (doble clic para instalar, desde la 1.5.7)
+app_disco() { if [ -d "$1/TrailerAutomatico.app" ]; then echo "$1/TrailerAutomatico.app"; else echo "$1/$INSTALADOR/Contents/Resources/TrailerAutomatico.app"; fi; }
 VER_TXT() { cat "$(find "$1" -name version.txt 2>/dev/null | head -1)" 2>/dev/null | tr -d ' \r\n'; }
 montar() { hdiutil attach "$1" -noverify ${2:-} | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1 | sed 's/[[:space:]]*$//'; }
 PUBLICADA_JSON="https://github.com/AlejandroPiedrasanta/trailer-automatico-releases/releases/latest/download/version.json"
@@ -83,7 +88,7 @@ if [ "${PROBAR_VIEJAS:-0}" != 0 ]; then
         sudo installer -pkg "$M1/$OCULTO" -target / > "$SAL/oculto_installer.txt" 2>&1 \
             && ok "el paquete oculto se instalo con installer (como lo hace el servicio de root)" \
             || falla "el paquete oculto fallo: $(tail -3 "$SAL/oculto_installer.txt" | tr '\n' ' ')"
-        V1="$(VER_TXT "$APP")"; VN="$(VER_TXT "$M1/TrailerAutomatico.app")"
+        V1="$(VER_TXT "$APP")"; VN="$(VER_TXT "$(app_disco "$M1")")"
         [ "$V1" = "$VN" ] && ok "la Mac ya instalada quedo en la version del disco nuevo ($V0 -> $V1)" || falla "sigue en $V1 (el disco trae $VN)"
         [ "$(stat -f%Su "$APP")" = "root" ] && ok "la app sigue siendo del sistema (root): su servicio la seguira actualizando" \
             || falla "la app quedo de $(stat -f%Su "$APP")"
@@ -104,17 +109,63 @@ fi
 
 # ---- 1. el disco
 MONTAJE="$(montar "$DMG")"
-[ -d "$MONTAJE/TrailerAutomatico.app" ] || { falla "el disco no trae la app"; ls -la "$MONTAJE"; exit 1; }
+[ -d "$(app_disco "$MONTAJE")" ] || { falla "el disco no trae la app"; ls -la "$MONTAJE"; exit 1; }
 ok "disco montado en $MONTAJE con la app"
-[ "$(readlink "$MONTAJE/Aplicaciones" 2>/dev/null)" = "/Applications" ] && ok "trae el enlace a Aplicaciones" || falla "falta el enlace a Aplicaciones"
 [ -f "$MONTAJE/$OCULTO" ] && ok "trae el paquete oculto para las Mac ya instaladas" || falla "falta el paquete oculto"
 VISIBLES="$(ls "$MONTAJE" | tr '\n' '|')"
-[ "$VISIBLES" = "Aplicaciones|TrailerAutomatico.app|" ] && ok "a la vista solo estan el programa y Aplicaciones" || falla "a la vista hay: $VISIBLES"
+if [ -d "$MONTAJE/$INSTALADOR" ]; then
+    MODO=instalador
+    [ "$VISIBLES" = "$INSTALADOR|" ] && ok "a la vista solo esta «Instalar Trailer automatico» (doble clic para instalar)" || falla "a la vista hay: $VISIBLES"
+    codesign -v --deep "$MONTAJE/$INSTALADOR" 2>/dev/null && ok "el instalador esta firmado" || falla "la firma del instalador no se verifica"
+else
+    MODO=arrastrar
+    [ "$(readlink "$MONTAJE/Aplicaciones" 2>/dev/null)" = "/Applications" ] && ok "trae el enlace a Aplicaciones" || falla "falta el enlace a Aplicaciones"
+    [ "$VISIBLES" = "Aplicaciones|TrailerAutomatico.app|" ] && ok "a la vista solo estan el programa y Aplicaciones" || falla "a la vista hay: $VISIBLES"
+fi
 [ -n "$(find "$MONTAJE" -maxdepth 2 -name '*.tiff' 2>/dev/null | head -1)" ] && ok "trae el fondo de la ventana" || nota "no veo el fondo (disco sencillo, sin fondo)"
 open "$MONTAJE"; sleep 6
-foto 1_disco_arrastrar
-VN="$(VER_TXT "$MONTAJE/TrailerAutomatico.app")"
+foto "1_disco_$MODO"
+VN="$(VER_TXT "$(app_disco "$MONTAJE")")"
 
+if [ "$MODO" = instalador ]; then
+    # ---- 2. doble clic en «Instalar Trailer automatico», como la persona: la ventana copia, fija en el Dock, prepara y abre
+    INI=$(date +%s)
+    open "$MONTAJE/$INSTALADOR"
+    for s in 2 5 9 15; do                                  # capturas de la ventana mientras instala
+        while [ $(( $(date +%s) - INI )) -lt $s ]; do sleep 0.5; done
+        foto "2_instalador_${s}s"
+    done
+    for i in $(seq 1 240); do pgrep -f "$INSTALADOR/Contents/MacOS/instalar" >/dev/null || break; sleep 1; done
+    SEG=$(( $(date +%s) - INI ))
+    sleep 3
+    foto 3_instalador_termino
+    cp "$DATOS/registro/instalador_mac.log" "$SAL/instalador_mac.log" 2>/dev/null
+    pgrep -f "$INSTALADOR/Contents/MacOS/instalar" >/dev/null && falla "el instalador sigue abierto despues de 4 minutos" \
+        || ok "el instalador termino y se cerro solo (en $SEG s, sin contrasena)"
+    grep -q "listo:" "$SAL/instalador_mac.log" 2>/dev/null && ok "registro del instalador: $(grep -m1 'tarea instalar' "$SAL/instalador_mac.log" | cut -c22-160)" \
+        || falla "el instalador no termino bien: $(grep -m1 -E 'ERROR|AVISO' "$SAL/instalador_mac.log" 2>/dev/null | cut -c22-180)"
+    grep -q "AVISO" "$SAL/instalador_mac.log" 2>/dev/null && nota "avisos: $(grep 'AVISO' "$SAL/instalador_mac.log" | cut -c22-160 | tr '\n' ' ')"
+    [ -x "$BIN" ] && ok "la app quedo en Aplicaciones ($(VER_TXT "$APP"))" || falla "no esta $APP"
+    [ "$(stat -f%Su "$APP")" = "$(id -un)" ] && ok "la app es del usuario (se podra actualizar sin contrasena)" || falla "la app es de $(stat -f%Su "$APP")"
+    xattr -p com.apple.quarantine "$APP" >/dev/null 2>&1 && falla "la app quedo en cuarentena" || ok "la app no quedo en cuarentena"
+    defaults read com.apple.dock persistent-apps 2>/dev/null | grep -q "TrailerAutomatico.app" && ok "fijada en el Dock" || falla "no quedo en el Dock"
+    for i in $(seq 1 30); do pgrep -f "$BIN" >/dev/null && break; sleep 1; done
+    pgrep -f "$BIN" >/dev/null && ok "el instalador abrio el programa" || falla "el programa no se abrio al terminar"
+    for i in $(seq 1 15); do [ -d "$MONTAJE" ] || break; sleep 1; done
+    [ -d "$MONTAJE" ] && falla "el disco no se expulso solo" || ok "el disco se expulso solo"
+    [ -d "$MONTAJE" ] && { hdiutil detach "$MONTAJE" -quiet 2>/dev/null || hdiutil detach "$MONTAJE" -force -quiet 2>/dev/null; }
+    # segunda vez: con la misma version ya instalada, el instalador solo abre el programa (sin ventana)
+    pkill -f "$BIN" 2>/dev/null; sleep 3
+    M2="$(montar "$DMG")"
+    INI=$(date +%s)
+    open "$M2/$INSTALADOR"
+    for i in $(seq 1 30); do pgrep -f "$BIN" >/dev/null && break; sleep 1; done
+    sleep 2
+    foto 4_segunda_vez
+    pgrep -f "$BIN" >/dev/null && ok "segunda vez: abre el programa ya instalado (en $(( $(date +%s) - INI )) s)" || falla "segunda vez: no abrio el programa"
+    pgrep -f "$INSTALADOR/Contents/MacOS/instalar" >/dev/null && falla "segunda vez: el instalador quedo abierto" || ok "segunda vez: sin ventana de instalar"
+    hdiutil detach "$M2" -quiet 2>/dev/null || hdiutil detach "$M2" -force -quiet 2>/dev/null
+else
 # ---- 2. «arrastrar» a Aplicaciones como la persona: sin sudo
 INI=$(date +%s)
 if ditto "$MONTAJE/TrailerAutomatico.app" "$APP" 2> "$SAL/arrastrar.txt"; then
@@ -128,6 +179,7 @@ hdiutil detach "$MONTAJE" -quiet 2>/dev/null || hdiutil detach "$MONTAJE" -force
 open "$APP"
 for i in $(seq 1 60); do pgrep -f "$BIN" >/dev/null && break; sleep 1; done
 pgrep -f "$BIN" >/dev/null && ok "el programa abre desde Aplicaciones" || falla "el programa no abrio"
+fi
 
 # ---- 3. primer arranque: lo que hacia el instalador lo hace el programa
 for i in $(seq 1 120); do [ "$(cat "$DATOS/instalado.txt" 2>/dev/null)" = "$VN" ] && break; sleep 2; done

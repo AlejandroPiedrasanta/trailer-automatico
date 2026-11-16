@@ -5,7 +5,9 @@
 #   bash PROGRAMA/compilar/mac/construir_mac.sh                  todo de principio a fin
 #   bash PROGRAMA/compilar/mac/construir_mac.sh --solo-instalador   reusa la app ya compilada
 # Hace: venv -> ffmpeg (estatico, si se puede) -> PyInstaller (TrailerAutomatico.app) -> autoprueba -> paquete oculto -> .dmg
-#   de «Arrastralo a Aplicaciones» (la app y el enlace a Aplicaciones; sin instalador que pida contrasena).
+#   de «Doble clic para instalar» (desde la 1.5.7, como CineSlide: la app «Instalar Trailer automatico» con la ventana nativa
+#   del instalador, sin contrasena). El publico de las actualizaciones (TRAILER_SIN_MUSICA=1) sigue siendo de «Arrastralo a
+#   Aplicaciones» (la app y el enlace a Aplicaciones). Necesita swiftc (herramientas de Xcode; las Mac de GitHub lo traen).
 # Compila para la arquitectura de ESA Mac (Apple Silicon o Intel). Deja el .dmg en "3 INSTALADORES/Mac".
 # Variables opcionales: TRAILER_PYTHON (interprete), TRAILER_SIN_PANTALLA=1 (autoprueba sin pantalla, para GitHub Actions),
 #   FIRMA_APP / FIRMA_PKG (Developer ID de Apple; sin ellas: firma ad-hoc y la primera vez se abre con clic derecho > Abrir).
@@ -116,25 +118,77 @@ SELLO_PKG=(); [ -n "${FIRMA_PKG:-}" ] && SELLO_PKG=(--sign "$FIRMA_PKG")
 PKG="$OBRA/actualizar_instaladas.pkg"; rm -f "$PKG"
 pkgbuild --nopayload --scripts "$AQUI/pkg/scripts" --identifier com.cinemaproductions.trailerautomatico --version "$VERSION"     ${SELLO_PKG[@]+"${SELLO_PKG[@]}"} "$PKG" >/dev/null || falla "pkgbuild no pudo armar el paquete de las Mac ya instaladas"
 
-paso "Imagen de disco .dmg (arrastrar a Aplicaciones)"
+# Desde la 1.5.7 el disco de la PERSONA es «Doble clic para instalar» (como CineSlide 9.62): una sola app, «Instalar Trailer
+# automatico», con la ventana NATIVA del instalador (instalador/instalador_mac.swift, la misma de Windows: banner, PASOS, % y barra)
+# que copia el programa a Aplicaciones sin contrasena, lo fija en el Dock, hace lo del primer arranque (--tarea instalar), lo abre
+# y expulsa el disco. El PUBLICO (actualizaciones, sin musica) sigue siendo de arrastrar: las versiones 1.5.2 a 1.5.6 buscan
+# TrailerAutomatico.app en la raiz del disco.
+MODO=instalador; [ "${TRAILER_SIN_MUSICA:-0}" = 1 ] && MODO=arrastrar
 STAGE="$OBRA/dmg"; rm -rf "$STAGE"; mkdir -p "$STAGE"
 # nombres y volumen SIN tildes: con «Tráiler automático» el punto de montaje queda en NFD, mac_alias lo compara en NFC, sale de
 # la imagen («..») y toma IDs de APFS de 64 bits -> struct.error en backgroundImageAlias (fallo del 2026-11-13 en GitHub)
-ditto "$APP" "$STAGE/TrailerAutomatico.app"
+if [ "$MODO" = instalador ]; then
+    paso "Instalar Trailer automatico.app (la ventana nativa del instalador)"
+    command -v swiftc >/dev/null 2>&1 || falla "Falta swiftc (herramientas de Xcode): corre «xcode-select --install» y vuelve a correr esto."
+    INST="$STAGE/Instalar Trailer automatico.app"
+    mkdir -p "$INST/Contents/MacOS" "$INST/Contents/Resources"
+    swiftc -O -parse-as-library -target "$ARQ-apple-macos13.0" "$AQUI/instalador/instalador_mac.swift" \
+        -o "$INST/Contents/MacOS/instalar" || falla "swiftc no pudo compilar la ventana del instalador"
+    ditto "$APP" "$INST/Contents/Resources/TrailerAutomatico.app"
+    for f in banner.jpg astro_runas.png astro_engr.png astro_fili.png astro_nucleo.png marca.png; do
+        cp "$COMPILAR/windows/banner/$f" "$INST/Contents/Resources/" || falla "Falta $f del banner"
+    done
+    cp "$COMPILAR/icono/icono.png" "$INST/Contents/Resources/logo.png"
+    cp "$OBRA/TrailerAutomatico.icns" "$INST/Contents/Resources/Instalador.icns"
+    cat > "$INST/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key><string>instalar</string>
+    <key>CFBundleIdentifier</key><string>com.cinemaproductions.trailerautomatico.instalador</string>
+    <key>CFBundleName</key><string>Instalar Tráiler automático</string>
+    <key>CFBundleDisplayName</key><string>Instalar Tráiler automático</string>
+    <key>CFBundleIconFile</key><string>Instalador</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>$VERSION</string>
+    <key>CFBundleVersion</key><string>$VERSION</string>
+    <key>LSMinimumSystemVersion</key><string>13.0</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSRequiresAquaSystemAppearance</key><false/>
+</dict>
+</plist>
+PLIST
+    plutil -lint "$INST/Contents/Info.plist" >/dev/null || falla "El Info.plist del instalador esta mal formado"
+    if [ -n "${FIRMA_APP:-}" ]; then
+        codesign --force --deep --options runtime --timestamp --sign "$FIRMA_APP" "$INST"
+    else
+        codesign --force --deep --sign - "$INST"
+    fi
+    codesign -v --deep "$INST" || falla "La firma del instalador no se verifica"
+    echo "    $(file "$INST/Contents/MacOS/instalar" | cut -d: -f2 | cut -c2-) · $(du -sh "$INST" | cut -f1)"
+    FONDO_PNG=fondo_instalar
+else
+    ditto "$APP" "$STAGE/TrailerAutomatico.app"
+    FONDO_PNG=fondo
+fi
+
+paso "Imagen de disco .dmg ($MODO)"
 cp "$PKG" "$STAGE/.Actualizar Trailer automatico.pkg"
 FONDO="$OBRA/fondo_dmg.tiff"
-tiffutil -cathidpicheck "$AQUI/dmg/fondo.png" "$AQUI/dmg/fondo@2x.png" -out "$FONDO" >/dev/null || falla "No pude preparar el fondo del .dmg"
+tiffutil -cathidpicheck "$AQUI/dmg/$FONDO_PNG.png" "$AQUI/dmg/$FONDO_PNG@2x.png" -out "$FONDO" >/dev/null \
+    || falla "No pude preparar el fondo del .dmg"
 SALIDA="${TRAILER_SALIDA:-$BASE/3 INSTALADORES/Mac}"; mkdir -p "$SALIDA"
 PREFIJO="Instalar"; [ "${TRAILER_SIN_MUSICA:-0}" = 1 ] && PREFIJO="Actualizar"     # el publico (sin musica) se llama Actualizar_
 rm -f "$SALIDA"/${PREFIJO}_Trailer_automatico_Mac_${NOMBRE_ARQ}_*.dmg
 DMG="$SALIDA/${PREFIJO}_Trailer_automatico_Mac_${NOMBRE_ARQ}_$VERSION.dmg"
 for intento in 1 2 3 4 5; do                      # hdiutil a veces responde «Resource busy»: hasta 5 intentos
-    "$VPY" -m dmgbuild -s "$AQUI/dmg/ajustes_dmg.py" -D stage="$STAGE" -D fondo="$FONDO" -D icono="$OBRA/TrailerAutomatico.icns" \
-        "Trailer automatico $VERSION" "$DMG" >/dev/null && break
+    "$VPY" -m dmgbuild -s "$AQUI/dmg/ajustes_dmg.py" -D stage="$STAGE" -D modo="$MODO" -D fondo="$FONDO" \
+        -D icono="$OBRA/TrailerAutomatico.icns" "Trailer automatico $VERSION" "$DMG" >/dev/null && break
     rm -f "$DMG"
     if [ "$intento" = 5 ]; then                    # ultimo recurso: .dmg sencillo (sin fondo) para no quedarse sin instalador
         echo "    AVISO: dmgbuild fallo 5 veces: armo un .dmg sencillo sin fondo"
-        ln -s /Applications "$STAGE/Aplicaciones"
+        [ "$MODO" = arrastrar ] && ln -s /Applications "$STAGE/Aplicaciones"
         hdiutil create -volname "Trailer automatico $VERSION" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$DMG" >/dev/null \
             || falla "hdiutil no pudo crear la imagen de disco"
         break

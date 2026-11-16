@@ -25,6 +25,8 @@ chmod -R a+rwX "$COMP" 2>/dev/null
 # la app nueva esta en el mismo disco que este paquete: se copia al lado («.nuevo») y se cambia de nombre (nunca queda a medias)
 ORIGEN_PKG="${PACKAGE_PATH:-$1}"
 NUEVA="$(dirname "$ORIGEN_PKG")/TrailerAutomatico.app"
+# (1.5.7) en el disco de «Doble clic para instalar» la app va dentro del instalador
+[ -d "$NUEVA" ] || NUEVA="$(dirname "$ORIGEN_PKG")/Instalar Trailer automatico.app/Contents/Resources/TrailerAutomatico.app"
 if [ ! -x "$NUEVA/Contents/MacOS/TrailerAutomatico" ]; then
     echo "Trailer automatico: no encuentro la app en el disco ($NUEVA)" >&2
     exit 1

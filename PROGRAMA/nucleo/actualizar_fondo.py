@@ -259,6 +259,8 @@ def _instalar_mac(dmg, reabrir=False):
             raise RuntimeError("no se pudo abrir el .dmg: %s" % r.stderr[-200:])
         pkgs = [f for f in os.listdir(montaje) if f.endswith(".pkg")]
         app = os.path.join(montaje, "TrailerAutomatico.app")
+        if not os.path.isdir(app):                     # disco de «Doble clic para instalar» (1.5.7): dentro del instalador
+            app = os.path.join(montaje, "Instalar Trailer automatico.app", "Contents", "Resources", "TrailerAutomatico.app")
         if root and pkgs:
             r = subprocess.run(["/usr/sbin/installer", "-pkg", os.path.join(montaje, pkgs[0]), "-target", "/"],
                                capture_output=True, text=True, timeout=1800)

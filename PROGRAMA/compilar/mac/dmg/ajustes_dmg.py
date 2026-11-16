@@ -12,11 +12,18 @@
 # El paquete OCULTO (nombre con punto: el Finder no lo ensena) es para las Mac que instalaron con el .pkg (hasta la 1.5.1): su
 # servicio de root busca un *.pkg en el disco y lo instala con `installer -target /`. Ese paquete no trae la app: su postinstall
 # la copia de este mismo disco.
+#
+# Desde la 1.5.7 (la persona, 2026-11-16: «que funcione el instalador como este en Mac», con el de CineSlide 9.62) el disco de la
+# persona es «Doble clic para instalar» (-D modo=instalador): solo la app «Instalar Trailer automatico», centrada, que abre la
+# ventana nativa del instalador (compilar/mac/instalador). El de «Arrástralo a Aplicaciones» queda para el disco PÚBLICO de las
+# actualizaciones: las versiones 1.5.2 a 1.5.6 buscan TrailerAutomatico.app en la raíz del disco.
 import os
 
 stage = defines['stage']                                   # noqa: F821 (lo pone dmgbuild)
+MODO = defines.get('modo', 'arrastrar')                    # noqa: F821  instalador | arrastrar
 # nombres SIN tildes (como CineCaptions): con tildes, HFS+ los guarda en NFD y mac_alias/.DS_Store no los casan
 APP = 'TrailerAutomatico.app'
+INSTALADOR = 'Instalar Trailer automatico.app'
 PKG_OCULTO = '.Actualizar Trailer automatico.pkg'
 
 format = 'UDZO'
@@ -42,3 +49,14 @@ icon_locations = {
     'Aplicaciones': (415, 168),                            # a la derecha
     PKG_OCULTO: (560, 250),                                # (oculto; si alguien ensena los ocultos, que no tape nada)
 }
+
+if MODO == 'instalador':                                   # «Doble clic para instalar» (fondo_instalar.png)
+    files = [os.path.join(stage, INSTALADOR), os.path.join(stage, PKG_OCULTO)]
+    symlinks = {}
+    hide_extensions = [INSTALADOR]
+    icon_size = 128
+    text_size = 13
+    icon_locations = {
+        INSTALADOR: (300, 160),                            # en el centro del halo (fondo_dmg.dibujar_instalar)
+        PKG_OCULTO: (560, 250),
+    }

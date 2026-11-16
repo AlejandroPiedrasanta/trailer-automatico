@@ -38,7 +38,7 @@
 - **editable**: Cada evento terminado queda editable en DaVinci: linea abierta en Edicion, copia .drt en 3 PLANTILLAS EDITABLES, «Editar en DaVinci» y «Renderizar lo editado» (sin volver a armar)
 - **perfiles**: Tipos de evento (xv, boda, bautizo, graduacion, cumpleanos): titulos, capitulos, frases, gracias
 - **instalador**: Instalador .exe de 1 MB + .dat (abre al instante) como el de CineCaptions: banner animado, PASOS, % y barra; PyInstaller + C#; icono
-- **mac**: Mac: .dmg de «Arrastralo a Aplicaciones» como CineCaptions (sin .pkg ni contrasena), primer arranque, servicio del usuario; se compila en una Mac o GitHub Actions
+- **mac**: Mac: .dmg de «Doble clic para instalar» como CineSlide: ventana nativa (Swift) igual a la de Windows que copia a Aplicaciones sin contrasena, Dock, primer arranque, abre y expulsa; se compila desde Windows en GitHub Actions
 - **registro**: Registro en archivo (registro.log), ganchos de errores, faulthandler; donde mirar cuando algo falla
 - **ia-resolve**: IA de Resolve Studio: personas (IntelliSearch con caras -> quien es la festejada), quien habla y pasajes de voz (transcripcion), Speed Warp, estabilizar, Smart Reframe
 - **actualizaciones**: Actualizaciones como CineCaptions: version.json firmado en trailer-automatico-releases, descarga con huella, al cerrar o en segundo plano (tarea Windows / servicio Mac)

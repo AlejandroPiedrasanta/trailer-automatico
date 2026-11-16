@@ -52,13 +52,23 @@ def _fecha_bonita(iso):
     return "%s %d de %s" % (dias[f.weekday()], f.day, meses[f.month - 1])
 
 
+def versiones_guardadas(est):
+    """(horizontales, verticales): las versiones elegidas en Inicio para cada formato. Sin elegir nunca, todas las
+    horizontales y ninguna vertical; siempre queda al menos una."""
+    h = est.get("versiones")
+    h = list(motor.VERSIONES) if h is None else [x for x in motor.VERSIONES if x in h]
+    v = [x for x in motor.VERSIONES if x in (est.get("versiones_vertical") or [])]
+    return (h or ([] if v else list(motor.VERSIONES))), v
+
+
 def opciones_guardadas():
     est = motor.leer_estado()
+    h, _ = versiones_guardadas(est)
     return dict(evento=est.get("evento_manual", ""), nombre_xv=est.get("nombre_xv", ""),
                 fecha_lugar=est.get("fecha_lugar", ""), frase=est.get("frase", ""),
                 tipo_evento=est.get("tipo_evento", "xv"), ruido=est.get("ruido"),
-                igualar=est.get("igualar", True), voz=est.get("voz"), verticales=est.get("verticales", False),
-                solo=est.get("versiones") or None)
+                igualar=est.get("igualar", True), voz=est.get("voz"), verticales=est.get("usar_verticales", True),
+                solo=h if 0 < len(h) < len(motor.VERSIONES) else None)
 
 
 # ================================================================== sin ventana
@@ -73,7 +83,8 @@ def cli(args):
         sys.exit(2)
     op = opciones_guardadas()
     if "--todo" in args:
-        res = motor.armar_todo(log, **op)
+        h, vert = versiones_guardadas(motor.leer_estado())
+        res = motor.armar_todo(log, vertical=vert, horizontal=bool(h), **op)
         log("Videos en: %s" % res["carpeta"])
     else:
         motor.armar(log, seco="--seco" in args, **op)
@@ -263,14 +274,15 @@ def app():
         fin = Signal(object)
         fallo = Signal(str)
 
-        def __init__(self, op):
+        def __init__(self, op, funcion=None):
             super().__init__()
             self.op = op
+            self.funcion = funcion                     # None = armar todo; o motor.renderizar_editado
 
         def run(self):
             try:
-                res = motor.armar_todo(lambda m: self.linea.emit(str(m)),
-                                       lambda p, t: self.avance.emit(int(p), str(t)), **self.op)
+                res = (self.funcion or motor.armar_todo)(lambda m: self.linea.emit(str(m)),
+                                                         lambda p, t: self.avance.emit(int(p), str(t)), **self.op)
                 self.fin.emit(res)
             except Exception as ex:
                 registro.error("Armado: %s" % traceback.format_exc())      # la traza, al registro (no a la persona)
@@ -690,7 +702,7 @@ def app():
             self.hueco_boton.setMinimumHeight(200)
             self.boton = boton_go.BotonGo(lado=380)
             self.boton.setParent(self.hueco_boton)
-            self.boton.clicked.connect(self._play)
+            self.boton.clicked.connect(lambda *_: self._play())
             v.addWidget(self.hueco_boton, 1)
             self.titulo = QLabel("Un clic y listo", objectName="titulo")
             self.titulo.setAlignment(Qt.AlignCenter)
@@ -724,6 +736,20 @@ def app():
             self.chip_videos.clicked.connect(self._abrir_videos)
             self.chip_videos.hide()
             fila_c.addWidget(self.chip_videos)
+            # la linea de cada evento queda editable en DaVinci: retocar y volver a sacar el video sin rearmar
+            self.chip_editar = QPushButton("Editar en DaVinci", objectName="chip")
+            self.chip_editar.setCursor(Qt.PointingHandCursor)
+            self.chip_editar.setToolTip("Abre DaVinci en la página Edición con la línea de este evento: retoca lo que "
+                                        "no te guste (cortes, textos, color, música).")
+            self.chip_editar.clicked.connect(self._editar_en_davinci)
+            fila_c.addWidget(self.chip_editar)
+            self.chip_render = QPushButton("Renderizar lo editado", objectName="chip")
+            self.chip_render.setCursor(Qt.PointingHandCursor)
+            self.chip_render.setToolTip("Saca de nuevo los videos con lo que cambiaste a mano en DaVinci, con el audio "
+                                        "a -14 LUFS, SIN volver a armar (▶ sí arma desde cero).")
+            self.chip_render.clicked.connect(self._renderizar_editado)
+            fila_c.addWidget(self.chip_render)
+            self._chips_editable()
             self.chip_cancelar = QPushButton("Cancelar la copia", objectName="chip")
             self.chip_cancelar.setCursor(Qt.PointingHandCursor)
             self.chip_cancelar.clicked.connect(self._cancelar_copia)
@@ -732,29 +758,41 @@ def app():
             fila_c.addStretch(1)
             v.addLayout(fila_c)
             v.addSpacing(6)
-            # plantillas: cuales se arman
-            fila_p = QHBoxLayout()
-            fila_p.addStretch(1)
-            self.etq_plantillas = QLabel("PLANTILLAS", objectName="etq")
-            fila_p.addWidget(self.etq_plantillas)
-            fila_p.addSpacing(6)
-            elegidas = self.est.get("versiones") or list(motor.VERSIONES)
-            self.pills = {}
-            for ver in motor.VERSIONES:
-                b = QPushButton(VERSION_TEXTO[ver], objectName="pill", checkable=True)
-                b.setCursor(Qt.PointingHandCursor)
-                b.setChecked(ver in elegidas)
-                b.toggled.connect(self._cambio_plantillas)
-                self.pills[ver] = b
-                b.setText(("✓  " if b.isChecked() else "") + VERSION_TEXTO[ver])
-                fila_p.addWidget(b)
-            self.b_todas = QPushButton("Todas", objectName="pill")
-            self.b_todas.setCursor(Qt.PointingHandCursor)
-            self.b_todas.clicked.connect(lambda: [b.setChecked(True) for b in self.pills.values()])
-            fila_p.addWidget(self.b_todas)
-            fila_p.addStretch(1)
-            v.addLayout(fila_p)
-            v.addSpacing(8)
+            # formatos: que versiones se arman en horizontal (16:9) y cuales en vertical (9:16, solo videos verticales)
+            eleg_h, eleg_v = versiones_guardadas(self.est)
+            self.pills, self.pills_v, self.etqs_formato, self.bs_todas = {}, {}, [], []
+            for etq, ayuda, pills, elegidas in (
+                    ("HORIZONTAL", "16:9 · usa los videos horizontales y también los verticales", self.pills, eleg_h),
+                    ("VERTICAL", "9:16 para celular · solo usa los videos grabados en vertical", self.pills_v, eleg_v)):
+                fila_p = QHBoxLayout()
+                fila_p.addStretch(1)
+                l = QLabel(etq, objectName="etq")
+                l.setFixedWidth(104)
+                l.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                l.setToolTip(ayuda)
+                fila_p.addWidget(l)
+                fila_p.addSpacing(6)
+                for ver in motor.VERSIONES:
+                    b = QPushButton(("✓  " if ver in elegidas else "") + VERSION_TEXTO[ver], objectName="pill",
+                                    checkable=True)
+                    b.setCursor(Qt.PointingHandCursor)
+                    b.setMinimumWidth(106)        # con o sin ✓ miden igual: las dos filas quedan alineadas
+                    b.setChecked(ver in elegidas)
+                    b.setToolTip(ayuda)
+                    b.toggled.connect(self._cambio_plantillas)
+                    pills[ver] = b
+                    fila_p.addWidget(b)
+                todas = QPushButton("Todas", objectName="pill")
+                todas.setCursor(Qt.PointingHandCursor)
+                todas.setToolTip(ayuda)
+                todas.clicked.connect(lambda _=False, ps=pills: [x.setChecked(True) for x in ps.values()])
+                fila_p.addWidget(todas)
+                fila_p.addStretch(1)
+                v.addLayout(fila_p)
+                v.addSpacing(5)
+                self.etqs_formato.append(l)
+                self.bs_todas.append(todas)
+            v.addSpacing(3)
             self._pintar_evento()
             return w
 
@@ -1133,11 +1171,12 @@ def app():
             fila_voz.addStretch(1)
             g.addWidget(l_voz, 5, 0)
             g.addLayout(fila_voz, 5, 1, 1, 2)
-            self.ch_vert = Interruptor("Usar también los videos verticales (de celular): llenan la pantalla recortados")
-            self.ch_vert.setChecked(bool(self.est.get("verticales", False)))
-            self.ch_vert.setToolTip("Apagado, los videos grabados en vertical quedan fuera del montaje (siguen en el "
-                                    "media pool). Encendido, entran recortados para llenar la pantalla y DaVinci "
-                                    "reencuadra siguiendo a la persona.")
+            self.ch_vert = Interruptor("En el formato horizontal, usar también los videos verticales (de celular)")
+            self.ch_vert.setChecked(bool(self.est.get("usar_verticales", True)))
+            self.ch_vert.setToolTip("Encendido (lo normal), el video horizontal acepta videos horizontales y verticales: "
+                                    "los verticales entran recortados para llenar la pantalla y DaVinci reencuadra "
+                                    "siguiendo a la persona. Apagado, quedan fuera del horizontal (siguen en el media "
+                                    "pool). El formato vertical de Inicio usa siempre solo los verticales.")
             g.addWidget(self.ch_vert, 6, 0, 1, 3)
             g.setColumnStretch(1, 1)
             v.addWidget(caja)
@@ -1314,21 +1353,38 @@ def app():
                                      .replace("&", "&&"))
 
         def _cambio_plantillas(self, _=None):
-            if not any(b.isChecked() for b in self.pills.values()):
-                self.sender().setChecked(True)                    # siempre al menos una
-            for v, b in self.pills.items():
-                b.setText(("✓  " if b.isChecked() else "") + VERSION_TEXTO[v])
+            if not any(b.isChecked() for b in self._pastillas()):
+                quien = self.sender()                             # siempre al menos una, de un formato u otro
+                (quien if quien in self._pastillas() else self.pills[motor.VERSIONES[0]]).setChecked(True)
+            for pills in (self.pills, self.pills_v):
+                for v, b in pills.items():
+                    b.setText(("✓  " if b.isChecked() else "") + VERSION_TEXTO[v])
             self._sub_material()
 
+        def _pastillas(self, con_todas=False, con_etiquetas=False):
+            """Las pastillas de los dos formatos (y, si se piden, sus botones «Todas» y sus etiquetas)."""
+            return list(self.pills.values()) + list(self.pills_v.values()) + (self.bs_todas if con_todas else []) + \
+                (self.etqs_formato if con_etiquetas else [])
+
         def _versiones(self):
+            """Versiones elegidas del formato horizontal."""
             return [v for v, b in self.pills.items() if b.isChecked()]
+
+        def _versiones_v(self):
+            """Versiones elegidas del formato vertical (9:16, solo videos verticales)."""
+            return [v for v, b in self.pills_v.items() if b.isChecked()]
+
+        def _texto_versiones(self):
+            h = ", ".join(VERSION_TEXTO[v] for v in self._versiones())
+            vv = ", ".join(VERSION_TEXTO[v] for v in self._versiones_v())
+            return h + (((" · " if h else "") + "vertical " + vv) if vv else "")
 
         def _sub_material(self):
             if self.trabajo is not None or self.flujo is not None:
                 return
             m = self.material
             c = m["cuenta"]
-            vers = ", ".join(VERSION_TEXTO[v] for v in self._versiones())
+            vers = self._texto_versiones()
             if m["ok"]:
                 self._sub("● %d fotos · %d videos · %d dron  ·  armará %s" % (c["foto"], c["video"], c["dron"], vers), "ok")
             else:
@@ -1606,7 +1662,7 @@ def app():
             self.hoja.ocultar()
             self.flujo = None
             self.titulo.setText("Un clic y listo")
-            self._play()
+            self._play(auto=True)
 
         def _fin_flujo(self, texto, tipo="info"):
             self.hoja.ocultar()
@@ -1617,19 +1673,23 @@ def app():
 
         # ============================================================== play
         def _guardar(self):
-            versiones = self._versiones() or list(motor.VERSIONES)
+            versiones, verticales = self._versiones(), self._versiones_v()
+            if not versiones and not verticales:
+                versiones = list(motor.VERSIONES)
             d = motor.leer_estado()
             d.update({"tipo_evento": self.c_tipo.currentData(), "nombre_xv": self.e_nombre.text().strip(),
                       "frase": self.e_frase.text().strip(), "fecha_lugar": self.e_fecha.text().strip(),
-                      "versiones": versiones, "ruido": self.s_ruido.value(),
+                      "versiones": versiones, "versiones_vertical": verticales, "ruido": self.s_ruido.value(),
                       "igualar": self.ch_igualar.isChecked(), "renderizar": self.ch_render.isChecked(),
                       "auto_armar": self.ch_auto.isChecked(),
                       "voz": {k: ch.isChecked() for k, ch in self.ch_voz.items()},
-                      "verticales": self.ch_vert.isChecked()})
+                      "usar_verticales": self.ch_vert.isChecked()})
             motor.guardar_estado(d)
             return dict(evento=d.get("evento_manual", ""), nombre_xv=d["nombre_xv"], fecha_lugar=d["fecha_lugar"],
                         frase=d["frase"], tipo_evento=d["tipo_evento"], ruido=d["ruido"], igualar=d["igualar"],
-                        voz=d["voz"], verticales=d["verticales"], solo=versiones if len(versiones) < len(motor.VERSIONES) else None, render=d["renderizar"])
+                        voz=d["voz"], verticales=d["usar_verticales"],
+                        solo=versiones if 0 < len(versiones) < len(motor.VERSIONES) else None,
+                        horizontal=bool(versiones), vertical=verticales, render=d["renderizar"])
 
         def _pedir_material(self):
             faltan = self.material["faltan"]
@@ -1652,7 +1712,72 @@ def app():
             elif caja.clickedButton() is b_ab:
                 rutas.abrir(rutas.CARPETAS[tipo])
 
-        def _play(self):
+        def _chips_editable(self, ver=None):
+            """«Editar en DaVinci» y «Renderizar lo editado» se ven cuando hay un evento armado (y no se esta trabajando)."""
+            if ver is None:
+                est = motor.leer_estado()
+                ver = bool(est.get("evento") and est.get("timelines")) and self.trabajo is None
+            self.chip_editar.setVisible(bool(ver))
+            self.chip_render.setVisible(bool(ver))
+
+        def _ya_armado(self):
+            """El evento que hay en 1 MATERIAL ya esta armado en DaVinci con este mismo material: su nombre, o ''."""
+            try:
+                est = motor.leer_estado()
+                if est.get("evento") and est.get("timelines") and est.get("huella") == motor.huella():
+                    return est["evento"]
+            except Exception:
+                pass
+            return ""
+
+        def _preguntar_ya_armado(self, evento):
+            """▶ vuelve a armar desde cero y reemplaza las lineas: si la persona las retoco a mano, lo perderia.
+            Devuelve "editado", "armar" o None (cancelar)."""
+            caja = QMessageBox(self)
+            caja.setWindowTitle(TITULO_APP)
+            caja.setIcon(QMessageBox.Question)
+            caja.setText("«%s» ya está armado en DaVinci.\n\n"
+                         "•  Renderizar lo editado: saca los videos con lo que hayas cambiado a mano en DaVinci.\n"
+                         "•  Volver a armar: lo arma de nuevo desde cero y reemplaza esas líneas "
+                         "(se pierden los cambios hechos a mano)." % evento)
+            b_ed = caja.addButton("Renderizar lo editado", QMessageBox.AcceptRole)
+            b_ar = caja.addButton("Volver a armar", QMessageBox.DestructiveRole)
+            caja.addButton("Cancelar", QMessageBox.RejectRole)
+            caja.setDefaultButton(b_ed)
+            caja.exec()
+            return "editado" if caja.clickedButton() is b_ed else "armar" if caja.clickedButton() is b_ar else None
+
+        def _editar_en_davinci(self):
+            if self.trabajo is not None:
+                self._avisar("Espera a que termine: después podrás retocarlo en DaVinci.", "warn")
+                return
+            self._avisar("Abriendo DaVinci en la línea del evento…")
+
+            def listo(nombre, error):
+                if error is not None:
+                    self._avisar("No pude abrirlo en DaVinci: %s" % error, "warn")
+                else:
+                    self._avisar("DaVinci quedó en Edición con «%s». Retoca lo que quieras y pulsa "
+                                 "«Renderizar lo editado»." % nombre)
+            qt_kit.correr_en_hilo(self, lambda: motor.abrir_editable(registro.info), listo)
+
+        def _renderizar_editado(self):
+            """Saca de nuevo los videos con las lineas tal como estan en DaVinci (sin volver a armar)."""
+            if self.trabajo is not None:
+                self.b_log.setChecked(True)
+                return
+            if self.copia is not None:
+                self._avisar("Espera a que termine de copiar el material.", "warn")
+                return
+            evento = motor.leer_estado().get("evento")
+            if not evento:
+                self._avisar("Todavía no hay ningún evento armado: pulsa ▶ primero.", "warn")
+                return
+            self._arrancar({"evento": evento}, True, "Renderizando lo editado de %s (sin volver a armar)…" % evento,
+                           motor.renderizar_editado)
+            self._marcar("sfx", "activo")                 # el armado no corre: directo al render
+
+        def _play(self, auto=False):
             if self.trabajo is not None:
                 self.b_log.setChecked(True)
                 return
@@ -1664,10 +1789,19 @@ def app():
                 self._avisar("Falta material en 1 MATERIAL: agrégalo y vuelve a pulsar ▶.", "warn")
                 self._pedir_material()
                 return
+            if not auto:                                  # ya armado con este material: ¿lo editado o desde cero?
+                armado = self._ya_armado()
+                if armado:
+                    que = self._preguntar_ya_armado(armado)
+                    if que is None:
+                        return
+                    if que == "editado":
+                        self._renderizar_editado()
+                        return
             op = self._guardar()
             if op.get("render", True):
                 try:
-                    libre, necesita = motor.espacio_para_render(op.get("solo") or list(motor.VERSIONES))
+                    libre, necesita = motor.espacio_para_render(self._versiones() + self._versiones_v())
                 except Exception:
                     libre, necesita = 1e9, 0.0
                 if libre < necesita:
@@ -1683,9 +1817,16 @@ def app():
                         self._avisar("Sin espacio para renderizar: libera espacio y vuelve a pulsar ▶.", "warn")
                         return
                     op["render"] = False
+            self._arrancar(op, bool(op.get("render", True)), "Armando %s…" % self._texto_versiones())
+            if self.analisis is not None:
+                self._avisar("Termino de analizar el material y sigo solo…")
+
+        def _arrancar(self, op, con_render, texto, funcion=None):
+            """Pone la ventana a trabajar y lanza el hilo: armar todo (funcion=None) o renderizar lo editado."""
             self.registro.clear()
             self.chip_videos.hide()
-            self._con_render = bool(op.get("render", True))
+            self._chips_editable(False)
+            self._con_render = con_render
             self.pasos_go = {k: "pendiente" for k, _ in PASOS_GO}
             self._prog = 0.0
             self.boton.poner_estado("trabajando", centro="Preparando")
@@ -1693,24 +1834,22 @@ def app():
             self.escena.empezar()
             self._marcar("timeline", "activo")
             self.chip_evento.hide()
-            for b in list(self.pills.values()) + [self.b_todas, self.etq_plantillas]:
+            for b in self._pastillas(True, True):
                 b.hide()
             self.reserva.setFixedHeight(len(PASOS_GO) * 34 + 14)
             self._acomodar()
             self.titulo.setText("Trabajando…")
             self._sub("Empezando…")
-            self._avisar("Armando %s…" % ", ".join(VERSION_TEXTO[v] for v in self._versiones()))
-            for b in list(self.pills.values()) + [self.b_todas]:
+            self._avisar(texto)
+            for b in self._pastillas(True):
                 b.setEnabled(False)
-            if self.analisis is not None:
-                self._avisar("Termino de analizar el material y sigo solo…")
             try:                                         # si IntelliSearch esta trabajando, cede el paso
                 import indexar
                 indexar.PARAR.set()
             except Exception:
                 pass
             self.linea.editable = False
-            self.trabajo = Trabajo(op)
+            self.trabajo = Trabajo(op, funcion)
             self.trabajo.linea.connect(self._linea)
             self.trabajo.avance.connect(self._avance)
             self.trabajo.fin.connect(self._fin)
@@ -1822,7 +1961,7 @@ def app():
             if self.boton.estado != "trabajando":
                 self.reserva.setFixedHeight(0)
                 self.chip_evento.show()
-                for b in list(self.pills.values()) + [self.b_todas, self.etq_plantillas]:
+                for b in self._pastillas(True, True):
                     b.show()
                 self._acomodar()
 
@@ -1890,13 +2029,22 @@ def app():
                 self._sub("%d de %d videos en 2 VIDEOS TERMINADOS · %s" % (len(ok), len(videos),
                                                                             self.resultado.get("evento", "")),
                           "ok" if len(ok) == len(videos) else "error")
-                self._avisar("Terminado: %d videos con audio a -14 LUFS." % len(ok))
+                self._avisar("Terminado: %d videos con audio a -14 LUFS%s." % (
+                    len(ok), " (con lo que editaste en DaVinci)" if self.resultado.get("editado") else ""))
                 self.chip_videos.show()
                 self._abrir_videos()
                 QTimer.singleShot(4000, self._indexar_fondo)
             else:
                 self._sub("Armado en DaVinci · %s" % self.resultado.get("evento", ""), "ok")
                 self._avisar("Timelines armadas en DaVinci (sin render).")
+            for a in (self.resultado.get("avisos") or [])[:3]:        # lo que el formato vertical no pudo armar
+                self._avisar(a, "warn")
+            if not self.resultado.get("editado"):
+                self._avisar("La línea queda editable en DaVinci (02 EVENTOS › %s) y su copia en «%s», junto a los "
+                             "videos. Si retocas algo, pulsa «Renderizar lo editado»."
+                             % (self.resultado.get("evento", ""), rutas.EDITABLE))
+            self.chip_editar.show()
+            self.chip_render.show()
 
         def _indexar_fondo(self):
             """Al final y sin esperar: IntelliSearch (Better, con rostros) para buscar en DaVinci por lo que se ve o por
@@ -1933,8 +2081,9 @@ def app():
 
         def _liberar(self):
             self.trabajo = None
+            self._chips_editable()
             self._cargar_organizacion()
-            for b in list(self.pills.values()) + [self.b_todas]:
+            for b in self._pastillas(True):
                 b.setEnabled(True)
             QTimer.singleShot(6000, lambda: self.titulo.setText("Un clic y listo") if self.trabajo is None else None)
 

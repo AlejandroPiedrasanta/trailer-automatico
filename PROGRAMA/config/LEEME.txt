@@ -19,8 +19,15 @@ COMO SE USA (3 pasos)
      VIDEOS  al menos 1 (camara y celular de todo el evento)
      DRON    opcional
    Si falta algo, el programa te avisa y te pide agregarlo antes de empezar.
-3. Abajo del boton elige las PLANTILLAS a armar (1, 3, 15, 30 min o Todas) y pulsa el boton ▶
+3. Abajo del boton elige que armar (1, 3, 15, 30 min o Todas) en cada formato: HORIZONTAL (16:9;
+   acepta videos horizontales y verticales) y VERTICAL (9:16 para celular; solo usa los videos
+   grabados en vertical y necesita al menos tanto video como dura la version). Luego pulsa el boton ▶
    del centro. En "Textos" eliges el tipo de evento y escribes los nombres.
+
+Si algo no te gusta, se retoca: cada evento terminado queda editable en DaVinci Resolve (proyecto
+EVENTOS CINEMA, carpeta 02 EVENTOS) y su copia en 2 VIDEOS TERMINADOS/<evento>/PLANTILLA EDITABLE
+(DaVinci). Pulsa "Editar en DaVinci", cambia lo que quieras y luego "Renderizar lo editado": saca
+el video de nuevo SIN volver a armarlo. (El boton ▶ si lo arma desde cero.)
 
 El programa hace todo solo: ordena el material (maquillaje, iglesia, fiesta), lo arma en las
 4 plantillas de DaVinci Resolve (1, 3, 15 y 30 min) con textos, transiciones, musica, SFX y

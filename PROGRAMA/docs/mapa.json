@@ -544,6 +544,51 @@
   ]
  },
  {
+  "id": "formatos",
+  "resumen": "Dos formatos en Inicio con las mismas duraciones: HORIZONTAL (16:9, acepta videos horizontales y verticales) y VERTICAL (9:16 para celular, solo videos grabados en vertical)",
+  "claves": [
+   "vertical",
+   "horizontal",
+   "formato",
+   "9:16",
+   "celular",
+   "verticales",
+   "reencuadre",
+   "pastillas"
+  ],
+  "archivos": [
+   "PROGRAMA/armado/build_trailers.py",
+   "PROGRAMA/nucleo/motor.py",
+   "PROGRAMA/interfaz/trailer_xv.py",
+   "PROGRAMA/entrega/renderizar.py"
+  ],
+  "simbolos": [
+   "etiqueta",
+   "poner_vertical",
+   "png_texto",
+   "reencuadrar",
+   "armar_todo",
+   "armar",
+   "plan_previo",
+   "versiones_guardadas",
+   "_pastillas",
+   "_versiones_v",
+   "_texto_versiones",
+   "vestir_verticales",
+   "_efecto_relleno",
+   "titulos_a_vertical"
+  ],
+  "notas": [
+   "FORMATO (variable de build_trailers) = 'horizontal' | 'vertical'; motor.armar(formato=) y armar_todo(vertical=[...], horizontal=bool): un pase por formato y un solo render al final.",
+   "Vertical: la linea se llama «<evento> - VERTICAL 1min»; es un duplicado de la MISMA plantilla puesto en 1080x1920 con ajustes propios (poner_vertical); la plantilla y el proyecto no cambian.",
+   "Vertical solo usa videos con horizontal=False y hace falta al menos tanto video vertical como dura la version (VERTICAL_MATERIAL_MIN); si no alcanza, esa version no se arma y lo dice.",
+   "Textos nuevos en vertical: sobre TEXTO_VERTICAL.png (1080x1920). Render: FormatWidth/FormatHeight del tamano de la linea y luego se devuelve la pagina Entrega al tamano horizontal.",
+   "Estado: versiones (horizontal, puede ir vacia), versiones_vertical, usar_verticales.",
+   "Horizontal: los verticales entran de fabrica (VERTICALES=True, Ajustes lo apaga) ENTEROS con los lados desenfocados (vestir_verticales: AddEffect('ofx', Blanking Fill/«Relleno») + SCALE_FIT); sin ese efecto, recortados + Smart Reframe. Valen x PESO_VERTICAL frente a una toma horizontal igual.",
+   "Vertical: titulos_a_vertical pasa el mLetterbox de los titulos mWedding a Mode=0 (ajustar) y agranda el clip x1,5; en Mode=1 salen cortados por los lados."
+  ]
+ },
+ {
   "id": "entrega",
   "resumen": "Render de la cola (solo las versiones pedidas), audio a -14 LUFS con limitador, medicion del video final y revisar_video.py",
   "claves": [
@@ -569,6 +614,49 @@
   "notas": [
    "renderizar(solo=[...]): solo esas versiones; las demas que sigan en la cola no se vuelven a renderizar.",
    "herramientas/revisar_video.py (hoja | cuadros | audio): revisar un video terminado sin verlo entero."
+  ]
+ },
+ {
+  "id": "editable",
+  "resumen": "Cada evento terminado queda editable en DaVinci: linea abierta en Edicion, copia .drt junto a los videos, «Editar en DaVinci» y «Renderizar lo editado» (sin volver a armar)",
+  "claves": [
+   "editable",
+   "plantilla",
+   "retocar",
+   "drt",
+   "editar",
+   "rerender",
+   "renderizar lo editado",
+   "ya armado"
+  ],
+  "archivos": [
+   "PROGRAMA/nucleo/motor.py",
+   "PROGRAMA/entrega/renderizar.py",
+   "PROGRAMA/armado/build_trailers.py",
+   "PROGRAMA/interfaz/trailer_xv.py",
+   "PROGRAMA/nucleo/rutas.py"
+  ],
+  "simbolos": [
+   "lineas_del_evento",
+   "guardar_editable",
+   "dejar_editable",
+   "abrir_editable",
+   "encolar_render",
+   "renderizar_editado",
+   "traer_davinci_al_frente",
+   "_editar_en_davinci",
+   "_renderizar_editado",
+   "_ya_armado",
+   "_preguntar_ya_armado",
+   "_arrancar",
+   "_chips_editable"
+  ],
+  "notas": [
+   "Al terminar (con o sin render) DaVinci queda en la pagina Edicion con la linea mas corta del evento abierta (dejar_editable); las lineas viven en 02 EVENTOS/<evento> del proyecto EVENTOS CINEMA.",
+   "Copia por version: 2 VIDEOS TERMINADOS/<evento>/PLANTILLA EDITABLE (DaVinci)/<linea>.drt + LEEME.txt (rutas.EDITABLE; build_trailers.EDITABLE la apaga).",
+   "renderizar_editado: vuelve a poner en cola cada linea TAL COMO ESTA (entre sus marcas de entrada y salida), renderiza, masteriza a -14 LUFS y actualiza el .drt. No arma nada.",
+   "▶ sobre un evento ya armado con el mismo material (estado.huella == motor.huella()) pregunta: Renderizar lo editado / Volver a armar (reemplaza las lineas) / Cancelar. El armado automatico tras soltar material no pregunta (_play(auto=True)).",
+   "Trabajo(op, funcion): el mismo hilo y la misma escena para armar todo o renderizar lo editado (_arrancar)."
   ]
  },
  {

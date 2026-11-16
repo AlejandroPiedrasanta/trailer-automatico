@@ -356,6 +356,28 @@ class Guion:
                 self.ok("plan de las 4 plantillas (1, 3, 15 y 30 min)")
         except Exception as ex:
             self.falla("no salio el plan de las plantillas (%s)" % ex)
+        try:                                    # formato vertical (9:16): solo acepta videos grabados en vertical
+            import motor
+            vert = nombres.get(self.esperado.get("vertical")) or {}
+            dicho = []
+            rep = motor.plan_previo(j, lambda m: dicho.append(str(m)), formato="vertical")
+            if vert and not vert.get("horizontal", True) and not (rep or {}).get("versiones") \
+                    and "vertical" in " ".join(dicho).lower():
+                self.ok("formato vertical: reconoce el video vertical y avisa que con ese solo no alcanza")
+            else:
+                self.falla("formato vertical: %s | %s" % (vert.get("horizontal"), " ".join(dicho)[:160]))
+            for i in items:                     # y con todo el video en vertical, arma las mismas duraciones
+                if i["tipo"] == "video":
+                    i["horizontal"] = False
+            rep = motor.plan_previo(j, lambda m: None, formato="vertical")
+            lineas = [v["timeline"] for v in (rep or {}).get("versiones", [])]
+            if lineas and all(" - VERTICAL " in t for t in lineas):
+                self.ok("formato vertical: con videos verticales planifica %s" % ", ".join(
+                    t.split(" - ")[-1] for t in lineas))
+            else:
+                self.falla("formato vertical: no planifico (%s)" % lineas)
+        except Exception as ex:
+            self.falla("formato vertical: no se pudo probar (%s)" % ex)
         self._pasar("final")
 
     def _etapa_final(self, w):

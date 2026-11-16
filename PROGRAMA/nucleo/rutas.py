@@ -104,6 +104,7 @@ CARPETAS = {"foto": os.path.join(MATERIAL, "FOTOS"),
             "video": os.path.join(MATERIAL, "VIDEOS"),
             "dron": os.path.join(MATERIAL, "DRON")}
 TERMINADOS = os.path.join(BASE, "2 VIDEOS TERMINADOS")
+EDITABLE = "PLANTILLA EDITABLE (DaVinci)"      # dentro de 2 VIDEOS TERMINADOS/<EVENTO>: la linea de cada version (.drt)
 
 ANALISIS = os.path.join(DATOS, "analisis")
 RESPALDOS = os.path.join(DATOS, "respaldos")

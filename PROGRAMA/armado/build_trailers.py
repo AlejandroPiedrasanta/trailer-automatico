@@ -109,7 +109,21 @@ ACERCAR = 1.28                # cuanto se acerca el plano alterno
 ACERCAR_ANCHO_MIN = 3000      # ancho minimo de la fuente para acercar
 # True = tambien entran los videos grabados en vertical (celular parado): llenan la pantalla recortados y el
 # reencuadre inteligente de Resolve Studio (Smart Reframe) sigue a la persona. Lo decide Ajustes > Videos verticales.
-USAR_VIDEOS_VERTICALES = bool(globals().get("VERTICALES", False))
+USAR_VIDEOS_VERTICALES = bool(globals().get("VERTICALES", True))
+PESO_VERTICAL = 0.85              # en lo horizontal un video vertical ocupa solo el centro: a igual toma, gana la horizontal
+# Formato de la entrega (lo elige el apartado de la pantalla de Inicio):
+#   "horizontal" = 16:9, lo de siempre: entran los videos horizontales y los verticales.
+#   "vertical"   = 9:16 para celular, con las mismas duraciones: SOLO los videos grabados en vertical.
+VERTICAL = str(globals().get("FORMATO") or "").lower().startswith("v")
+FORMATO = "vertical" if VERTICAL else "horizontal"
+ETIQUETA_VERTICAL = "VERTICAL"    # la linea se llama «XV 2026-11-08 - VERTICAL 1min»
+VERTICAL_MATERIAL_MIN = 1.0       # video vertical que hace falta: al menos lo que dura la version (medido: con
+                                  # 17 min de video, la de 30 min repetia la mitad de los planos y la de 15, 4 de cada 10)
+
+
+def etiqueta(ver):
+    """Como se llama la version en la linea y en el archivo: «1min» o «VERTICAL 1min»."""
+    return ("%s %s" % (ETIQUETA_VERTICAL, ver["sufijo"])) if VERTICAL else ver["sufijo"]
 # Igualacion automatica por plano (CDL en el nodo del clip): exposicion, negros, balance de blancos, saturacion
 IGUALAR = globals().get("IGUALAR", True)
 # Las tomas ya vienen en Rec.709 (color terminado de camara): la correccion por plano solo EMPAREJA, con poco margen.
@@ -143,6 +157,7 @@ LOOK_REC709 = {"1min": "MCP/XV_1min_CINE_TEAL_ORANGE_REC709.cube", "3min": "MCP/
 ACTIVAR_SIEMPRE = ["MULTITEXT"]   # titulos de la plantilla que se activan aunque esten apagados (firma)
 CORTAR_AL_RITMO = True
 ENCOLAR_RENDER = True
+EDITABLE = True                   # deja junto a los videos la linea de cada version (.drt) para retocarla en DaVinci
 
 EVENTO = globals().get("EVENTO") or None
 SOLO = globals().get("SOLO") or None
@@ -229,6 +244,11 @@ def espaciadas(lista, n, desfase=0.5):
     return [lista[j] for j in sorted(idx)]
 
 
+def _min_seg(s):
+    """«4:05» (minutos:segundos) para decir cuanto video hay."""
+    return "%d:%02d" % (int(s) // 60, int(s) % 60)
+
+
 def _hora(it, desplazamiento=0.0):
     return datetime.datetime.fromisoformat(it["hora"]) + datetime.timedelta(seconds=desplazamiento)
 
@@ -242,15 +262,31 @@ class Planificador:
         horizontales = [i for i in validos if i.get("horizontal", True)]
         utiles_h = sum(max(0.0, i.get("dur", 0) - sum(b - a for a, b in i.get("oscuros") or [])) for i in horizontales)
         verticales = USAR_VIDEOS_VERTICALES or len(horizontales) < 3 or utiles_h < 45
-        self.vids = validos if verticales else horizontales
         n_vert = len(validos) - len(horizontales)
-        if n_vert and not verticales:
-            print("%d video%s fuera del montaje (%s en el media pool)."
-                  % (n_vert, " vertical queda" if n_vert == 1 else "s verticales quedan", "esta" if n_vert == 1 else "estan"))
-        elif n_vert and not USAR_VIDEOS_VERTICALES:      # casi todo es de celular parado: mejor recortado que en negro
-            print("Hay pocos videos horizontales: se usan tambien los %d verticales (llenando el cuadro)." % n_vert)
-        self.fotos = self._sin_repetidas([i for i in items if i["tipo"] == "foto" and not i.get("descartar")
-                                          and i.get("horizontal", True)])
+        fotos = [i for i in items if i["tipo"] == "foto" and not i.get("descartar")]
+        if VERTICAL:                                     # 9:16: solo lo grabado en vertical
+            self.vids = [i for i in validos if not i.get("horizontal", True)]
+            fotos_v = [i for i in fotos if not i.get("horizontal", True)]
+            if len(fotos_v) > len(INTRO_CORTES):         # alcanzan para la intro y el final
+                fotos = fotos_v
+            elif fotos:
+                print("Hay %d fotos verticales: la intro se completa con fotos horizontales recortadas." % len(fotos_v))
+        else:
+            self.vids = validos if verticales else horizontales
+            if n_vert and not verticales:
+                print("%d video%s fuera del montaje (%s en el media pool)."
+                      % (n_vert, " vertical queda" if n_vert == 1 else "s verticales quedan", "esta" if n_vert == 1 else "estan"))
+            elif n_vert and not USAR_VIDEOS_VERTICALES:  # casi todo es de celular parado: mejor recortado que en negro
+                print("Hay pocos videos horizontales: se usan tambien los %d verticales (llenando el cuadro)." % n_vert)
+            elif n_vert:
+                print("%d video%s entra%s tambien al montaje, llenando el cuadro."
+                      % (n_vert, " vertical" if n_vert == 1 else "s verticales", "" if n_vert == 1 else "n"))
+            fotos_h = [i for i in fotos if i.get("horizontal", True)]
+            if len(fotos_h) > len(INTRO_CORTES) or not fotos:
+                fotos = fotos_h
+            else:                                        # casi todas las fotos son verticales: sin ellas no hay intro
+                print("Hay %d fotos horizontales: la intro se completa con fotos verticales recortadas." % len(fotos_h))
+        self.fotos = self._sin_repetidas(fotos)
         self.usados = {}
         self.fotos_usadas = set()
         self._pref = {}
@@ -405,7 +441,7 @@ class Planificador:
         cal = v.get("calidad") or []
         emo = self.emocion(v)
         _, factor = self.vista(v)
-        gente = self.gente(v)
+        gente = self.gente(v) * (PESO_VERTICAL if not VERTICAL and not v.get("horizontal", True) else 1.0)
         return [c * gente * (factor[i] if i < len(factor) else 1.0) * (0.85 + 0.35 * (emo[i] if i < len(emo) else 0.0))
                 for i, c in enumerate(cal)]
 
@@ -1070,13 +1106,58 @@ def acercar(puestos):
     return n
 
 
+# ResolveFX que llena las franjas con la propia imagen ampliada y desenfocada. Su nombre Y su id cambian con el idioma
+# de DaVinci (visto el 2026-11-16: «Resolve FX/ResolveFX – Estilizado/Relleno»); en otro idioma no se encuentra y los
+# verticales siguen recortados + Smart Reframe.
+RELLENO_LADOS = ("blanking fill", "relleno")
+
+
+def _efecto_relleno():
+    """Id del ResolveFX «Blanking Fill» («Relleno») en este DaVinci, o None."""
+    try:
+        for e in resolve.GetEffectsList("video") or []:
+            if e.get("category") == "ofx" and (e.get("name") or "").strip().lower() in RELLENO_LADOS:
+                return e.get("id")
+    except Exception:
+        pass
+    return None
+
+
+def vestir_verticales(puestos):
+    """Lo grabado en vertical dentro de la linea horizontal entra ENTERO (ajustado al alto: no se le corta la cabeza
+    ni los pies a nadie) y los lados se llenan con su propia imagen ampliada y desenfocada (ResolveFX Blanking Fill),
+    como se hace a mano con un video de celular. A esos planos no se les acerca ni se les estabiliza (se moveria el
+    recuadro). Devuelve cuantos vistio; si DaVinci no trae el efecto, quedan como estaban (llenando el cuadro)."""
+    efecto, n = None, 0
+    for p, x in puestos:
+        if p["item"].get("horizontal", True):
+            continue
+        if efecto is None:
+            efecto = _efecto_relleno() or ""
+        if not efecto:
+            break
+        try:
+            if x.AddEffect("ofx", efecto) is None:
+                continue
+            if not x.SetProperty("Scaling", resolve.SCALE_FIT):
+                x.SetProperties({"Scaling": resolve.SCALE_FIT})
+            p["vestido"] = True
+            p["estabilizar"] = False
+            p.pop("zoom", None)
+            n += 1
+        except Exception:
+            pass
+    return n
+
+
 def reencuadrar(project, puestos, limite_s=180.0):
-    """Videos verticales en la linea horizontal: ya llenan la pantalla recortados (SCALE_FILL); el reencuadre
-    inteligente de Resolve Studio (Smart Reframe) sigue a la persona para que el recorte no le corte la cabeza.
-    Devuelve cuantos se reencuadraron."""
+    """Videos verticales en la linea horizontal que NO se pudieron vestir (vestir_verticales): llenan la pantalla
+    recortados (SCALE_FILL) y el reencuadre inteligente de Resolve Studio (Smart Reframe) sigue a la persona para
+    que el recorte no le corte la cabeza. Devuelve cuantos se reencuadraron."""
     t0, n = time.time(), 0
     for p, x in puestos:
-        if p["tipo"] == "foto" or p["item"].get("horizontal", True) or time.time() - t0 > limite_s:
+        if p["tipo"] == "foto" or p["item"].get("horizontal", True) or p.get("vestido") \
+                or time.time() - t0 > limite_s:
             continue
         try:
             if x.SmartReframe():
@@ -1193,6 +1274,36 @@ def legibilidad_plantilla(tl):
                     n += 1
                 except Exception:
                     pass
+    return n
+
+
+ZOOM_TITULO_VERTICAL = 1.5        # cuanto se agrandan en 9:16 los titulos de la plantilla ya ajustados al ancho
+
+
+def titulos_a_vertical(tl):
+    """Los titulos propios de la plantilla (macros mWedding: «MIS XV», las frases de la intro) llevan dentro un
+    «mLetterbox» que adapta su diseno 16:9 al cuadro. Los que estan en modo llenar (1) salen en 9:16 tres veces mas
+    grandes y cortados por los lados (visto el 2026-11-16); en modo ajustar (0) caben enteros. En la linea vertical
+    del evento se pasan todos a ajustar y el clip se agranda un poco para que se lea en el celular. La plantilla no
+    se toca. Solo se pide a Fusion ese tipo de herramienta (recorrer la macro entera es lentisimo). Devuelve cuantos."""
+    n = 0
+    for t in range(1, tl.GetTrackCount("video") + 1):
+        if (tl.GetTrackName("video", t) or "").strip().upper() in (PISTA_VIDEOS, PISTA_FOTOS, PISTA_TEXTOS):
+            continue
+        for it in tl.GetItemListInTrack("video", t) or []:
+            try:
+                comp = it.GetFusionCompByIndex(1) if it.GetFusionCompCount() else None
+                cajas = (comp.GetToolList(False, "Letterbox") or {}) if comp is not None else {}
+                if not cajas:
+                    continue
+                for caja in cajas.values():
+                    caja.SetInput("Mode", 0)
+                if abs(float(it.GetProperty("ZoomX") or 1.0) - 1.0) < 0.01:      # sin zoom propio en la plantilla
+                    it.SetProperty("ZoomX", ZOOM_TITULO_VERTICAL)
+                    it.SetProperty("ZoomY", ZOOM_TITULO_VERTICAL)
+                n += 1
+            except Exception:
+                pass
     return n
 
 
@@ -1963,27 +2074,58 @@ def textos_plantilla(tl, perfil):
 
 # ------------------------------------------------------------------ textos nuevos (capitulos, frases, gracias)
 TEXTO_PNG = os.path.join(rutas.RECURSOS, "TEXTO_TRANSPARENTE.png")
+TEXTO_PNG_VERTICAL = os.path.join(rutas.RECURSOS, "TEXTO_VERTICAL.png")
 DUR_CAPITULO, DUR_FRASE, DUR_GRACIAS = 3.2, 4.0, 4.5      # s en pantalla
 SEPARACION_TEXTOS = 2.0                                   # s minimos entre dos textos
 CADA_FRASE = [(60, 18.0), (180, 40.0), (900, 90.0), (1e9, 120.0)]   # (hasta s de version, s de momento por frase)
 
 
-def png_texto(mp, root):
-    """Clip transparente 1920x1080 (06 EFECTOS\\GRAFICOS): base de los textos nuevos de la pista TEXTOS."""
-    c = buscar_clip(root, "TEXTO_TRANSPARENTE")
+def png_texto(mp, root, vertical=False):
+    """Clip transparente 1920x1080 (06 EFECTOS\\GRAFICOS): base de los textos nuevos de la pista TEXTOS. En el formato
+    vertical es de 1080x1920: el texto se compone ya en 9:16 (misma proporcion respecto al ancho, mas aire arriba y
+    abajo) en vez de quedar en una franja al centro."""
+    nombre = "TEXTO_VERTICAL" if vertical else "TEXTO_TRANSPARENTE"
+    ruta = TEXTO_PNG_VERTICAL if vertical else TEXTO_PNG
+    c = buscar_clip(root, nombre)
     if c is not None:
         return c
-    if not os.path.exists(TEXTO_PNG):
+    if not os.path.exists(ruta):
         import subprocess
-        os.makedirs(os.path.dirname(TEXTO_PNG), exist_ok=True)
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black@0.0:s=1920x1080,format=rgba",
-                        "-frames:v", "1", TEXTO_PNG], creationflags=rutas.SIN_VENTANA)
+        os.makedirs(os.path.dirname(ruta), exist_ok=True)
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                        "color=c=black@0.0:s=%s,format=rgba" % ("1080x1920" if vertical else "1920x1080"),
+                        "-frames:v", "1", ruta], creationflags=rutas.SIN_VENTANA)
     efe = carpeta_raiz(mp, root, "EFECTOS")
     gra = next((f for f in efe.GetSubFolderList() or [] if f.GetName() == "GRAFICOS"), None) or \
         mp.AddSubFolder(efe, "GRAFICOS")
     mp.SetCurrentFolder(gra)
-    r = mp.ImportMedia([TEXTO_PNG]) if os.path.exists(TEXTO_PNG) else None
+    r = mp.ImportMedia([ruta]) if os.path.exists(ruta) else None
     return r[0] if r else None
+
+
+def poner_vertical(tl):
+    """La linea duplicada pasa a 9:16 (1920x1080 -> 1080x1920) con sus propios ajustes: la plantilla y el proyecto no
+    se tocan. Lo que no sea vertical llena el cuadro recortado. Devuelve (ancho, alto) o None si Resolve no lo acepto."""
+    try:
+        w, h = int(tl.GetSetting("timelineResolutionWidth")), int(tl.GetSetting("timelineResolutionHeight"))
+    except Exception:
+        w, h = 1920, 1080
+    if h > w:
+        return w, h
+    tl.SetSetting("useCustomSettings", "1")
+    ok = True
+    for clave, valor in (("timelineResolutionWidth", h), ("timelineResolutionHeight", w),
+                         ("timelineOutputResolutionWidth", h), ("timelineOutputResolutionHeight", w)):
+        ok = bool(tl.SetSetting(clave, str(valor))) and ok
+    try:
+        tl.SetSetting("timelineInputResMismatchBehavior", "scaleToCrop")
+    except Exception:
+        pass
+    try:
+        ok = int(tl.GetSetting("timelineResolutionHeight")) > int(tl.GetSetting("timelineResolutionWidth"))
+    except Exception:
+        pass
+    return (h, w) if ok else None
 
 
 def nuevo_texto(tl, mp, png, pt, ini, dur, nombre, p1, p2, frase, fps):
@@ -2288,6 +2430,15 @@ def main():
     evento = EVENTO or "%s %s" % (perfil["prefijo"], analisis["fecha"])
     reporte["evento"] = evento
     reporte["tipo"] = TIPO_EVENTO
+    reporte["formato"] = FORMATO
+    util_v = 0.0
+    if VERTICAL:                                     # solo acepta videos grabados en vertical
+        vert = [i for i in items if i["tipo"] != "foto" and not i.get("descartar") and not i.get("horizontal", True)]
+        util_v = sum(max(0.0, i.get("dur", 0) - sum(b - a for a, b in i.get("oscuros") or [])) for i in vert)
+        if not vert:
+            aviso("El formato vertical solo usa videos grabados en vertical y en 1 MATERIAL no hay ninguno.")
+            return
+        print("Formato vertical (9:16): %d videos verticales, %s de video." % (len(vert), _min_seg(util_v)))
     f = datetime.date.fromisoformat(analisis["fecha"])
     fecha_txt = "%02d · %02d · %d" % (f.day, f.month, f.year)
     for i, z in enumerate(ZONAS, 1):                 # carpetas del media pool con los nombres del perfil
@@ -2300,6 +2451,10 @@ def main():
     pendientes = []
     for ver in VERSIONES:
         if SOLO and ver["sufijo"] not in SOLO:
+            continue
+        if VERTICAL and util_v < ver["seg"] * VERTICAL_MATERIAL_MIN:
+            aviso("%s no se arma: hay %s de video vertical y hacen falta al menos %s." % (
+                etiqueta(ver), _min_seg(util_v), _min_seg(ver["seg"] * VERTICAL_MATERIAL_MIN)))
             continue
         if ver["plantilla"] not in tls:
             aviso("No existe la plantilla '%s' en el proyecto." % ver["plantilla"])
@@ -2384,7 +2539,7 @@ def main():
                 aviso("%s: no se pudo preparar el plano final (%s)" % (ver["sufijo"], ex))
             lentos, estab = plan.marcar_efectos(zonas, fps, LENTOS.get(ver["sufijo"], 2))
             planes.append((ver, tpl, intro, zonas))
-            reporte["versiones"].append({"timeline": "%s - %s" % (evento, ver["sufijo"]), "zonas": info_z,
+            reporte["versiones"].append({"timeline": "%s - %s" % (evento, etiqueta(ver)), "zonas": info_z,
                                          "fotos_intro": len(intro), "cortes_al_ritmo": al_golpe,
                                          "camara_lenta": lentos, "estabilizar": estab})
             print("%s: %s | %d cortes al ritmo | %d en camara lenta | %d a estabilizar" % (ver["sufijo"], ", ".join(
@@ -2465,7 +2620,7 @@ def main():
     if otra_vez:                                 # personas nuevas y la escucha fallo: igual se vuelve a planificar
         plan, planes = planificar()
     whoosh = buscar_clip(root, WHOOSH)
-    png = png_texto(mp, root)
+    png = png_texto(mp, root, VERTICAL)
     try:
         propios = sfx_propios(mp, root)
     except Exception as ex:
@@ -2512,6 +2667,16 @@ def main():
         project.SetCurrentTimeline(tl)
         time.sleep(1.0)            # Resolve solo cambia el estado de los clips de la timeline activa y ya asentada
         tl = project.GetCurrentTimeline() or tl
+        tam_v = None
+        if VERTICAL:                            # la copia pasa a 9:16; la plantilla sigue como estaba
+            tam_v = poner_vertical(tl)
+            if not tam_v:
+                aviso("%s: DaVinci no dejo poner la linea en vertical; no se arma." % nombre)
+                project.SetCurrentTimeline(tpl)
+                mp.DeleteTimelines([tl])
+                del tls[nombre]
+                continue
+            time.sleep(0.5)
         for t in range(1, tl.GetTrackCount("video") + 1):
             for it in tl.GetItemListInTrack("video", t) or []:
                 if (it.GetName() or "").strip().upper() in ACTIVAR_SIEMPRE and not it.GetClipEnabled():
@@ -2584,13 +2749,20 @@ def main():
         info["ruido"] = rd.resumen(niveles_ruido)
         info["camara_lenta"] = sum(1 for p, _ in puestos if p.get("lento_ok") and not p.get("conformado"))
         info["fotos_relleno"] = sum(1 for p, _ in puestos if p.get("relleno"))
+        if not VERTICAL:                                # lo vertical, entero y con los lados llenos
+            info["verticales_enteros"] = vestir_verticales(puestos)
         info["estabilizados"] = estabilizar(puestos)
         info["acercados"] = acercar(puestos)
-        if USAR_VIDEOS_VERTICALES:
+        if USAR_VIDEOS_VERTICALES and not VERTICAL:     # en 9:16 los verticales ya entran enteros
             info["reencuadrados"] = reencuadrar(project, puestos)
         info["transiciones"] = transiciones(tl, pv, zonas, ver, puestos)
         info["titulos"] = titulos(tl, ver, fps, fecha_txt, perfil, f.year)
         info["textos_plantilla"] = textos_plantilla(tl, perfil)
+        if VERTICAL:                                    # los titulos de la plantilla, enteros dentro del 9:16
+            try:
+                info["titulos_vertical"] = titulos_a_vertical(tl)
+            except Exception as ex:
+                aviso("%s: no se pudieron ajustar los titulos de la plantilla al formato vertical (%s)" % (nombre, ex))
         try:
             info["textos_con_halo"] = legibilidad_plantilla(tl)
             info["velos_plantilla"] = velos_plantilla(tl, mp, png, fps, intro_f)
@@ -2644,11 +2816,24 @@ def main():
                 for job in project.GetRenderJobList() or []:
                     if job.get("TimelineName") == nombre:
                         project.DeleteRenderJob(job.get("JobId"))
-                project.SetRenderSettings({"SelectAllFrames": False, "MarkIn": st, "MarkOut": st + total_f - 1,
-                                           "TargetDir": salida, "CustomName": nombre})
+                ajustes = {"SelectAllFrames": False, "MarkIn": st, "MarkOut": st + total_f - 1,
+                           "TargetDir": salida, "CustomName": nombre}
+                if tam_v:                        # el archivo sale en 9:16, del tamano de la linea
+                    ajustes.update({"FormatWidth": tam_v[0], "FormatHeight": tam_v[1]})
+                project.SetRenderSettings(ajustes)
                 info["render_en_cola"] = bool(project.AddRenderJob())
+                if tam_v:                        # la pagina Entrega vuelve al tamano horizontal de siempre
+                    project.SetRenderSettings({"FormatWidth": tam_v[1], "FormatHeight": tam_v[0]})
             except Exception as ex:
                 aviso("%s: no se pudo encolar el render (%s)" % (nombre, ex))
+        if EDITABLE:                             # la plantilla editable de esta version, junto a los videos
+            try:
+                carpeta_ed = os.path.join(salida, rutas.EDITABLE)
+                os.makedirs(carpeta_ed, exist_ok=True)
+                ruta_ed = os.path.join(carpeta_ed, nombre + ".drt")
+                info["editable"] = ruta_ed if tl.Export(ruta_ed, resolve.EXPORT_DRT) else None
+            except Exception as ex:
+                aviso("%s: no se pudo guardar la plantilla editable (%s)" % (nombre, ex))
         print("%s lista: %d clips, %d igualados en color, %d transiciones, %d titulos + %d textos nuevos, %d whoosh, "
               "%d SFX por momento, %d sonidos nivelados, %d en camara lenta, %d estabilizados, %d voces" % (
                   nombre, len(puestos), info.get("igualados", 0), info["transiciones"], info["titulos"],

@@ -31,7 +31,9 @@
 - **color**: Color por plano (exposicion, negros, blancos; la saturacion nunca sube de la de camara), grupos PRE/POST, looks _REC709 y reduccion de ruido
 - **textos**: Titulos Fusion (script + subtitulo + velo), capitulos, frases, gracias y tarjeta final abajo (PNG transparente en V3); velo bajo los titulos de la plantilla
 - **sonido**: SFX por momento, SFX propios en los momentos clave, whoosh, cambio de cancion sin huecos, musica bajo la voz en rampa y mezcla medida en LUFS
+- **formatos**: Dos formatos en Inicio con las mismas duraciones: HORIZONTAL (16:9, acepta videos horizontales y verticales) y VERTICAL (9:16 para celular, solo videos grabados en vertical)
 - **entrega**: Render de la cola (solo las versiones pedidas), audio a -14 LUFS con limitador, medicion del video final y revisar_video.py
+- **editable**: Cada evento terminado queda editable en DaVinci: linea abierta en Edicion, copia .drt junto a los videos, «Editar en DaVinci» y «Renderizar lo editado» (sin volver a armar)
 - **perfiles**: Tipos de evento (xv, boda, bautizo, graduacion, cumpleanos): titulos, capitulos, frases, gracias
 - **instalador**: Instalador .exe de 1 MB + .dat (abre al instante) como el de CineCaptions: banner animado, PASOS, % y barra; PyInstaller + C#; icono
 - **mac**: Mac: .dmg de «Arrastralo a Aplicaciones» como CineCaptions (sin .pkg ni contrasena), primer arranque, servicio del usuario; se compila en una Mac o GitHub Actions
@@ -48,6 +50,7 @@
   - Nunca `InsertFusionTitleIntoTimeline` ni la herramienta Shadow de Fusion.
   - Los cambios de clips solo funcionan en la timeline activa y ya asentada.
 - **Plantillas:** `TRAILER XV - *` no se tocan; cada evento es un duplicado.
+- **Editable:** al terminar, la línea del evento queda abierta en Edición y su `.drt` en `2 VIDEOS TERMINADOS/<evento>/PLANTILLA EDITABLE (DaVinci)`. ▶ rearma y reemplaza las líneas: sobre un evento ya armado se pregunta antes; lo retocado a mano se saca con «Renderizar lo editado».
 - **Montaje:**
   - 8 fotos en la intro y UNA al final (la mejor de la persona festejada, con la tarjeta final abajo). Fotos dentro del video solo como relleno en el de 30 min (cuando no alcanzan las tomas buenas), antes que repetir o meter una toma fea.
   - Personas: las reconoce DaVinci (IntelliSearch con caras → `it["caras"]`, `it["prota"]`); la festejada es la cara que sale en más archivos y sus tomas y fotos van primero.
@@ -56,6 +59,7 @@
   - Color: la saturación nunca pasa de la de cámara (ni el CDL ni el look la suben).
   - Colores: MAQUILLAJE morado, IGLESIA verde, FIESTA rosa.
   - Entrega en MOV H.265 a -14 LUFS.
+  - Formatos: el horizontal acepta videos horizontales y verticales; el vertical (9:16, mismas duraciones, líneas «… - VERTICAL 1min») solo los grabados en vertical.
 - **Ventana:** en su hilo no se llama a la API de Resolve ni se usa `subprocess`/`sleep`: eso va en hilos (`Trabajo`, `EstadoDV`, `qt_kit.correr_en_hilo`).
 - **Escena de Inicio:** `escena_go`, `estilos_inicio`, `orbe_mecanica`, `ritmo_ui` y `boton_go` vienen de CineCaptions; ahí solo se cambian textos.
 - **Rutas:** siempre con `rutas.py`, porque en el .exe todo queda junto en `sys._MEIPASS`.

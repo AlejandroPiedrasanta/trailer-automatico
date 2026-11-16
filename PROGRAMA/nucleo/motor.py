@@ -28,6 +28,10 @@ BASE_DATOS = "EVENTOS"          # base de datos de Resolve donde vive el proyect
 PROYECTO = "EVENTOS CINEMA"     # proyecto con las plantillas universales
 PROYECTOS_ANTERIORES = ["TRAILER DE XV"]   # nombre viejo: se sigue encontrando si no se ha renombrado
 VERSIONES = ["1min", "3min", "15min", "30min"]
+SEGUNDOS = {"1min": 60, "3min": 180, "15min": 900, "30min": 1800}      # lo que dura cada version
+ETIQUETA_VERTICAL = "VERTICAL"      # las lineas del formato vertical: «XV 2026-11-08 - VERTICAL 1min»
+SIN_VERTICALES = ("El formato vertical solo usa videos grabados en vertical (celular parado) y no alcanzan los que hay "
+                  "en 1 MATERIAL/VIDEOS. Agrega videos verticales o arma el formato horizontal.")
 # Voz original (pastor, brindis, discursos) sobre la musica: como viene cada version en Ajustes. En la de 30 min va
 # siempre y no se pregunta (igual que VOZ_DEFECTO / VOZ_SIEMPRE de build_trailers.py).
 VOZ_DEFECTO = {"1min": False, "3min": False, "15min": True}
@@ -51,16 +55,18 @@ def guardar_estado(d):
 
 # ------------------------------------------------------------------ prevenir errores
 class SinDormir:
-    """Mientras arma y renderiza, que la PC no se suspenda (la pantalla si se puede apagar). Va en el hilo que
-    trabaja: en Windows el pedido vale mientras ese hilo lo mantenga; en Mac lo sostiene `caffeinate`."""
+    """Mientras arma y renderiza, que la PC no se suspenda NI se apague la pantalla: con la pantalla apagada DaVinci
+    entra en su «modo de suspension» y un analisis de IntelliSearch se quedo atascado para siempre (2026-11-14).
+    Va en el hilo que trabaja: en Windows el pedido vale mientras ese hilo lo mantenga; en Mac lo sostiene
+    `caffeinate`."""
     def __enter__(self):
         self.proc = None
         try:
             if rutas.ES_WIN:
                 import ctypes
-                ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)   # CONTINUOUS | SYSTEM
+                ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001 | 0x00000002)   # CONTINUOUS | SYSTEM | DISPLAY
             elif sys.platform == "darwin":
-                self.proc = subprocess.Popen(["caffeinate", "-i", "-w", str(os.getpid())])
+                self.proc = subprocess.Popen(["caffeinate", "-d", "-i", "-w", str(os.getpid())])
         except Exception:
             pass
         return self
@@ -438,7 +444,8 @@ def guardar_plan(rep):
                          {"evento": rep.get("evento"), "versiones": rep.get("versiones", [])})
 
 
-def plan_previo(analisis, log=print, solo=None, tipo_evento="xv", evento="", **_):
+def plan_previo(analisis, log=print, solo=None, tipo_evento="xv", evento="", verticales=True,
+                formato="horizontal", **_):
     """El plan de cada version (cuantos planos por zona, camara lenta, estabilizar) SIN conectar con DaVinci: usa los
     marcadores de las plantillas que trae el programa. Devuelve el reporte de build_trailers o None."""
     try:
@@ -460,7 +467,7 @@ def plan_previo(analisis, log=print, solo=None, tipo_evento="xv", evento="", **_
     ruta = rutas.codigo("build_trailers.py")
     g = {"__name__": "build_trailers", "resolve": _ResolveFalso(plantillas), "BASE": BASE, "ANALISIS": analisis,
          "EVENTO": evento or None, "SOLO": solo or None, "REHACER": True, "DRY_RUN": True, "SIN_RESOLVE": True,
-         "TIPO_EVENTO": tipo_evento, "print": decir}
+         "TIPO_EVENTO": tipo_evento, "VERTICALES": bool(verticales), "FORMATO": formato, "print": decir}
     with open(ruta, encoding="utf-8") as f:
         exec(compile(f.read(), ruta, "exec"), g)
     if repiten:
@@ -919,11 +926,226 @@ def quitar_ruido_davinci():
     return ruido.estado_davinci()
 
 
+LEEME_EDITABLE = """PLANTILLA EDITABLE - %(evento)s
+
+Cada archivo .drt de esta carpeta es la linea de tiempo de una version, tal como la armo el programa
+(cortes, color, textos, musica, efectos de sonido y voz). Sirve para retocar lo que no te guste.
+
+LO MAS RAPIDO: ya esta dentro de DaVinci Resolve.
+  Proyecto EVENTOS CINEMA > carpeta 02 EVENTOS > %(evento)s. En el programa: boton "Editar en DaVinci".
+  Cambia lo que quieras y pulsa "Renderizar lo editado" en el programa: saca el video de nuevo, con el
+  audio a -14 LUFS, SIN volver a armarlo (tus cambios se conservan).
+  Sale con la duracion de siempre (1, 3, 15 o 30 min). Si lo alargas o quieres otro tramo, pon marcas de
+  entrada y salida (teclas I y O) en la linea: se renderiza lo que quede entre ellas.
+  Ojo: el boton grande de play vuelve a armar desde cero y reemplaza lo que hayas cambiado a mano.
+
+DESDE EL ARCHIVO (otro proyecto u otra computadora):
+  En DaVinci: Archivo > Importar > Linea de tiempo... y elige el .drt. Necesita el mismo material
+  (1 MATERIAL) y los recursos del programa; si salen sin conexion, clic derecho > Volver a enlazar.
+"""
+
+
+def _etiqueta(nombre_linea):
+    """«XV 2026-11-08 - VERTICAL 1min» -> «VERTICAL 1min»."""
+    return nombre_linea.split(" - ")[-1]
+
+
+def lineas_del_evento(project, evento):
+    """Las lineas armadas de un evento que siguen en DaVinci, en el orden 1, 3, 15, 30 min (primero las horizontales
+    y luego las verticales). Solo las que arma el programa: una copia hecha a mano («... copia») no entra."""
+    orden = {v: k for k, v in enumerate(VERSIONES)}
+    orden.update({"%s %s" % (ETIQUETA_VERTICAL, v): k + len(VERSIONES) for k, v in enumerate(VERSIONES)})
+    res = []
+    for i in range(1, project.GetTimelineCount() + 1):
+        t = project.GetTimelineByIndex(i)
+        n = t.GetName() or ""
+        if evento and n.startswith(evento + " - ") and _etiqueta(n) in orden:
+            res.append((orden[_etiqueta(n)], t))
+    return [t for _, t in sorted(res, key=lambda x: x[0])]
+
+
+def leeme_editable(evento):
+    """El LEEME de la carpeta PLANTILLA EDITABLE (DaVinci) del evento, si ya existe la carpeta."""
+    try:
+        carpeta = os.path.join(rutas.TERMINADOS, evento, rutas.EDITABLE)
+        leeme = os.path.join(carpeta, "LEEME.txt")
+        if os.path.isdir(carpeta) and not os.path.exists(leeme):
+            with open(leeme, "w", encoding="utf-8") as f:
+                f.write(LEEME_EDITABLE % {"evento": evento})
+    except OSError:
+        pass
+
+
+def guardar_editable(resolve, tl, evento, log=None):
+    """Deja junto a los videos la linea editable de esa version: 2 VIDEOS TERMINADOS/<EVENTO>/PLANTILLA EDITABLE
+    (DaVinci)/<linea>.drt, con un LEEME de como usarla. Devuelve la ruta o None."""
+    try:
+        carpeta = os.path.join(rutas.TERMINADOS, evento, rutas.EDITABLE)
+        os.makedirs(carpeta, exist_ok=True)
+        ruta = os.path.join(carpeta, tl.GetName() + ".drt")
+        if not tl.Export(ruta, resolve.EXPORT_DRT):
+            return None
+        leeme_editable(evento)
+        return ruta
+    except Exception as ex:
+        if log:
+            log("Aviso: no se pudo guardar la plantilla editable de %s (%s)" % (tl.GetName(), ex))
+        return None
+
+
+def dejar_editable(resolve, project, evento, etiquetas=None):
+    """Al terminar, DaVinci queda en la pagina Edicion con la linea del evento abierta (la mas corta de las que se
+    acaban de hacer): lista para retocar. Devuelve su nombre o None."""
+    try:
+        lineas = lineas_del_evento(project, evento)
+        if etiquetas:
+            lineas = [t for t in lineas if _etiqueta(t.GetName()) in etiquetas] or lineas
+        if not lineas or project.IsRenderingInProgress():
+            return None
+        project.SetCurrentTimeline(lineas[0])
+        resolve.OpenPage("edit")
+        return lineas[0].GetName()
+    except Exception:
+        return None
+
+
+def traer_davinci_al_frente():
+    """La ventana de DaVinci, delante (cuando la persona pide «Editar en DaVinci»)."""
+    try:
+        if rutas.ES_MAC:
+            rutas.abrir_resolve()
+            return
+        import ctypes
+        from ctypes import wintypes
+        u = ctypes.windll.user32
+        hallada = []
+
+        def ver(h, _):
+            if u.IsWindowVisible(h):
+                t = ctypes.create_unicode_buffer(200)
+                u.GetWindowTextW(h, t, 200)
+                if t.value.startswith("DaVinci Resolve"):
+                    hallada.append(h)
+            return True
+        u.EnumWindows(ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(ver), 0)
+        if hallada:
+            if u.IsIconic(hallada[0]):
+                u.ShowWindow(hallada[0], 9)            # SW_RESTORE
+            u.SetForegroundWindow(hallada[0])
+    except Exception:
+        pass
+
+
+def abrir_editable(log, evento=None):
+    """«Editar en DaVinci»: abre DaVinci (si hace falta) en la pagina Edicion con la linea del evento. Devuelve el
+    nombre de la linea."""
+    with CANDADO:
+        evento = evento or leer_estado().get("evento")
+        if not evento:
+            raise RuntimeError("Todavía no hay ningún evento armado: pulsa ▶ primero.")
+        resolve = conectar_resolve(log)
+        project = resolve.GetProjectManager().GetCurrentProject()
+        if project.IsRenderingInProgress():
+            raise RuntimeError("DaVinci está renderizando: espera a que termine.")
+        nombre = dejar_editable(resolve, project, evento)
+        if not nombre:
+            raise RuntimeError("No encuentro las líneas de %s en DaVinci: pulsa ▶ para armarlo." % evento)
+    traer_davinci_al_frente()
+    return nombre
+
+
+def encolar_render(project, tl, evento):
+    """Pone en la cola de render la linea TAL COMO ESTA ahora, quitando antes su trabajo anterior. Tramo: el que la
+    persona haya marcado con entrada y salida (I / O) en la linea; sin marcas (lo normal: tras un render DaVinci no
+    las conserva), la duracion de siempre de esa version (1, 3, 15 o 30 min) o hasta donde llegue la linea si la
+    acorto. Las verticales salen del tamano de la linea. Devuelve True/False."""
+    nombre = tl.GetName()
+    salida = os.path.join(rutas.TERMINADOS, evento)
+    os.makedirs(salida, exist_ok=True)
+    for job in project.GetRenderJobList() or []:
+        if job.get("TimelineName") == nombre:
+            project.DeleteRenderJob(job.get("JobId"))
+    project.SetCurrentTimeline(tl)
+    time.sleep(0.5)
+    ajustes = {"SelectAllFrames": True, "TargetDir": salida, "CustomName": nombre}
+    try:
+        marcas = (tl.GetMarkInOut() or {}).get("video") or {}
+        ini, fin = tl.GetStartFrame(), tl.GetEndFrame() - 1
+        if marcas.get("in") is not None and marcas.get("out") is not None and marcas["out"] > marcas["in"]:
+            ajustes.update({"SelectAllFrames": False, "MarkIn": int(marcas["in"]), "MarkOut": int(marcas["out"])})
+        else:
+            seg = SEGUNDOS.get(_etiqueta(nombre).split(" ")[-1])
+            if seg:
+                fps = int(round(float(tl.GetSetting("timelineFrameRate") or 24)))
+                ajustes.update({"SelectAllFrames": False, "MarkIn": ini, "MarkOut": min(fin, ini + seg * fps - 1)})
+    except Exception:
+        pass
+    try:
+        w, h = int(tl.GetSetting("timelineResolutionWidth")), int(tl.GetSetting("timelineResolutionHeight"))
+    except Exception:
+        w, h = 1920, 1080
+    if h > w:
+        ajustes.update({"FormatWidth": w, "FormatHeight": h})
+    project.SetRenderSettings(ajustes)
+    ok = bool(project.AddRenderJob())
+    if h > w:                                    # la pagina Entrega vuelve al tamano horizontal de siempre
+        project.SetRenderSettings({"FormatWidth": h, "FormatHeight": w})
+    return ok
+
+
+def renderizar_editado(log, avance=None, evento=None):
+    """«Renderizar lo editado»: saca de nuevo los videos del evento con las lineas TAL COMO ESTAN en DaVinci (lo que
+    la persona haya retocado a mano), SIN volver a armar; masteriza el audio y actualiza la plantilla editable.
+    Devuelve lo mismo que armar_todo."""
+    def paso(pct, texto):
+        if avance:
+            avance(pct, texto)
+    with SinDormir():
+        paso(5, "Abriendo DaVinci Resolve")
+        log("== Conectando con DaVinci Resolve ==")
+        with CANDADO:
+            evento = evento or leer_estado().get("evento")
+            if not evento:
+                raise RuntimeError("Todavía no hay ningún evento armado: pulsa ▶ primero.")
+            resolve = conectar_resolve(log)
+            project = resolve.GetProjectManager().GetCurrentProject()
+            if project.IsRenderingInProgress():
+                raise RuntimeError("DaVinci ya está renderizando: espera a que termine.")
+            lineas = lineas_del_evento(project, evento)
+            if not lineas:
+                raise RuntimeError("No encuentro las líneas de %s en DaVinci: pulsa ▶ para armarlo." % evento)
+            libre, necesita = espacio_para_render([_etiqueta(t.GetName()).split(" ")[-1] for t in lineas])
+            if libre < necesita:
+                raise RuntimeError("No hay espacio para renderizar: quedan %.1f GB libres y hacen falta unos %.1f GB."
+                                   % (libre, necesita))
+            log("== Renderizando lo editado (sin volver a armar) ==")
+            etiquetas = []
+            for tl in lineas:
+                if encolar_render(project, tl, evento):
+                    etiquetas.append(_etiqueta(tl.GetName()))
+                    guardar_editable(resolve, tl, evento, log)
+                else:
+                    log("AVISO: %s no se pudo poner en la cola de render." % tl.GetName())
+            if "untitled" not in (project.GetName() or "").lower():      # guardar «Untitled Project» cuelga la API
+                resolve.GetProjectManager().SaveProject()
+        if not etiquetas:
+            raise RuntimeError("DaVinci no aceptó ningún trabajo de render.")
+        paso(45, "Renderizando")
+        import renderizar
+        videos = renderizar.renderizar(log, evento, lambda pct, texto: paso(45 + int(pct * 0.5), texto), etiquetas)
+        paso(100, "Listo")
+        return {"evento": evento, "videos": videos, "carpeta": os.path.join(rutas.TERMINADOS, evento), "avisos": [],
+                "editado": True}
+
+
 def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", frase="", tipo_evento="xv",
-          ruido=None, igualar=True, voz=None, verticales=False):
+          ruido=None, igualar=True, voz=None, verticales=True, formato="horizontal"):
     """Analiza el material y lo arma en las plantillas. Devuelve el reporte.
     voz: {"1min": bool, "3min": bool, "15min": bool} = en que versiones va la voz original (None = lo de siempre:
-    activada en la de 15 min; en la de 30 min va siempre)."""
+    activada en la de 15 min; en la de 30 min va siempre).
+    formato: "horizontal" (16:9; entran los videos horizontales y, con verticales=True, tambien los verticales) o
+    "vertical" (9:16 para celular, con las mismas duraciones: SOLO los videos grabados en vertical)."""
+    vertical = str(formato or "").lower().startswith("v")
     with CANDADO:
         t0 = time.time()
         log("== Analizando material ==")
@@ -937,13 +1159,19 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
         if not usables:                       # todos dañados, en negro o de menos de 3 s: el trailer saldria en negro
             raise RuntimeError("No hay videos que se puedan usar (dañados, en negro o muy cortos). Revisa 1 MATERIAL/VIDEOS: "
                                + "; ".join(a for a in analisis.get("avisos", [])[:2]))
+        if vertical and all(i.get("horizontal", True) for i in usables):
+            raise RuntimeError(SIN_VERTICALES)
         if sum(1 for i in analisis["items"] if i["tipo"] == "foto" and not i.get("descartar")) < MINIMOS["foto"]:
             log("Aviso: hay menos de %d fotos que se puedan leer: la intro repetira fotos." % MINIMOS["foto"])
         resumen = _resumen(analisis["items"])
         try:                                  # el plan se ve ya, antes de abrir DaVinci (y aunque DaVinci falle)
             log("== Plan previo ==")
-            previo = plan_previo(analisis, log, solo=solo, tipo_evento=tipo_evento, evento=evento)
-            guardar_plan(previo)
+            previo = plan_previo(analisis, log, solo=solo, tipo_evento=tipo_evento, evento=evento,
+                                 verticales=verticales, formato=formato)
+            if not vertical:
+                guardar_plan(previo)
+            elif previo is not None and not previo.get("versiones"):   # no alcanza el video vertical: ni se abre DaVinci
+                return None
         except Exception as ex:
             log("Aviso: no pude calcular el plan previo (%s)" % ex)
         log("== Conectando con DaVinci Resolve ==")
@@ -956,7 +1184,7 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
              "EVENTO": evento or None, "SOLO": solo or None, "REHACER": True, "DRY_RUN": seco,
              "NOMBRE_XV": nombre_xv, "FECHA_LUGAR": fecha_lugar, "FRASE": frase, "TIPO_EVENTO": tipo_evento,
              "RUIDO": ruido, "IGUALAR": bool(igualar), "VOZ": voz if isinstance(voz, dict) else None,
-             "VERTICALES": bool(verticales),
+             "VERTICALES": bool(verticales), "FORMATO": "vertical" if vertical else "horizontal",
              "print": lambda *a, **k: log(" ".join(str(x) for x in a))}
         with open(ruta, encoding="utf-8") as f:
             exec(compile(f.read(), ruta, "exec"), g)
@@ -965,38 +1193,79 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
         rep["seco"] = seco
         if not seco:
             est = leer_estado()
-            est.update({"huella": analisis["huella"], "evento": rep.get("evento"),
-                        "armado": time.strftime("%Y-%m-%d %H:%M"),
-                        "timelines": [v["timeline"] for v in rep.get("versiones", [])],
-                        "resumen_versiones": rep.get("versiones", [])})
+            lineas = [v["timeline"] for v in rep.get("versiones", [])]
+            if vertical:                      # se suman a las horizontales de este mismo evento
+                otras = [t for t in est.get("timelines") or [] if est.get("evento") == rep.get("evento")
+                         and " - %s " % ETIQUETA_VERTICAL not in t]
+                est.update({"huella": analisis["huella"], "evento": rep.get("evento"),
+                            "armado": time.strftime("%Y-%m-%d %H:%M"), "timelines": otras + lineas,
+                            "resumen_versiones_vertical": rep.get("versiones", [])})
+            else:
+                est.update({"huella": analisis["huella"], "evento": rep.get("evento"),
+                            "armado": time.strftime("%Y-%m-%d %H:%M"), "timelines": lineas,
+                            "resumen_versiones": rep.get("versiones", [])})
             guardar_estado(est)
+            leeme_editable(rep.get("evento") or "")
+            if rep.get("versiones"):          # DaVinci queda en Edicion con el evento abierto: listo para retocar
+                dejar_editable(resolve, resolve.GetProjectManager().GetCurrentProject(), rep.get("evento"),
+                               [_etiqueta(v["timeline"]) for v in rep["versiones"]])
         log("Listo en %.0f s." % (time.time() - t0))
         return rep
 
 
-def armar_todo(log, avance=None, render=True, **op):
+def armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, **op):
     """El boton Play: analiza, arma las versiones en DaVinci, renderiza, masteriza el audio y mide la imagen.
-    avance(pct, texto). Devuelve {"evento", "videos": [(nombre, ok, ruta)], "carpeta"}."""
+    op["solo"] = versiones del formato horizontal (None = todas); horizontal=False = ninguna.
+    vertical = ["1min", ...] versiones del formato vertical (9:16, solo videos verticales); None o [] = ninguna.
+    avance(pct, texto). Devuelve {"evento", "videos": [(nombre, ok, ruta)], "carpeta", "avisos": [lo que el formato
+    vertical no pudo armar]}. Las lineas quedan en DaVinci, editables (ver renderizar_editado y guardar_editable)."""
     def paso(pct, texto):
         if avance:
             avance(pct, texto)
+    pases = [("horizontal", op.get("solo"))] if horizontal or not vertical else []
+    if vertical:
+        pases.append(("vertical", [v for v in VERSIONES if v in vertical]))
     with SinDormir():                        # una suspension a media render deja el trabajo colgado
         paso(3, "Revisando el material")
-        rep = armar(log, **op)
-        if not rep or not rep.get("versiones"):
-            raise RuntimeError("No se armo ninguna version (revisa que haya fotos y videos en 1 MATERIAL).")
-        evento = rep.get("evento")
-        salida = {"evento": evento, "videos": [], "carpeta": os.path.join(rutas.TERMINADOS, evento or "")}
+        evento, etiquetas, pedidas, avisos = None, [], [], []
+        for n, (formato, solo) in enumerate(pases):
+            if formato == "vertical":
+                log("== Formato vertical (9:16): solo videos verticales ==")
+                if n:
+                    paso(30, "Armando el formato vertical")
+            try:
+                rep = armar(log, **dict(op, solo=solo, formato=formato))
+            except RuntimeError as ex:
+                if formato == "vertical" and etiquetas:      # lo horizontal ya quedo armado: no se pierde
+                    log("AVISO: %s" % ex)
+                    avisos.append(str(ex))
+                    continue
+                raise
+            if not rep or not rep.get("versiones"):
+                if formato == "vertical":
+                    if etiquetas:
+                        log("AVISO: el formato vertical no se armo: falta video grabado en vertical.")
+                        avisos.append(SIN_VERTICALES)
+                        continue
+                    raise RuntimeError(SIN_VERTICALES)
+                raise RuntimeError("No se armo ninguna version (revisa que haya fotos y videos en 1 MATERIAL).")
+            evento = evento or rep.get("evento")
+            etiquetas += [_etiqueta(v["timeline"]) for v in rep["versiones"]]
+            pedidas += [v["timeline"].split(" ")[-1] for v in rep["versiones"]]
+            if formato == "vertical":            # versiones que se quedaron sin armar por falta de video vertical
+                avisos += [a for a in rep.get("avisos") or [] if "no se arma" in a]
+        salida = {"evento": evento, "videos": [], "carpeta": os.path.join(rutas.TERMINADOS, evento or ""),
+                  "avisos": avisos}
         if not render:
             paso(100, "Armado en DaVinci")
             return salida
-        libre, necesita = espacio_para_render(op.get("solo"))
+        libre, necesita = espacio_para_render(pedidas)
         if libre < necesita:
             raise RuntimeError("No hay espacio para renderizar: quedan %.1f GB libres y hacen falta unos %.1f GB. "
                                "Las timelines ya quedaron armadas en DaVinci." % (libre, necesita))
         paso(45, "Renderizando")
         import renderizar
         salida["videos"] = renderizar.renderizar(
-            log, evento, lambda pct, texto: paso(45 + int(pct * 0.5), texto), op.get("solo"))
+            log, evento, lambda pct, texto: paso(45 + int(pct * 0.5), texto), etiquetas)
         paso(100, "Listo")
         return salida

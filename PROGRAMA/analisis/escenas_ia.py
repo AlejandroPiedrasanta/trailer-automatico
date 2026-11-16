@@ -439,8 +439,7 @@ def reconocer(pares, log=print, limite_s=VIDEOS_LIMITE_S, renderizando=None):
                 _guardar_personas(cache)
                 log("  %d/%d reconocidos (%.0f s)" % (n, len(pendientes), time.time() - t0))
     finally:
-        _guardar_personas(cache)
-        _pantalla_despierta(False)
+        _guardar_personas(cache)                 # (en Windows el pedido de pantalla lo suelta motor.SinDormir al terminar)
         if despierta is not None:
             try:
                 despierta.terminate()

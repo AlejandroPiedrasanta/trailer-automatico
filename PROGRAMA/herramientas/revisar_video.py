@@ -33,6 +33,17 @@ def _duracion(video):
     return float(r or 0)
 
 
+def _vertical(video):
+    """True si el video es mas alto que ancho (formato vertical 9:16)."""
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+                        "-of", "csv=p=0", video], capture_output=True, text=True).stdout.strip().splitlines()
+    try:
+        r = r[0].split(",")
+        return int(r[1]) > int(r[0])
+    except (ValueError, IndexError):
+        return False
+
+
 def _hoja(video, salida, tiempos, w, h, cols):
     hoja = Image.new("RGB", (cols * w, ((len(tiempos) + cols - 1) // cols) * (h + 13)), (0, 0, 0))
     dr = ImageDraw.Draw(hoja)
@@ -52,13 +63,14 @@ def hoja(video, salida, n=48, desde=None, hasta=None):
     dur = _duracion(video)
     a = 3.0 if desde is None else desde
     b = dur - 0.3 if hasta is None else hasta
-    q = _hoja(video, salida, [a + (b - a) * (i + 0.5) / n for i in range(n)], 240, 135, 8)
+    tam = (135, 240, 12) if _vertical(video) else (240, 135, 8)
+    q = _hoja(video, salida, [a + (b - a) * (i + 0.5) / n for i in range(n)], *tam)
     print("%s: %d cuadros | quemado medio %.1f %% | maximo %.1f %% | con mas de 10 %%: %d" % (
         salida, len(q), 100 * np.mean(q), 100 * max(q), sum(x > 0.10 for x in q)))
 
 
 def cuadros(video, salida, tiempos):
-    _hoja(video, salida, tiempos, 640, 360, 3)
+    _hoja(video, salida, tiempos, *((360, 640, 5) if _vertical(video) else (640, 360, 3)))
     print("%s: %d cuadros" % (salida, len(tiempos)))
 
 

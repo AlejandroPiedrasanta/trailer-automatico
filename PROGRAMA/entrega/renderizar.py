@@ -14,7 +14,8 @@ import motor  # noqa: E402
 
 def renderizar(log=print, evento=None, progreso=None, solo=None):
     """Renderiza los trabajos en cola del evento. progreso(pct, texto) es opcional. Devuelve [(timeline, ok, ruta)].
-    solo: ["3min", ...] = solo esas versiones (las demas que sigan en la cola de un armado anterior no se tocan)."""
+    solo: ["3min", "VERTICAL 1min", ...] = solo esas versiones, por su etiqueta (lo que va tras « - » en el nombre de
+    la linea); las demas que sigan en la cola de un armado anterior no se tocan."""
     evento = evento or motor.leer_estado().get("evento")
     with motor.CANDADO:
         r = motor.conectar_resolve(log)
@@ -60,6 +61,10 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
             ok = s.get("JobStatus") == "Complete" and tam > 0
             log("%s: %s  %s (%.0f MB)" % (j["TimelineName"], s.get("JobStatus"), ruta, tam))
             res.append((j["TimelineName"], ok, ruta))
+        # DaVinci queda en Edicion con la linea del evento abierta: lista para retocar lo que no guste
+        abierta = motor.dejar_editable(r, p, evento, [j["TimelineName"].split(" - ")[-1] for j in jobs])
+        if abierta:
+            log("En DaVinci queda abierta y editable: %s" % abierta)
     # audio de entrega: -14 LUFS y picos bajo -1 dBTP en todas las versiones (no necesita Resolve)
     import masterizar
     for k, (nombre, ok, ruta) in enumerate(res, 1):

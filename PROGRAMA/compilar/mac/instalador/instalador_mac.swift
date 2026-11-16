@@ -864,8 +864,8 @@ final class Instalacion {
 }
 
 // ---------------------------------------------------------------------------------------------------------------- respaldo
-/// Ventana sencilla de AppKit (título, estado y barra) para una Mac sin gráfica Metal (máquinas virtuales, como la Mac Intel
-/// de GitHub): ahí la ventana animada de SwiftUI se cae al dibujarse. Instala igual. También con «instalar --sencilla».
+/// Ventana sencilla de AppKit (título, estado y barra) para una Mac sin gráfica Metal o con la virtual de una Mac Intel (como
+/// la de GitHub): ahí la ventana animada de SwiftUI se cae al dibujarse. Instala igual. También con «instalar --sencilla».
 final class VistaSencilla {
     let ventana: NSWindow
     let estado = NSTextField(labelWithString: "Preparando la instalación…")
@@ -934,7 +934,14 @@ final class Instalador: NSObject, NSApplicationDelegate {
         }
         let titulo = "Instalar " + NOMBRE
         let ficha = "v\(version)  ·  todo incluido  ·  no pide contraseña"
-        let sinMetal = MTLCreateSystemDefaultDevice() == nil
+        // Sin Metal, o con la gráfica virtual de una Mac Intel («Apple Paravirtual device», p. ej. la de GitHub): ahí SwiftUI
+        // se cae al dibujar («MTLLoader … failed assertion `Target device architecture is nil'», prueba del 2026-11-16).
+        let grafica = MTLCreateSystemDefaultDevice()?.name ?? ""
+        #if arch(x86_64)
+        let sinMetal = grafica.isEmpty || grafica.contains("Paravirtual")
+        #else
+        let sinMetal = grafica.isEmpty
+        #endif
         if sinMetal || args.contains("--sencilla") {
             sencilla = VistaSencilla(titulo: titulo + " " + version)
         } else {
@@ -960,7 +967,9 @@ final class Instalador: NSObject, NSApplicationDelegate {
             empezarDemo()
         } else {
             let inst = Instalacion(m: m, origen: origen, version: version)
-            if sencilla != nil { inst.anotar("ventana sencilla (\(sinMetal ? "esta Mac no tiene gráfica Metal" : "--sencilla"))") }
+            if sencilla != nil {
+                inst.anotar("ventana sencilla (\(sinMetal ? "gráfica: " + (grafica.isEmpty ? "sin Metal" : grafica) : "--sencilla"))")
+            }
             instalando = true
             DispatchQueue.global(qos: .userInitiated).async { inst.correr() }
         }

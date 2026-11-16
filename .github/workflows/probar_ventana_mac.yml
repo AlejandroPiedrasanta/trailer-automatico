@@ -52,6 +52,7 @@ jobs:
       - name: Abrir la ventana (simulacion)
         if: ${{ inputs.solo == '' || inputs.solo == matrix.nombre }}
         run: |
+          set +e                                       # «wait» de un proceso caido o matado no detiene la prueba
           B="$APPI/Contents/MacOS/instalar"
           n=0
           for modo in "--demo" "--demo --sencilla" "--demo-error"; do

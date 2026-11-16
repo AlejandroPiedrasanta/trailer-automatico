@@ -12,7 +12,7 @@ Lo clasificado por CONTENIDO (camara sin hora) se pinta hueco; lo puesto a mano,
 import datetime
 
 from PySide6.QtCore import Qt, QRectF, QPointF, Signal
-from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPainterPath, QPolygonF
+from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPainterPath, QPixmap, QPolygonF
 from PySide6.QtWidgets import QWidget, QToolTip
 
 MOMENTOS = ("MAQUILLAJE", "IGLESIA", "FIESTA")
@@ -48,9 +48,12 @@ class LineaDia(QWidget):
         self.editable = True
         self._arrastra = None
         self._sobre = None
+        self._version = 0           # cambia con los datos: la imagen guardada deja de valer
+        self._imagen = None         # (clave, QPixmap) de lo ultimo pintado
 
     # ------------------------------------------------------------------ datos
     def poner(self, items, fecha, momentos):
+        self._version += 1
         self.items = []
         self.limites = {}
         if not items or not fecha:
@@ -126,7 +129,25 @@ class LineaDia(QWidget):
 
     # ------------------------------------------------------------------ pintura
     def paintEvent(self, _):
-        p = QPainter(self)
+        """Cientos de puntos y barras: se dibujan UNA vez en una imagen y despues solo se copia. Antes se redibujaba
+        todo cada vez que el cielo de fondo parpadeaba (13 veces por segundo, 13 ms cada una: la pestana Material
+        iba a tirones). La imagen se rehace al cambiar los datos, el tamano, los limites o el raton sobre un limite."""
+        dpr = self.devicePixelRatioF()
+        clave = (self.width(), self.height(), dpr, self._version, self._arrastra, self._sobre, self.editable,
+                 tuple(sorted(self.limites.items())), self.font().key())
+        if self._imagen is None or self._imagen[0] != clave:
+            pm = QPixmap(max(1, int(self.width() * dpr)), max(1, int(self.height() * dpr)))
+            pm.setDevicePixelRatio(dpr)
+            pm.fill(Qt.transparent)
+            q = QPainter(pm)
+            try:
+                self._pintar(q)
+            finally:
+                q.end()
+            self._imagen = (clave, pm)
+        QPainter(self).drawPixmap(0, 0, self._imagen[1])
+
+    def _pintar(self, p):
         p.setRenderHint(QPainter.Antialiasing)
         w = self.width()
         alto = 3 * self._carril()

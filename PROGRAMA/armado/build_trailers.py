@@ -157,7 +157,7 @@ LOOK_REC709 = {"1min": "MCP/XV_1min_CINE_TEAL_ORANGE_REC709.cube", "3min": "MCP/
 ACTIVAR_SIEMPRE = ["MULTITEXT"]   # titulos de la plantilla que se activan aunque esten apagados (firma)
 CORTAR_AL_RITMO = True
 ENCOLAR_RENDER = True
-EDITABLE = True                   # deja junto a los videos la linea de cada version (.drt) para retocarla en DaVinci
+EDITABLE = True                   # deja en 3 PLANTILLAS EDITABLES la linea de cada version (.drt) para retocarla
 
 EVENTO = globals().get("EVENTO") or None
 SOLO = globals().get("SOLO") or None
@@ -2826,9 +2826,9 @@ def main():
                     project.SetRenderSettings({"FormatWidth": tam_v[1], "FormatHeight": tam_v[0]})
             except Exception as ex:
                 aviso("%s: no se pudo encolar el render (%s)" % (nombre, ex))
-        if EDITABLE:                             # la plantilla editable de esta version, junto a los videos
+        if EDITABLE:                             # la plantilla editable de esta version, en su propia carpeta
             try:
-                carpeta_ed = os.path.join(salida, rutas.EDITABLE)
+                carpeta_ed = os.path.join(rutas.EDITABLES, evento)
                 os.makedirs(carpeta_ed, exist_ok=True)
                 ruta_ed = os.path.join(carpeta_ed, nombre + ".drt")
                 info["editable"] = ruta_ed if tl.Export(ruta_ed, resolve.EXPORT_DRT) else None

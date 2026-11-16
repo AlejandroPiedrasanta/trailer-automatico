@@ -5,6 +5,7 @@
 - **Carpetas:**
   - `1 MATERIAL`: FOTOS · VIDEOS · DRON.
   - `2 VIDEOS TERMINADOS`.
+  - `3 PLANTILLAS EDITABLES`: `<evento>/<línea>.drt`, la línea de DaVinci de cada versión para retocar (aparte de los videos).
   - `3 INSTALADORES`: Windows (.exe) · Mac (.dmg).
   - `PROGRAMA`: solo carpetas. Código en `interfaz/` (ventana, icono, Inicio), `nucleo/` (motor, rutas, registro, tareas), `analisis/` (material, escenas IA, ritmo), `armado/` (plantillas, SFX, mezcla, IntelliSearch), `entrega/` (render, master) y `herramientas/` (mapa_codigo, empaquetar). Además `config/` (versión, perfiles, requisitos, LEEME), `datos/` (cachés, respaldos, `registro/`), `recursos/`, `recursos_protegidos/`, `dctl/`, `compilar/` (`windows/`, `mac/`, `icono/`) y `docs/` (SKILL, mapa, capturas).
   - Ocultos en la raíz: `.git*`, `.github` y este `CLAUDE.md`.
@@ -21,6 +22,7 @@
 - **boton-play**: El boton GO hace todo: analizar, armar en DaVinci, renderizar, masterizar, abrir carpeta
 - **inicio-escena**: Pantalla de Inicio = la de CineCaptions: esfera de particulas, astrolabio GO, cometas, explosion
 - **ventana**: Ventana sin marco: portada al instante, pestanas Material/Textos/Ajustes (voz original, verticales, ruido), chequeo de arranque, instancia unica
+- **arranque**: Abrir sin tiempo de carga y con fluidez: portada nativa, fuentes (una familia, sin simbolos de reserva, hilo por ctypes), numpy/Pillow al primer uso, linea del dia y cielo guardados, tiempos con TRAILER_TIEMPOS
 - **material**: 1 MATERIAL: minimos, pedir lo que falta, arrastrar/agregar, y el panel 'Como quedo organizado' (linea del dia)
 - **soltar**: Suelta la carpeta y listo: examinar, evento nuevo (ANTERIORES), copiar con avance, ordenar FOTOS/VIDEOS/DRON, armar solo; plan previo sin DaVinci y prueba de arrastre
 - **rutas**: Todas las rutas: codigo vs instalado (.exe), DATOS, carpeta de trabajo, Resolve y LUT por sistema, ffmpeg
@@ -33,7 +35,7 @@
 - **sonido**: SFX por momento, SFX propios en los momentos clave, whoosh, cambio de cancion sin huecos, musica bajo la voz en rampa y mezcla medida en LUFS
 - **formatos**: Dos formatos en Inicio con las mismas duraciones: HORIZONTAL (16:9, acepta videos horizontales y verticales) y VERTICAL (9:16 para celular, solo videos grabados en vertical)
 - **entrega**: Render de la cola (solo las versiones pedidas), audio a -14 LUFS con limitador, medicion del video final y revisar_video.py
-- **editable**: Cada evento terminado queda editable en DaVinci: linea abierta en Edicion, copia .drt junto a los videos, «Editar en DaVinci» y «Renderizar lo editado» (sin volver a armar)
+- **editable**: Cada evento terminado queda editable en DaVinci: linea abierta en Edicion, copia .drt en 3 PLANTILLAS EDITABLES, «Editar en DaVinci» y «Renderizar lo editado» (sin volver a armar)
 - **perfiles**: Tipos de evento (xv, boda, bautizo, graduacion, cumpleanos): titulos, capitulos, frases, gracias
 - **instalador**: Instalador .exe de 1 MB + .dat (abre al instante) como el de CineCaptions: banner animado, PASOS, % y barra; PyInstaller + C#; icono
 - **mac**: Mac: .dmg de «Arrastralo a Aplicaciones» como CineCaptions (sin .pkg ni contrasena), primer arranque, servicio del usuario; se compila en una Mac o GitHub Actions
@@ -50,7 +52,7 @@
   - Nunca `InsertFusionTitleIntoTimeline` ni la herramienta Shadow de Fusion.
   - Los cambios de clips solo funcionan en la timeline activa y ya asentada.
 - **Plantillas:** `TRAILER XV - *` no se tocan; cada evento es un duplicado.
-- **Editable:** al terminar, la línea del evento queda abierta en Edición y su `.drt` en `2 VIDEOS TERMINADOS/<evento>/PLANTILLA EDITABLE (DaVinci)`. ▶ rearma y reemplaza las líneas: sobre un evento ya armado se pregunta antes; lo retocado a mano se saca con «Renderizar lo editado».
+- **Editable:** al terminar, la línea del evento queda abierta en Edición y su `.drt` en `3 PLANTILLAS EDITABLES/<evento>` (carpeta propia, aparte de los videos). ▶ rearma y reemplaza las líneas: sobre un evento ya armado se pregunta antes; lo retocado a mano se saca con «Renderizar lo editado».
 - **Montaje:**
   - 8 fotos en la intro y UNA al final (la mejor de la persona festejada, con la tarjeta final abajo). Fotos dentro del video solo como relleno en el de 30 min (cuando no alcanzan las tomas buenas), antes que repetir o meter una toma fea.
   - Personas: las reconoce DaVinci (IntelliSearch con caras → `it["caras"]`, `it["prota"]`); la festejada es la cara que sale en más archivos y sus tomas y fotos van primero.
@@ -61,6 +63,7 @@
   - Entrega en MOV H.265 a -14 LUFS.
   - Formatos: el horizontal acepta videos horizontales y verticales; el vertical (9:16, mismas duraciones, líneas «… - VERTICAL 1min») solo los grabados en vertical.
 - **Ventana:** en su hilo no se llama a la API de Resolve ni se usa `subprocess`/`sleep`: eso va en hilos (`Trabajo`, `EstadoDV`, `qt_kit.correr_en_hilo`).
+- **Arranque:** el estilo lleva UNA familia de fuente (nunca una lista) y al abrir no se pinta ningún símbolo que Segoe UI no traiga (✓ ☰ ✕ ▶ ⤓ ⚠ ✎, emojis): cualquiera de las dos cosas suma 0,4 s de carga. Nada pesado antes de la ventana (`numpy`, Pillow, lecturas grandes).
 - **Escena de Inicio:** `escena_go`, `estilos_inicio`, `orbe_mecanica`, `ritmo_ui` y `boton_go` vienen de CineCaptions; ahí solo se cambian textos.
 - **Rutas:** siempre con `rutas.py`, porque en el .exe todo queda junto en `sys._MEIPASS`.
   - `import rutas` pone las carpetas de código en `sys.path`; un script suelto agrega antes `PROGRAMA/nucleo`.

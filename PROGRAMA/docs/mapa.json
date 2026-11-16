@@ -102,6 +102,61 @@
   ]
  },
  {
+  "id": "arranque",
+  "resumen": "Abrir sin tiempo de carga y con fluidez: portada nativa, fuentes (una familia, sin simbolos de reserva, hilo por ctypes), numpy/Pillow al primer uso, linea del dia y cielo guardados, tiempos con TRAILER_TIEMPOS",
+  "claves": [
+   "arranque",
+   "arrancar",
+   "abrir",
+   "carga",
+   "lento",
+   "rapido",
+   "fluidez",
+   "fluido",
+   "tirones",
+   "fps",
+   "fuentes",
+   "simbolos",
+   "portada",
+   "tiempos",
+   "rendimiento"
+  ],
+  "archivos": [
+   "PROGRAMA/interfaz/trailer_xv.py",
+   "PROGRAMA/interfaz/linea_dia.py",
+   "PROGRAMA/analisis/analizar_material.py",
+   "PROGRAMA/herramientas/hacer_portada.py"
+  ],
+  "simbolos": [
+   "_tiempo",
+   "_portada_nativa",
+   "_quitar_portada",
+   "_traer_la_abierta",
+   "calentar_fuentes",
+   "primera_que_hay",
+   "estilo_completo",
+   "icono_trazo",
+   "icono_app",
+   "icono_hecho",
+   "_AlUsar",
+   "leer_ultimo",
+   "_revisar_material_fondo",
+   "_pintar_fondo",
+   "_pintar",
+   "_chips_editable"
+  ],
+  "notas": [
+   "Medir: TRAILER_TIEMPOS=1 anota en el registro cada marca _tiempo (portada nativa, QApplication, estilos, paginas, ventana visible, primer cuadro). Con TRAILER_DATOS aparte no choca con el programa ya abierto.",
+   "El tiempo de carga eran las FUENTES de Qt: 0,2 s la lista de la PC + 0,4 s las de reserva, que se disparan con una LISTA de familias en el estilo o con un simbolo que la fuente no trae (✓ ☰ ✕ ▶ ⤓ ⚠ ✎, emojis).",
+   "Reglas: el estilo lleva UNA familia (primera_que_hay); al abrir, ningun simbolo de esos (icono_trazo, y ≡ × ► ↓ que si estan en Segoe UI); saber si esta: QRawFont.fromFont(f).supportsCharacter(ord(c)).",
+   "calentar_fuentes: hilo que llama a Qt por ctypes (QFontMetrics::horizontalAdvance(QChar)); desde Python el hilo retiene el candado y la ventana se para igual. fontengine=gdi NO: cambia las negritas.",
+   "widget.setVisible(True) sin ventana crea una ventanita suelta (0,15 s): nacer ocultos, mostrar al final de __init__. Medir texto (sizeHint) tambien al final.",
+   "Fluidez: LineaDia y Cielo pintan una vez en una imagen (_imagen, _fondo); la ventana lee material_ventana.json (resumen de 100 KB, no los 6 MB); revisar_material va en otro hilo.",
+   "numpy y Pillow: _AlUsar los carga al primer uso; _para_el_empaquetador mantiene el import escrito para PyInstaller. recursos/icono.ico lo hace hacer_portada.py.",
+   "No se toca: escena_go/estilos_inicio/orbe_mecanica (CineCaptions). Lo que queda al abrir es pulir los widgets (0,16 s) y el primer cuadro de la escena (0,14 s)."
+  ]
+ },
+ {
   "id": "material",
   "resumen": "1 MATERIAL: minimos, pedir lo que falta, arrastrar/agregar, y el panel 'Como quedo organizado' (linea del dia)",
   "claves": [
@@ -225,7 +280,8 @@
   ],
   "notas": [
    "Instalado: recursos en sys._MEIPASS, datos en %LOCALAPPDATA%/TrailerAutomatico, BASE = config.carpeta_trabajo o Escritorio/TRAILER XV AUTOMATICO.",
-   "El codigo va en carpetas (nucleo, analisis, armado, entrega, interfaz, herramientas): import rutas las pone en sys.path; rutas.codigo(nombre) y rutas.CONFIG_PROG. En el .exe todo queda junto."
+   "El codigo va en carpetas (nucleo, analisis, armado, entrega, interfaz, herramientas): import rutas las pone en sys.path; rutas.codigo(nombre) y rutas.CONFIG_PROG. En el .exe todo queda junto.",
+   "EDITABLES = <carpeta de trabajo>/3 PLANTILLAS EDITABLES (la crea crear_carpetas junto a 2 VIDEOS TERMINADOS)."
   ]
  },
  {
@@ -618,7 +674,7 @@
  },
  {
   "id": "editable",
-  "resumen": "Cada evento terminado queda editable en DaVinci: linea abierta en Edicion, copia .drt junto a los videos, «Editar en DaVinci» y «Renderizar lo editado» (sin volver a armar)",
+  "resumen": "Cada evento terminado queda editable en DaVinci: linea abierta en Edicion, copia .drt en 3 PLANTILLAS EDITABLES, «Editar en DaVinci» y «Renderizar lo editado» (sin volver a armar)",
   "claves": [
    "editable",
    "plantilla",
@@ -653,7 +709,7 @@
   ],
   "notas": [
    "Al terminar (con o sin render) DaVinci queda en la pagina Edicion con la linea mas corta del evento abierta (dejar_editable); las lineas viven en 02 EVENTOS/<evento> del proyecto EVENTOS CINEMA.",
-   "Copia por version: 2 VIDEOS TERMINADOS/<evento>/PLANTILLA EDITABLE (DaVinci)/<linea>.drt + LEEME.txt (rutas.EDITABLE; build_trailers.EDITABLE la apaga).",
+   "Copia por version: 3 PLANTILLAS EDITABLES/<evento>/<linea>.drt + LEEME.txt (rutas.EDITABLES: carpeta propia de la carpeta de trabajo, aparte de los videos; build_trailers.EDITABLE la apaga).",
    "renderizar_editado: vuelve a poner en cola cada linea TAL COMO ESTA (entre sus marcas de entrada y salida), renderiza, masteriza a -14 LUFS y actualiza el .drt. No arma nada.",
    "▶ sobre un evento ya armado con el mismo material (estado.huella == motor.huella()) pregunta: Renderizar lo editado / Volver a armar (reemplaza las lineas) / Cancelar. El armado automatico tras soltar material no pregunta (_play(auto=True)).",
    "Trabajo(op, funcion): el mismo hilo y la misma escena para armar todo o renderizar lo editado (_arrancar)."

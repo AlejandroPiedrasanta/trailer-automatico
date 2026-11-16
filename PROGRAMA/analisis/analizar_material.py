@@ -49,14 +49,39 @@ VERSION = 5                            # sube cuando cambia lo que se mide: lo v
 PASO_CALIDAD = 0.5                     # segundos por muestra (calidad, color y audio)
 CONFIANZA = {"iphone": 3, "dji": 3, "exif": 2, "nombre": 1, "camara": 1, "archivo": 0}
 
-try:
-    import numpy as np
-except ImportError:      # sin numpy: sin calidad ni color (se usa igual)
-    np = None
-try:
-    from PIL import Image, ImageOps
-except ImportError:      # sin Pillow: las fotos se usan igual, sin brillo ni EXIF
-    Image = None
+class _AlUsar:
+    """Un modulo que se carga la primera vez que se usa. numpy y Pillow solo hacen falta al analizar, pero este
+    archivo lo importa el motor al abrir el programa: cargarlos ahi costaba 80 ms antes de que saliera nada en
+    pantalla (y bastante mas la primera vez tras encender la PC, que hay que leer sus DLL del disco)."""
+
+    def __init__(self, nombre):
+        self.__dict__["_nombre"], self.__dict__["_modulo"] = nombre, None
+
+    def __getattr__(self, atributo):
+        m = self.__dict__["_modulo"]
+        if m is None:
+            import importlib
+            m = self.__dict__["_modulo"] = importlib.import_module(self.__dict__["_nombre"])
+        return getattr(m, atributo)
+
+
+def _hay(nombre):
+    """True si el modulo esta instalado (sin cargarlo)."""
+    try:
+        import importlib.util
+        return importlib.util.find_spec(nombre) is not None
+    except Exception:
+        return False
+
+
+def _para_el_empaquetador():        # nunca se llama: PyInstaller sigue los import escritos, no los de importlib
+    import numpy  # noqa: F401
+    from PIL import Image, ImageOps  # noqa: F401
+
+
+np = _AlUsar("numpy") if _hay("numpy") else None            # sin numpy: sin calidad ni color (se usa igual)
+Image = _AlUsar("PIL.Image") if _hay("PIL") else None       # sin Pillow: las fotos se usan igual, sin brillo ni EXIF
+ImageOps = _AlUsar("PIL.ImageOps") if Image is not None else None
 
 
 def _run(cmd, timeout=900):
@@ -1365,14 +1390,40 @@ def reclasificar(base=DEF_BASE, log=print):
     return res
 
 
+CAMPOS_VENTANA = ("nombre", "tipo", "hora", "dur", "momento", "por", "tramos", "descartar", "horizontal")
+
+
+def _ventana_ruta():
+    return os.path.join(rutas.ANALISIS, "material_ventana.json")
+
+
 def leer_ultimo():
-    """El ultimo analisis guardado (para la ventana), sin medir nada. {} si no hay."""
+    """El ultimo analisis guardado (para la ventana), sin medir nada. {} si no hay.
+    El analisis completo pesa varios MB (la «vista» de cada medio segundo de cada video) y leerlo frena la ventana
+    unas decimas (medido: 50 ms con el candado de Python tomado). La ventana solo pinta unos pocos datos de cada
+    archivo: se guardan aparte, en un resumen de pocos KB que se rehace solo cuando el analisis es mas nuevo."""
+    completo, ligero = _cache_ruta(), _ventana_ruta()
     try:
-        with open(_cache_ruta(), encoding="utf-8") as f:
+        if os.path.getmtime(ligero) >= os.path.getmtime(completo):
+            with open(ligero, encoding="utf-8") as f:
+                return json.load(f)
+    except (OSError, ValueError):
+        pass
+    try:
+        with open(completo, encoding="utf-8") as f:
             j = json.load(f)
-        return {k: j.get(k) for k in ("fecha", "items", "avisos", "camaras", "momentos", "huella")}
     except Exception:
         return {}
+    res = {k: j.get(k) for k in ("fecha", "avisos", "camaras", "momentos", "huella")}
+    res["items"] = [{c: i[c] for c in CAMPOS_VENTANA if c in i} for i in j.get("items") or []]
+    try:
+        tmp = ligero + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(res, f, ensure_ascii=False)
+        os.replace(tmp, ligero)
+    except OSError:
+        pass
+    return res
 
 
 if __name__ == "__main__":

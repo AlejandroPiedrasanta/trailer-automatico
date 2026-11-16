@@ -930,6 +930,7 @@ LEEME_EDITABLE = """PLANTILLA EDITABLE - %(evento)s
 
 Cada archivo .drt de esta carpeta es la linea de tiempo de una version, tal como la armo el programa
 (cortes, color, textos, musica, efectos de sonido y voz). Sirve para retocar lo que no te guste.
+Los videos terminados estan aparte, en la carpeta 2 VIDEOS TERMINADOS.
 
 LO MAS RAPIDO: ya esta dentro de DaVinci Resolve.
   Proyecto EVENTOS CINEMA > carpeta 02 EVENTOS > %(evento)s. En el programa: boton "Editar en DaVinci".
@@ -965,9 +966,9 @@ def lineas_del_evento(project, evento):
 
 
 def leeme_editable(evento):
-    """El LEEME de la carpeta PLANTILLA EDITABLE (DaVinci) del evento, si ya existe la carpeta."""
+    """El LEEME de la carpeta de plantillas editables del evento (3 PLANTILLAS EDITABLES/<EVENTO>), si ya existe."""
     try:
-        carpeta = os.path.join(rutas.TERMINADOS, evento, rutas.EDITABLE)
+        carpeta = os.path.join(rutas.EDITABLES, evento)
         leeme = os.path.join(carpeta, "LEEME.txt")
         if os.path.isdir(carpeta) and not os.path.exists(leeme):
             with open(leeme, "w", encoding="utf-8") as f:
@@ -977,10 +978,10 @@ def leeme_editable(evento):
 
 
 def guardar_editable(resolve, tl, evento, log=None):
-    """Deja junto a los videos la linea editable de esa version: 2 VIDEOS TERMINADOS/<EVENTO>/PLANTILLA EDITABLE
-    (DaVinci)/<linea>.drt, con un LEEME de como usarla. Devuelve la ruta o None."""
+    """Deja la linea editable de esa version en su carpeta, aparte de los videos: 3 PLANTILLAS EDITABLES/<EVENTO>/
+    <linea>.drt, con un LEEME de como usarla. Devuelve la ruta o None."""
     try:
-        carpeta = os.path.join(rutas.TERMINADOS, evento, rutas.EDITABLE)
+        carpeta = os.path.join(rutas.EDITABLES, evento)
         os.makedirs(carpeta, exist_ok=True)
         ruta = os.path.join(carpeta, tl.GetName() + ".drt")
         if not tl.Export(ruta, resolve.EXPORT_DRT):

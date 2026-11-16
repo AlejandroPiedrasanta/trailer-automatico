@@ -25,8 +25,8 @@ COMO SE USA (3 pasos)
    del centro. En "Textos" eliges el tipo de evento y escribes los nombres.
 
 Si algo no te gusta, se retoca: cada evento terminado queda editable en DaVinci Resolve (proyecto
-EVENTOS CINEMA, carpeta 02 EVENTOS) y su copia en 2 VIDEOS TERMINADOS/<evento>/PLANTILLA EDITABLE
-(DaVinci). Pulsa "Editar en DaVinci", cambia lo que quieras y luego "Renderizar lo editado": saca
+EVENTOS CINEMA, carpeta 02 EVENTOS) y su copia en la carpeta 3 PLANTILLAS EDITABLES/<evento>, aparte
+de los videos. Pulsa "Editar en DaVinci", cambia lo que quieras y luego "Renderizar lo editado": saca
 el video de nuevo SIN volver a armarlo. (El boton ▶ si lo arma desde cero.)
 
 El programa hace todo solo: ordena el material (maquillaje, iglesia, fiesta), lo arma en las

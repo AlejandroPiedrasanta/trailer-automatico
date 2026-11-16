@@ -6,6 +6,7 @@ Desde el codigo (carpeta del proyecto):
   TRAILER XV AUTOMATICO/
     1 MATERIAL/  FOTOS · VIDEOS · DRON             <- aqui se sube el material del evento
     2 VIDEOS TERMINADOS/<EVENTO>/                  <- aqui salen los videos listos
+    3 PLANTILLAS EDITABLES/<EVENTO>/               <- la linea de DaVinci de cada version (.drt), para retocar
     PROGRAMA/                                      <- codigo, recursos y datos (datos/)
 
 Instalado (.exe / .app): el programa vive en su carpeta de instalacion (recursos de solo lectura en
@@ -104,7 +105,7 @@ CARPETAS = {"foto": os.path.join(MATERIAL, "FOTOS"),
             "video": os.path.join(MATERIAL, "VIDEOS"),
             "dron": os.path.join(MATERIAL, "DRON")}
 TERMINADOS = os.path.join(BASE, "2 VIDEOS TERMINADOS")
-EDITABLE = "PLANTILLA EDITABLE (DaVinci)"      # dentro de 2 VIDEOS TERMINADOS/<EVENTO>: la linea de cada version (.drt)
+EDITABLES = os.path.join(BASE, "3 PLANTILLAS EDITABLES")     # <EVENTO>/<linea>.drt: la linea de cada version, para retocar
 
 ANALISIS = os.path.join(DATOS, "analisis")
 RESPALDOS = os.path.join(DATOS, "respaldos")
@@ -217,7 +218,7 @@ SIN_VENTANA = 0x08000000 if ES_WIN else 0          # que ffmpeg no abra ventanas
 
 
 def crear_carpetas():
-    for d in list(CARPETAS.values()) + [TERMINADOS, ANALISIS, RESPALDOS]:
+    for d in list(CARPETAS.values()) + [TERMINADOS, EDITABLES, ANALISIS, RESPALDOS]:
         os.makedirs(d, exist_ok=True)
 
 

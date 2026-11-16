@@ -145,6 +145,37 @@ def _portada_nativa():
         return None
 
 
+def _traer_la_abierta():
+    """El programa ya esta abierto y se le dio doble clic otra vez: en vez de un cuadro «ya esta abierto», se trae
+    al frente la ventana que hay (Windows; en la Mac lo hace el sistema solo). True si la encontro."""
+    if not rutas.ES_WIN:
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+        u = ctypes.windll.user32
+        yo, halladas = os.getpid(), []
+
+        def ver(h, _):
+            pid = wintypes.DWORD()
+            u.GetWindowThreadProcessId(h, ctypes.byref(pid))
+            if pid.value != yo and u.IsWindowVisible(h):
+                t = ctypes.create_unicode_buffer(120)
+                u.GetWindowTextW(h, t, 120)
+                if t.value == TITULO_APP:
+                    halladas.append(h)
+            return True
+        u.EnumWindows(ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(ver), 0)
+        if not halladas:
+            return False
+        if u.IsIconic(halladas[0]):
+            u.ShowWindow(halladas[0], 9)                   # SW_RESTORE
+        u.SetForegroundWindow(halladas[0])
+        return True
+    except Exception:
+        return False
+
+
 def _quitar_portada(v):
     if v:
         try:
@@ -160,7 +191,7 @@ def app():
     _tiempo("app()")
     nativa = None if os.environ.get("TRAILER_PRUEBA_ARRASTRE") else _portada_nativa()
     _tiempo("portada nativa")
-    from PySide6.QtCore import (Qt, QThread, Signal, QTimer, QPointF, QRectF, QFileSystemWatcher, QVariantAnimation,
+    from PySide6.QtCore import (Qt, QThread, Signal, QTimer, QPointF, QRectF, QSize, QFileSystemWatcher, QVariantAnimation,
                                 QEasingCurve, QEvent, QLockFile)
     from PySide6.QtGui import (QColor, QIcon, QPainter, QPixmap, QPolygonF, QPen, QBrush, QFont, QPainterPath,
                                QRadialGradient, QLinearGradient, QConicalGradient)
@@ -174,7 +205,89 @@ def app():
     ORO, ORO_CLARO, ORO_OSCURO = QColor("#C9A267"), QColor("#EBCB8F"), QColor("#6E4C24")
     ESMERALDA, ESMERALDA_CLARO, ESMERALDA_OSCURO = QColor("#22C47E"), QColor("#7CF2C0"), QColor("#06301F")
     TEXTO, TENUE, AMBAR, ROJO = "#EAF2F0", "#8FA3A8", "#F2B84B", "#F07A6A"
-    FUENTE = '"Segoe UI Variable Display", "Segoe UI", "SF Pro Display", "Helvetica Neue", "Arial"'
+    # ---- fuentes (medido el 2026-11-16 en una PC con 628 familias; todo esto era «tiempo de carga» al abrir)
+    #  1. La primera vez que Qt mide un texto arma la lista de fuentes de la PC: 0,2 s.
+    #  2. Si un estilo pide una LISTA de familias («Cascadia Mono», «Consolas», ...) o un texto trae un simbolo que su
+    #     fuente no tiene (✓ ☰ ✕ ▶ ⤓ ⚠ ✎, emojis), Qt prepara ademas TODAS las fuentes de reserva: otros 0,4 s. Lo
+    #     disparaba el panel de registro (oculto) por su lista, y los simbolos de la barra y las pastillas.
+    # Por eso: el estilo lleva UNA familia (la primera de la lista que existe, que es lo que la lista elegia); al abrir
+    # no se pinta ningun simbolo de esos (iconos dibujados y equivalentes que la fuente si trae: ≡ × ► ↓); y las dos
+    # cosas se preparan en un hilo que llama a Qt directamente, sin el candado de Python (calentar_fuentes).
+    FAMILIAS_UI = ("Segoe UI Variable Display", "Segoe UI", "SF Pro Display", "Helvetica Neue", "Arial")
+    FAMILIAS_MONO = ("Cascadia Mono", "Consolas", "Menlo", "Courier New")
+
+    def primera_que_hay(familias):
+        """La primera familia instalada, entre comillas para el estilo (lo mismo que resolveria la lista entera)."""
+        from PySide6.QtGui import QFontDatabase
+        for f in familias:
+            try:
+                if QFontDatabase.hasFamily(f):
+                    return '"%s"' % f
+            except Exception:
+                break
+        return ", ".join('"%s"' % f for f in familias)
+
+    def calentar_fuentes():
+        """Windows: devuelve preparar(caracter), que mide un caracter llamando a Qt directamente (ctypes) y por eso
+        puede correr en otro hilo SIN parar la ventana (medido: el hilo de la ventana sigue a toda velocidad; con
+        QFontMetrics desde Python se quedaba parado igual). «I» arma la lista de fuentes de la PC; «✓» prepara las
+        de reserva. None si no se puede (otro sistema u otra version de Qt): entonces se hace solo, al primer uso."""
+        if not rutas.ES_WIN:
+            return None
+        try:
+            import ctypes
+            import shiboken6
+            from PySide6.QtGui import QFontMetrics
+            try:
+                gui = ctypes.CDLL("Qt6Gui.dll")
+            except OSError:
+                import PySide6
+                gui = ctypes.CDLL(os.path.join(os.path.dirname(PySide6.__file__), "Qt6Gui.dll"))
+            medir = getattr(gui, "?horizontalAdvance@QFontMetrics@@QEBAHVQChar@@@Z")   # int (QChar) const, x64
+            medir.restype = ctypes.c_int
+            medir.argtypes = [ctypes.c_void_p, ctypes.c_ushort]
+            f = QFont()
+            f.setPixelSize(14)
+            fm = QFontMetrics(f)
+            puntero = shiboken6.getCppPointer(fm)[0]
+
+            def preparar(caracter, _vivo=fm):                 # _vivo: el objeto de Qt no se libera mientras se use
+                try:
+                    medir(puntero, ord(caracter))
+                except Exception:
+                    pass
+            return preparar
+        except Exception:
+            return None
+
+    def icono_trazo(tipo, color, lado=14):
+        """Iconos de trazo dibujados (palomita, lapiz): nitidos a cualquier escala y sin pedir ninguna fuente."""
+        k = 4                                                  # se dibuja a 4x y Qt lo reduce segun la pantalla
+        pm = QPixmap(lado * k, lado * k)
+        pm.setDevicePixelRatio(k)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(QPen(QColor(color), lado * 0.13, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        p.setBrush(Qt.NoBrush)
+        s = float(lado)
+        camino = QPainterPath()
+        if tipo == "palomita":
+            camino.moveTo(s * 0.16, s * 0.54)
+            camino.lineTo(s * 0.40, s * 0.77)
+            camino.lineTo(s * 0.86, s * 0.25)
+        elif tipo == "lapiz":
+            camino.moveTo(s * 0.14, s * 0.86)                  # punta
+            camino.lineTo(s * 0.20, s * 0.62)
+            camino.lineTo(s * 0.66, s * 0.16)                  # cuerpo
+            camino.lineTo(s * 0.84, s * 0.34)
+            camino.lineTo(s * 0.38, s * 0.80)
+            camino.closeSubpath()
+            camino.moveTo(s * 0.55, s * 0.27)                  # la virola
+            camino.lineTo(s * 0.73, s * 0.45)
+        p.drawPath(camino)
+        p.end()
+        return QIcon(pm)
 
     QSS = """
     QWidget { color: %(t)s; font-family: %(f)s; font-size: 14px; }
@@ -186,7 +299,7 @@ def app():
     QPushButton#tab:hover { color: %(t)s; background: rgba(255,255,255,0.05); }
     QPushButton#tab:checked { background: #22C47E; color: #04150D; }
     QPushButton#icono { background: rgba(14, 30, 38, 0.82); border: 1px solid rgba(34,196,126,0.45);
-                        border-radius: 12px; font-size: 16px; padding: 0; }
+                        border-radius: 12px; font-size: 24px; padding: 0 0 3px 0; }
     QPushButton#icono:hover, QPushButton#icono:checked { background: rgba(34,196,126,0.18); }
     QFrame#ventanita { background: rgba(14, 30, 38, 0.82); border: 1px solid rgba(255,255,255,0.06);
                        border-radius: 18px; }
@@ -194,7 +307,8 @@ def app():
                        color: %(m)s; padding: 0; }
     QPushButton#ctrl:hover { background: rgba(255,255,255,0.08); color: %(t)s; }
     QPushButton#cerrar:hover { background: #C42B1C; color: white; }
-    QPushButton#cerrar { background: transparent; border: 1px solid transparent; border-radius: 10px; color: %(m)s; padding: 0; }
+    QPushButton#cerrar { background: transparent; border: 1px solid transparent; border-radius: 10px; color: %(m)s;
+                         padding: 0 0 2px 0; font-size: 21px; }
     QFrame#aviso { border-radius: 10px; border: 1px solid rgba(34,196,126,0.40); background: rgba(10, 40, 30, 0.72); }
     QFrame#aviso[tipo="warn"] { border-color: rgba(242,184,75,0.55); background: rgba(48, 36, 10, 0.78); }
     QFrame#aviso[tipo="error"] { border-color: rgba(240,122,106,0.6); background: rgba(52, 18, 16, 0.78); }
@@ -245,7 +359,7 @@ def app():
     QSlider::handle:horizontal { background: white; border: 2px solid #22C47E; width: 14px; margin: -6px 0;
                                  border-radius: 9px; }
     QPlainTextEdit { background: rgba(4, 12, 18, 0.88); border: 1px solid rgba(255,255,255,0.08);
-                     border-radius: 14px; padding: 8px; font-family: "Cascadia Mono", "Consolas", "Menlo", monospace;
+                     border-radius: 14px; padding: 8px; font-family: %(mono)s;
                      font-size: 12px; color: #B8C7CB; }
     QScrollBar:vertical { background: transparent; width: 8px; }
     QScrollBar::handle:vertical { background: rgba(255,255,255,0.15); border-radius: 4px; min-height: 24px; }
@@ -265,7 +379,10 @@ def app():
                                                    border-radius: 10px; padding: 8px 16px; font-weight: 600; min-width: 84px; }
     QMessageBox QPushButton:hover, QDialog QPushButton:hover { background: rgba(255,255,255,0.13); }
     QMessageBox QPushButton:default, QDialog QPushButton:default { background: #22C47E; color: #04150D; border-color: #22C47E; }
-    """ % {"t": TEXTO, "m": TENUE, "f": FUENTE}
+    """          # se completa al aplicarlo: %(t)s %(m)s y las familias %(f)s %(mono)s (ver estilo_completo)
+
+    def estilo_completo():
+        return QSS % {"t": TEXTO, "m": TENUE, "f": primera_que_hay(FAMILIAS_UI), "mono": primera_que_hay(FAMILIAS_MONO)}
 
     # ------------------------------------------------------------------ trabajos en segundo plano
     class Trabajo(QThread):
@@ -486,13 +603,15 @@ def app():
                                    [(0.78, 0.66), (0.84, 0.60), (0.91, 0.64), (0.88, 0.76), (0.95, 0.80)],
                                    [(0.80, 0.18), (0.86, 0.12), (0.93, 0.22)]]
             self.t = 0.0
+            self._fondo = None                  # (ancho, alto, escala, QPixmap): degradados y constelaciones, ya pintados
             reloj = QTimer(self)
             reloj.timeout.connect(self._tic)
             reloj.start(70)
 
         def _tic(self):
             self.t += 0.07
-            self.update()
+            if self.isVisible() and not self.window().isMinimized():      # minimizada no se pinta nada
+                self.update()
 
         def pausar(self, si):                   # bajo la escena de Inicio no hace falta animarlo
             r = self.findChild(QTimer)
@@ -504,19 +623,23 @@ def app():
             if getattr(self, "al_cambiar", None):
                 self.al_cambiar()
 
-        def paintEvent(self, _):
-            p = QPainter(self)
+        def _pintar_fondo(self, w, h, escala):
+            """Lo que no cambia (dos degradados a toda la ventana y las constelaciones), pintado una sola vez por
+            tamano: rellenar esos degradados en cada latido costaba varios ms y arrastraba a todo lo de encima."""
+            pm = QPixmap(max(1, int(w * escala)), max(1, int(h * escala)))
+            pm.setDevicePixelRatio(escala)
+            p = QPainter(pm)
             p.setRenderHint(QPainter.Antialiasing)
-            w, h = self.width(), self.height()
+            todo = QRectF(0, 0, w, h)
             g = QRadialGradient(QPointF(w * 0.5, h * 0.45), max(w, h) * 0.75)
             g.setColorAt(0.0, QColor("#12303A"))
             g.setColorAt(0.45, QColor("#0B1C26"))
             g.setColorAt(1.0, QColor("#050C13"))
-            p.fillRect(self.rect(), g)
+            p.fillRect(todo, g)
             neb = QRadialGradient(QPointF(w * 0.82, h * 0.30), w * 0.35)
             neb.setColorAt(0.0, QColor(40, 90, 110, 40))
             neb.setColorAt(1.0, QColor(40, 90, 110, 0))
-            p.fillRect(self.rect(), neb)
+            p.fillRect(todo, neb)
             p.setPen(QPen(QColor(150, 190, 200, 45), 1))
             for linea in self.constelaciones:
                 pts = [QPointF(x * w, y * h) for x, y in linea]
@@ -525,6 +648,16 @@ def app():
                 p.setBrush(QColor(200, 230, 235, 150))
                 for q in pts:
                     p.drawEllipse(q, 1.8, 1.8)
+            p.end()
+            return pm
+
+        def paintEvent(self, _):
+            w, h, escala = self.width(), self.height(), self.devicePixelRatioF()
+            if self._fondo is None or self._fondo[:3] != (w, h, escala):
+                self._fondo = (w, h, escala, self._pintar_fondo(w, h, escala))
+            p = QPainter(self)
+            p.drawPixmap(0, 0, self._fondo[3])
+            p.setRenderHint(QPainter.Antialiasing)
             p.setPen(Qt.NoPen)
             for x, y, r, fase, vel in self.estrellas:
                 a = 70 + 110 * (0.5 + 0.5 * math.sin(self.t * vel + fase))
@@ -533,6 +666,11 @@ def app():
 
     def icono_app():
         """El icono del programa (icono_app.py) en varios tamanos: la barra de tareas elige el que le toca."""
+        hecho = os.path.join(rutas.RECURSOS, "icono.ico")       # lo deja hacer_portada.py; dibujarlo aqui costaba 0,12 s
+        if os.path.exists(hecho):
+            ico = QIcon(hecho)
+            if not ico.isNull():
+                return ico
         import icono_app as ic
         ico = QIcon()
         for t in (16, 24, 32, 48, 64, 128, 256):
@@ -552,6 +690,7 @@ def app():
             self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
             self.setWindowTitle(TITULO_APP)
             self.setWindowIcon(icono_app())
+            _tiempo("  icono")
             self.setAcceptDrops(True)
             self.setMinimumSize(880, 580)                 # cabe en una laptop de 1366 x 768 al 125 %
             self.resize(1240, 860)
@@ -585,7 +724,6 @@ def app():
             self.tabs = {}
             for i, txt in enumerate(("Inicio", "Material", "Textos", "Ajustes")):
                 b = QPushButton(txt, objectName="tab", checkable=True)
-                b.setMinimumWidth(b.sizeHint().width())        # que no se corte el texto en una ventana angosta
                 b.setCursor(Qt.PointingHandCursor)
                 self.grupo_tabs.addButton(b, i)
                 self.tabs[txt] = b
@@ -597,7 +735,7 @@ def app():
             hn.addWidget(self.punto)
             barra.addWidget(nav)
             barra.addStretch(1)
-            self.b_log = QPushButton("☰", objectName="icono", checkable=True)
+            self.b_log = QPushButton("≡", objectName="icono", checkable=True)       # ≡ si esta en la fuente; ☰ no
             self.b_log.setFixedSize(44, 44)
             self.b_log.setToolTip("Ver lo que va haciendo")
             barra.addWidget(self.b_log)
@@ -606,13 +744,14 @@ def app():
             hc = QHBoxLayout(ctrls)
             hc.setContentsMargins(6, 4, 6, 4)
             for txt, nombre, acc in (("—", "ctrl", self.showMinimized), ("□", "ctrl", self._maximizar),
-                                     ("✕", "cerrar", self.close)):
+                                     ("×", "cerrar", self.close)):          # × si esta en la fuente; ✕ no
                 b = QPushButton(txt, objectName=nombre)
                 b.setFixedSize(38, 30)
                 b.clicked.connect(acc)
                 hc.addWidget(b)
             barra.addWidget(ctrls)
             raiz.addLayout(barra)
+            _tiempo("  barra")
 
             # --- aviso
             self.aviso = QFrame(objectName="aviso")
@@ -645,6 +784,7 @@ def app():
             medio.addWidget(self.registro)
             raiz.addLayout(medio, 1)
             self.paginas.addWidget(self._pagina_inicio())
+            _tiempo("  pagina Inicio")
             for pag in (self._pagina_material(), self._pagina_textos(), self._pagina_ajustes()):
                 sa = QScrollArea()                       # en una pantalla chica se desplazan en vez de agrandar la ventana
                 sa.setWidgetResizable(True)
@@ -656,6 +796,7 @@ def app():
                 pag.setAutoFillBackground(False)        # setWidget lo enciende: el cielo debe verse detras
                 self.paginas.addWidget(sa)
             self.grupo_tabs.idClicked.connect(self.paginas.setCurrentIndex)
+            _tiempo("  demas paginas")
             import escena_go                         # la escena de Inicio de CineCaptions (esfera de particulas)
             self.escena = escena_go.EscenaGo(self.cielo)
             self.escena.lower()
@@ -671,6 +812,7 @@ def app():
             self.b_log.toggled.connect(self._ancho_registro)
             self.paginas.currentChanged.connect(self._ancho_registro)
             self.hoja = Hoja(self.cielo)             # «suelta aqui», preguntas y cuenta atras, sobre toda la ventana
+            _tiempo("  escena")
 
             pie = QHBoxLayout()
             pie.addStretch(1)
@@ -680,12 +822,16 @@ def app():
             # --- vigilancia de carpetas y chequeo
             self.vigia = QFileSystemWatcher([d for d in rutas.CARPETAS.values() if os.path.isdir(d)], self)
             self.espera = QTimer(self, singleShot=True, interval=800)
-            self.espera.timeout.connect(self._revisar_material)
+            self.espera.timeout.connect(self._revisar_material_fondo)
             self.vigia.directoryChanged.connect(lambda _: self.espera.start())
             self.t_dv = QTimer(self)
             self.t_dv.timeout.connect(self._ver_davinci)
             self.t_dv.start(10000)
             QApplication.instance().installEventFilter(self)       # bordes para cambiar el tamano
+            for b in self.tabs.values():                           # que no se corte el texto en una ventana angosta
+                b.setMinimumWidth(b.sizeHint().width())            # (al final: mide texto, y las fuentes ya cargaron)
+            self._chips_editable(bool(self.est.get("evento") and self.est.get("timelines")))
+            _tiempo("  final")
             QTimer.singleShot(300, self._arranque)
 
         # ============================================================== paginas
@@ -749,7 +895,8 @@ def app():
                                         "a -14 LUFS, SIN volver a armar (▶ sí arma desde cero).")
             self.chip_render.clicked.connect(self._renderizar_editado)
             fila_c.addWidget(self.chip_render)
-            self._chips_editable()
+            self.chip_editar.hide()                 # se muestran al final de __init__: aqui aun no tienen ventana y
+            self.chip_render.hide()                 # mostrarlos crearia una ventanita suelta (0,15 s y un parpadeo)
             self.chip_cancelar = QPushButton("Cancelar la copia", objectName="chip")
             self.chip_cancelar.setCursor(Qt.PointingHandCursor)
             self.chip_cancelar.clicked.connect(self._cancelar_copia)
@@ -760,6 +907,7 @@ def app():
             v.addSpacing(6)
             # formatos: que versiones se arman en horizontal (16:9) y cuales en vertical (9:16, solo videos verticales)
             eleg_h, eleg_v = versiones_guardadas(self.est)
+            self._palomita = icono_trazo("palomita", "#B9FFE0", 13)       # dibujada: «✓» no esta en la fuente
             self.pills, self.pills_v, self.etqs_formato, self.bs_todas = {}, {}, [], []
             for etq, ayuda, pills, elegidas in (
                     ("HORIZONTAL", "16:9 · usa los videos horizontales y también los verticales", self.pills, eleg_h),
@@ -773,8 +921,9 @@ def app():
                 fila_p.addWidget(l)
                 fila_p.addSpacing(6)
                 for ver in motor.VERSIONES:
-                    b = QPushButton(("✓  " if ver in elegidas else "") + VERSION_TEXTO[ver], objectName="pill",
-                                    checkable=True)
+                    b = QPushButton((" " if ver in elegidas else "") + VERSION_TEXTO[ver], objectName="pill", checkable=True)
+                    b.setIconSize(QSize(13, 13))
+                    b.setIcon(self._palomita if ver in elegidas else QIcon())
                     b.setCursor(Qt.PointingHandCursor)
                     b.setMinimumWidth(106)        # con o sin ✓ miden igual: las dos filas quedan alineadas
                     b.setChecked(ver in elegidas)
@@ -833,7 +982,7 @@ def app():
             tit.setStyleSheet("font-size: 30px;")
             cab.addWidget(tit)
             cab.addStretch(1)
-            self.l_copia = QLabel("⤓  Arrastra fotos, videos o carpetas a la ventana: se ordenan solos")
+            self.l_copia = QLabel("↓  Arrastra fotos, videos o carpetas a la ventana: se ordenan solos")
             self.l_copia.setWordWrap(True)
             self.l_copia.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.l_copia.setStyleSheet("color:%s;" % TENUE)
@@ -920,7 +1069,7 @@ def app():
                     len(raros), "s" if len(raros) > 1 else "", "n" if len(raros) > 1 else "",
                     ", ".join("%s/%s" % c for c in raros[:3]) + ("…" if len(raros) > 3 else ""))
             if not items:
-                self.l_org.setText("  ·  todavía sin analizar: pulsa «Analizar ahora» o ▶")
+                self.l_org.setText("  ·  todavía sin analizar: pulsa «Analizar ahora» o ►")
                 self.b_analizar.setText("Analizar ahora")
                 for l in self.l_momentos.values():
                     l.setText("")
@@ -945,9 +1094,17 @@ def app():
             if nota_raros:
                 av.append(nota_raros)
             vert = sum(1 for i in items if i["tipo"] != "foto" and not i.get("horizontal", True))
-            if vert:
-                av.append("%d video%s vertical%s (celular parado) queda%s fuera del montaje 16:9." % (
-                    vert, "s" if vert > 1 else "", "es" if vert > 1 else "", "n" if vert > 1 else ""))
+            if vert:                     # ya no quedan fuera: entran al horizontal y son los del formato vertical
+                varios = vert > 1
+                if self.ch_vert.isChecked():
+                    av.append("%d video%s vertical%s (celular parado): entra%s entero%s al video horizontal, con los "
+                              "lados desenfocados, y %s del formato VERTICAL." % (
+                                  vert, "s" if varios else "", "es" if varios else "", "n" if varios else "",
+                                  "s" if varios else "", "son los" if varios else "es el"))
+                else:
+                    av.append("%d video%s vertical%s (celular parado): fuera del video horizontal (lo apagaste en "
+                              "Ajustes); %s del formato VERTICAL." % (
+                                  vert, "s" if varios else "", "es" if varios else "", "son los" if varios else "es el"))
             for mom in linea_dia.MOMENTOS:
                 if not any(i["tipo"] != "foto" and i.get("momento") == mom and not i.get("descartar") for i in items):
                     av.append("%s no tiene videos: esa parte se llena con material de todo el evento." %
@@ -1349,8 +1506,11 @@ def app():
             tipo = self.c_tipo.currentText() if hasattr(self, "c_tipo") else \
                 dict(TIPOS).get(self.est.get("tipo_evento", "xv"), "XV años")
             nombre = self.e_nombre.text().strip() if hasattr(self, "e_nombre") else self.est.get("nombre_xv", "")
-            self.chip_evento.setText(("✎  %s%s" % (tipo, ("  ·  " + nombre) if nombre else "  ·  escribe los nombres"))
+            self.chip_evento.setText(("%s%s" % (tipo, ("  ·  " + nombre) if nombre else "  ·  escribe los nombres"))
                                      .replace("&", "&&"))
+            if self.chip_evento.icon().isNull():                      # el lapiz, dibujado («✎» no esta en la fuente)
+                self.chip_evento.setIconSize(QSize(14, 14))
+                self.chip_evento.setIcon(icono_trazo("lapiz", "#EBCB8F", 14))
 
         def _cambio_plantillas(self, _=None):
             if not any(b.isChecked() for b in self._pastillas()):
@@ -1358,7 +1518,8 @@ def app():
                 (quien if quien in self._pastillas() else self.pills[motor.VERSIONES[0]]).setChecked(True)
             for pills in (self.pills, self.pills_v):
                 for v, b in pills.items():
-                    b.setText(("✓  " if b.isChecked() else "") + VERSION_TEXTO[v])
+                    b.setIcon(self._palomita if b.isChecked() else QIcon())
+                    b.setText((" " if b.isChecked() else "") + VERSION_TEXTO[v])     # un respiro entre palomita y texto
             self._sub_material()
 
         def _pastillas(self, con_todas=False, con_etiquetas=False):
@@ -1388,12 +1549,22 @@ def app():
             if m["ok"]:
                 self._sub("● %d fotos · %d videos · %d dron  ·  armará %s" % (c["foto"], c["video"], c["dron"], vers), "ok")
             else:
-                self._sub("● Falta material: %s  ·  pulsa ▶ y te digo qué agregar" % ", ".join(
+                self._sub("● Falta material: %s  ·  pulsa ► y te digo qué agregar" % ", ".join(
                     "%d %s" % (n, motor.NOMBRE_CARPETA[t].lower()) for t, n in m["faltan"]))
 
-        def _revisar_material(self):
+        def _revisar_material_fondo(self):
+            """Lo mismo, pero contando los archivos en otro hilo: recorrer 1 MATERIAL frenaba la ventana unos 60 ms
+            cada vez que cambiaba la carpeta y justo al abrir."""
+            def listo(res, error):
+                if error is not None:
+                    self._avisar("No pude revisar 1 MATERIAL: %s" % error, "error")
+                elif res:
+                    self._revisar_material(res)
+            qt_kit.correr_en_hilo(self, motor.revisar_material, listo)
+
+        def _revisar_material(self, hecho=None):
             try:
-                self.material = motor.revisar_material()
+                self.material = hecho or motor.revisar_material()
             except Exception as ex:
                 self._avisar("No pude revisar 1 MATERIAL: %s" % ex, "error")
                 return
@@ -1417,7 +1588,7 @@ def app():
 
         def _arranque(self):
             rutas.crear_carpetas()
-            self._revisar_material()
+            self._revisar_material_fondo()
             self._avisar("Chequeo de arranque…")
             self.cheq = Chequeo()
             self.cheq.fin.connect(self._fin_chequeo)
@@ -1486,7 +1657,7 @@ def app():
                 e.acceptProposedAction()
                 self.hoja.mostrar("soltar", "Suelta aquí la carpeta del evento",
                                   "La ordeno en fotos, videos y dron, la organizo por momentos\ny armo el tráiler.",
-                                  icono="⤓")
+                                  icono="↓")
 
         def dragLeaveEvent(self, e):
             self.hoja.ocultar("soltar")
@@ -2040,9 +2211,9 @@ def app():
             for a in (self.resultado.get("avisos") or [])[:3]:        # lo que el formato vertical no pudo armar
                 self._avisar(a, "warn")
             if not self.resultado.get("editado"):
-                self._avisar("La línea queda editable en DaVinci (02 EVENTOS › %s) y su copia en «%s», junto a los "
-                             "videos. Si retocas algo, pulsa «Renderizar lo editado»."
-                             % (self.resultado.get("evento", ""), rutas.EDITABLE))
+                self._avisar("La línea queda editable en DaVinci (02 EVENTOS › %s) y su copia en la carpeta «%s». Si "
+                             "retocas algo, pulsa «Renderizar lo editado»."
+                             % (self.resultado.get("evento", ""), os.path.basename(rutas.EDITABLES)))
             self.chip_editar.show()
             self.chip_render.show()
 
@@ -2174,6 +2345,17 @@ def app():
     _tiempo("clases definidas")
     qapp = QApplication(sys.argv)
     _tiempo("QApplication")
+    import threading
+    preparar_fuentes = calentar_fuentes()
+    if preparar_fuentes:                                    # la lista de fuentes de la PC, ya, en su hilo
+        threading.Thread(target=preparar_fuentes, args=("I",), name="fuentes", daemon=True).start()
+    # Mientras esa lista se arma (0,2 s), aqui se hace lo que no necesita letras: cargar el codigo de la escena de
+    # Inicio y de las paginas (0,1 s de puro Python). Despues el estilo ya pide fuentes y esperaria igual.
+    try:
+        import boton_go, escena_go, linea_dia  # noqa: F401
+    except Exception:
+        pass
+    _tiempo("modulos de la escena")
     # Portada de Qt donde no hay nativa (Mac): mientras se construye la ventana completa (estilos, escena de Inicio).
     # En Windows ya esta puesta la nativa (_portada_nativa), que sale mucho antes: Qt tarda ~1 s en su primera ventana.
     portada = None
@@ -2204,14 +2386,16 @@ def app():
     _tiempo("portada visible")
     qapp.setApplicationName(TITULO_APP)
     qapp.setStyle("Fusion")
-    qapp.setStyleSheet(QSS)
+    qapp.setStyleSheet(estilo_completo())
+    _tiempo("estilos")
     candado = QLockFile(os.path.join(rutas.DATOS, "programa.lock"))
     candado.setStaleLockTime(0)
     if not candado.tryLock(200):                           # una sola ventana abierta a la vez
         _quitar_portada(nativa)
         if portada is not None:
             portada.close()
-        QMessageBox.information(None, TITULO_APP, "El programa ya está abierto.")
+        if not _traer_la_abierta():                        # ya esta abierto: esa ventana, al frente y sin cuadros
+            QMessageBox.information(None, TITULO_APP, "El programa ya está abierto.")
         return 0
     if portada is not None:
         try:
@@ -2221,12 +2405,17 @@ def app():
             pass
     rutas.crear_carpetas()
     win = Ventana()
+    _tiempo("ventana armada")
     win.show()
     _tiempo("ventana visible")
     qapp.processEvents()                                   # la ventana ya pintada: ahora si se quita la portada
     _quitar_portada(nativa)
     if portada is not None:
         portada.finish(win)
+    _tiempo("primer cuadro pintado")
+    if preparar_fuentes:                                    # con la ventana ya a la vista: las fuentes de reserva
+        QTimer.singleShot(120, lambda: threading.Thread(target=preparar_fuentes, args=("✓",), name="fuentes de reserva",
+                                                        daemon=True).start())
     if os.environ.get("TRAILER_PRUEBA_ARRASTRE"):          # prueba de punta a punta: suelta una carpeta y mira que arme
         import prueba_arrastre
         win._guion = prueba_arrastre.Guion(win, qapp, os.environ["TRAILER_PRUEBA_ARRASTRE"],

@@ -307,7 +307,8 @@
    "Lo unico a la vista: SALIDA (Escritorio, o config.carpeta_terminados de Ajustes) / «EVENTO TERMINADO - <evento>» con VIDEO TERMINADO y PLANTILLAS DE LOS VIDEOS: carpeta_terminado, videos_terminados, plantillas_evento. TERMINADOS = SALIDA (espacio del render).",
    "nombre_video(linea): «... - 15min» -> «VIDEO FINAL 15 MIN»; «... - VERTICAL 1min» -> «VIDEO FINAL VERTICAL 1 MIN» (video y su .drp).",
    "pasar_adentro (lo llama tareas.instalar): lo de la carpeta de trabajo vieja a la vista (config.carpeta_trabajo o Escritorio/Trailer automatico) pasa a su sitio y la carpeta se quita si queda vacia. La que tiene PROGRAMA/ (la del proyecto) nunca se toca.",
-   "El codigo va en carpetas (nucleo, analisis, armado, entrega, interfaz, herramientas): import rutas las pone en sys.path; rutas.codigo(nombre) y rutas.CONFIG_PROG. En el .exe todo queda junto."
+   "El codigo va en carpetas (nucleo, analisis, armado, entrega, interfaz, herramientas): import rutas las pone en sys.path; rutas.codigo(nombre) y rutas.CONFIG_PROG. En el .exe todo queda junto.",
+   "(16-nov) La carpeta del proyecto solo tiene PROGRAMA y 3 INSTALADORES: desde el codigo BASE = PROGRAMA/datos/trabajo y SALIDA = Escritorio (igual que instalado); lanzadores en PROGRAMA/herramientas; empaquetar usa dirname(rutas.PROGRAMA)."
   ]
  },
  {
@@ -888,7 +889,7 @@
    "PROGRAMA/compilar/mac/dmg/fondo_dmg.py",
    "PROGRAMA/compilar/mac/dmg/ajustes_dmg.py",
    ".github/workflows/mac.yml",
-   "ARMAR TRAILERS.command",
+   "PROGRAMA/herramientas/ARMAR TRAILERS.command",
    "PROGRAMA/herramientas/empaquetar.py",
    "PROGRAMA/compilar/mac/probar_arrastrar.sh",
    "PROGRAMA/compilar/mac/probar_flujo.sh",

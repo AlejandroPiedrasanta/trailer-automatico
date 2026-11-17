@@ -12,7 +12,7 @@ El material y el trabajo van por dentro del programa: a la vista solo queda, en 
 carpeta por evento terminado (se puede cambiar en Ajustes). Si algo falla, el registro está en %LOCALAPPDATA%\TrailerAutomatico\registro\registro.log.
 
 COMO SE USA (3 pasos)
-1. Abre "Tráiler automático" (o doble clic en ARMAR TRAILERS.bat / .command sin instalar).
+1. Abre "Tráiler automático" (o, sin instalar, doble clic en PROGRAMA\herramientas\ARMAR TRAILERS).
 2. Pon el material: arrastra la carpeta del evento (o fotos y videos sueltos) a la ventana: se ordena
    solo en FOTOS, VIDEOS y DRON. Si arrastras otra carpeta despues, se une al mismo evento.
    Tambien puedes usar la pestana "Material" > Agregar...
@@ -45,9 +45,10 @@ LO QUE SALE (en el Escritorio, una carpeta por evento)
                                  ya con proxies para que reproduzca fluido: por si hay que corregir algo
 
 CARPETAS (version sin instalar)
-  1 MATERIAL ............ el material del evento (lo llena el programa al arrastrar la carpeta)
-  PROGRAMA .............. lo tecnico: no hace falta abrirla
-  ARMAR TRAILERS ........ el boton
+  PROGRAMA .............. lo tecnico: no hace falta abrirla. El material va por dentro
+                          (PROGRAMA\datos\trabajo) y el boton para abrirlo sin instalar es
+                          PROGRAMA\herramientas\ARMAR TRAILERS (.bat en Windows, .command en Mac)
+  3 INSTALADORES ........ los instaladores de Windows y Mac
 
 
 EN MAC (la primera vez)
@@ -55,7 +56,8 @@ EN MAC (la primera vez)
    el programa instala ffmpeg solo.
 2. En DaVinci: Preferencias > Sistema > General > Scripting externo = Local.
 3. Copia esta carpeta completa a la Mac (o usa el .dmg de "3 INSTALADORES\Mac").
-4. Doble clic en "ARMAR TRAILERS.command". Si la Mac dice que no puede abrirlo: clic derecho >
+4. Doble clic en "ARMAR TRAILERS.command" (en PROGRAMA/herramientas, o junto a PROGRAMA en el paquete
+   de Mac). Si la Mac dice que no puede abrirlo: clic derecho >
    Abrir > Abrir. La primera vez tarda unos minutos (instala lo necesario) y pide tu clave una
    vez para la carpeta de color de DaVinci.
 5. La primera vez que pulses ▶, el programa instala las plantillas en DaVinci (proyecto

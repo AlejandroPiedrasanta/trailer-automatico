@@ -1,7 +1,9 @@
 #!/bin/bash
 # ▶ TRAILER AUTOMATICO (Mac) - doble clic para abrir el programa.
 # La primera vez prepara todo solo: librerias de Python, ffmpeg y la carpeta de LUTs de DaVinci.
-cd "$(dirname "$0")/PROGRAMA" || exit 1
+# esta en PROGRAMA/herramientas (carpeta del proyecto) o junto a PROGRAMA (paquete publico de Mac)
+AQUI="$(dirname "$0")"
+if [ -d "$AQUI/PROGRAMA/interfaz" ]; then cd "$AQUI/PROGRAMA" || exit 1; else cd "$AQUI/.." || exit 1; fi
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 VENV="datos/venv-mac"
 LUT="/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/MCP"

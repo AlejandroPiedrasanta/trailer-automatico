@@ -2,13 +2,13 @@
 
 - **Qué es:** app PySide6 (Python 3.14, versión en `PROGRAMA/config/version.txt`) que arma tráilers de eventos (XV, boda, bautizo, graduación, cumpleaños) en DaVinci Resolve Studio 21 y los renderiza. Funciona en Windows y Mac.
 - **En Resolve:** base `EVENTOS`, proyecto `EVENTOS CINEMA`, plantillas `TRAILER XV - 1min/3min/15min/30min`.
-- **Carpetas:**
-  - `1 MATERIAL`: FOTOS · VIDEOS · DRON · ANTERIORES (instalado va POR DENTRO, en `DATOS/trabajo`: nada a la vista). Desde la 1.5.7 una carpeta soltada NO se copia aquí: se usa donde está.
-  - `EVENTO TERMINADO - <evento>`: lo único a la vista (instalado, en el Escritorio): `VIDEO TERMINADO` (`VIDEO FINAL 1 MIN`, `VIDEO FINAL VERTICAL 1 MIN`…) y `PLANTILLAS DE LOS VIDEOS` (un proyecto `.drp` por video, mismo nombre: solo esa línea, con proxies y caché). `2 VIDEOS TERMINADOS` y `3 PLANTILLAS EDITABLES` son de antes de la 1.5.7.
+- **Carpetas:** en la raíz del proyecto solo hay DOS a la vista, `PROGRAMA` y `3 INSTALADORES` (la persona, 16-nov). No poner nada más ahí.
+  - `1 MATERIAL`: FOTOS · VIDEOS · DRON · ANTERIORES, siempre POR DENTRO: `DATOS/trabajo` (instalado) o `PROGRAMA/datos/trabajo` (desde el código). Una carpeta soltada NO se copia aquí: se usa donde está.
+  - `EVENTO TERMINADO - <evento>`: en el Escritorio (instalado y desde el código): `VIDEO TERMINADO` (`VIDEO FINAL 1 MIN`, `VIDEO FINAL VERTICAL 1 MIN`…) y `PLANTILLAS DE LOS VIDEOS` (un proyecto `.drp` por video, mismo nombre: solo esa línea, con proxies y caché). Los de antes de la 1.5.7 (`2 VIDEOS TERMINADOS`, `3 PLANTILLAS EDITABLES`) ya se pasaron ahí.
   - `3 INSTALADORES`: Windows (.exe) · Mac (.dmg).
   - `PROGRAMA`: solo carpetas. Código en `interfaz/` (ventana, icono, Inicio), `nucleo/` (motor, rutas, registro, tareas), `analisis/` (material, escenas IA, ritmo), `armado/` (plantillas, SFX, mezcla, IntelliSearch), `entrega/` (render, master) y `herramientas/` (mapa_codigo, empaquetar). Además `config/` (versión, perfiles, requisitos, LEEME), `datos/` (cachés, respaldos, `registro/`), `recursos/`, `recursos_protegidos/`, `dctl/`, `compilar/` (`windows/`, `mac/`, `icono/`) y `docs/` (SKILL, mapa, capturas).
-  - Ocultos en la raíz: `.git*`, `.github` y este `CLAUDE.md`.
-  - `LEEME.txt`: para la persona.
+  - Ocultos en la raíz: `.git*`, `.github` y este `CLAUDE.md` (atributo oculto).
+  - `LEEME.txt` para la persona: `PROGRAMA/config/LEEME.txt`. Para abrir sin instalar: `PROGRAMA/herramientas/ARMAR TRAILERS.bat` / `.command` (también sirven junto a `PROGRAMA` en el paquete de Mac).
 
 ## Encontrar algo sin leer archivos (en este orden)
 1. `python PROGRAMA/herramientas/mapa_codigo.py mapa <palabras>` da el tema. `mapa id=<tema>` da sus archivos, sus símbolos con la línea y sus notas.

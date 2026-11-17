@@ -2,11 +2,13 @@
 """
 rutas.py - Todas las carpetas del programa y las rutas de DaVinci Resolve, en Windows y en Mac.
 
-Desde el codigo (carpeta del proyecto):
+Desde el codigo (carpeta del proyecto; la persona, 2026-11-16: «en la carpeta solo dejame 2 carpetas, una del programa y
+otra del instalador»):
   TRAILER XV AUTOMATICO/
-    1 MATERIAL/  FOTOS · VIDEOS · DRON · ANTERIORES   <- el material del evento (lo copia el programa al soltar la carpeta)
-    EVENTO TERMINADO - <EVENTO>/                   <- lo que sale: VIDEO TERMINADO/ y PLANTILLAS DE LOS VIDEOS/ (.drp)
-    PROGRAMA/                                      <- codigo, recursos y datos (datos/)
+    PROGRAMA/                                      <- codigo, recursos y datos; el trabajo POR DENTRO, como instalado:
+      datos/trabajo/1 MATERIAL/  FOTOS · VIDEOS · DRON · ANTERIORES
+    3 INSTALADORES/                                <- Windows (.exe + .dat) y Mac (.dmg)
+  Lo terminado sale en el Escritorio, igual que instalado: «EVENTO TERMINADO - <evento>».
 
 Instalado (.exe / .app), desde la 1.5.7 (la persona, 2026-11-16: «el usuario no debe tener nada a la vista, solo la carpeta
 que se crea cuando termina el video»): el programa vive en su carpeta de instalacion (recursos de solo lectura en
@@ -87,19 +89,19 @@ def guardar_config(d):
 
 
 def _base():
-    """La carpeta de trabajo (1 MATERIAL): instalado, POR DENTRO (datos/trabajo), nada a la vista."""
+    """La carpeta de trabajo (1 MATERIAL): POR DENTRO (datos/trabajo), nada a la vista. Desde el codigo tambien (16-nov:
+    la carpeta del proyecto solo tiene PROGRAMA y 3 INSTALADORES): PROGRAMA/datos/trabajo."""
     if os.environ.get("TRAILER_BASE"):
         return os.path.abspath(os.environ["TRAILER_BASE"])
-    if not CONGELADO:
-        return os.path.dirname(PROGRAMA)
     return os.path.join(DATOS, "trabajo")
 
 
 def _salida():
-    """Donde quedan los eventos terminados (lo unico a la vista): el Escritorio, o la carpeta elegida en Ajustes."""
+    """Donde quedan los eventos terminados (lo unico a la vista): el Escritorio, o la carpeta elegida en Ajustes. Igual
+    desde el codigo (antes salian en la carpeta del proyecto)."""
     if os.environ.get("TRAILER_SALIDA"):
         return os.path.abspath(os.environ["TRAILER_SALIDA"])
-    if os.environ.get("TRAILER_BASE") or not CONGELADO:
+    if os.environ.get("TRAILER_BASE"):
         return BASE
     elegida = leer_config().get("carpeta_terminados")
     if elegida and os.path.isdir(elegida):

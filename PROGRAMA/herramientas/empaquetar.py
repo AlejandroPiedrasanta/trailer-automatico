@@ -3,8 +3,8 @@
 empaquetar.py - Crea "3 INSTALADORES/Mac/Trailer automatico (Mac).zip": el programa listo para copiar a una Mac
 (o a otra PC), sin el material ni los videos del evento.
 
-  - ARMAR TRAILERS.command con permiso de ejecucion (el doble clic funciona al descomprimir en la Mac).
-  - Carpetas vacias 1 MATERIAL/FOTOS|VIDEOS|DRON (lo terminado sale en «EVENTO TERMINADO - <evento>»).
+  - ARMAR TRAILERS.command con permiso de ejecucion (el doble clic funciona al descomprimir en la Mac) y el LEEME.
+  - El material va por dentro (PROGRAMA/datos/trabajo, se crea solo); lo terminado sale en «EVENTO TERMINADO - <evento>».
   - PROGRAMA completo: codigo, plantillas de Resolve (.drp), musica y SFX, fuentes, DCTL y LUTs.
     Sin PROGRAMA/datos (analisis, respaldos, entorno de Python): se crean solos en la Mac.
 
@@ -23,9 +23,13 @@ RAIZ_ZIP = "TRAILER AUTOMATICO"
 SALTAR = {"datos", "__pycache__", "compilar"}
 
 
+RAIZ = os.path.dirname(rutas.PROGRAMA)        # la carpeta del proyecto (solo PROGRAMA y 3 INSTALADORES, 16-nov)
+HERRAMIENTAS = os.path.join(rutas.PROGRAMA, "herramientas")
+
+
 def empaquetar(log=print):
-    os.makedirs(os.path.join(rutas.BASE, "3 INSTALADORES", "Mac"), exist_ok=True)
-    destino = os.path.join(rutas.BASE, "3 INSTALADORES", "Mac", NOMBRE)
+    os.makedirs(os.path.join(RAIZ, "3 INSTALADORES", "Mac"), exist_ok=True)
+    destino = os.path.join(RAIZ, "3 INSTALADORES", "Mac", NOMBRE)
     tmp = destino + ".tmp"
     n = 0
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
@@ -41,20 +45,21 @@ def empaquetar(log=print):
             info = zipfile.ZipInfo(RAIZ_ZIP + "/" + nombre.rstrip("/") + "/")
             info.external_attr = (0o40755 << 16) | 0x10
             z.writestr(info, b"")
-        for f in ("ARMAR TRAILERS.command", "ARMAR TRAILERS.bat", "LEEME.txt"):
-            p = os.path.join(rutas.BASE, f)
+        # (16-nov) los lanzadores viven en PROGRAMA/herramientas y el LEEME en PROGRAMA/config; en el paquete van a la
+        # vista, junto a PROGRAMA (los lanzadores sirven en los dos sitios). El material va por dentro (datos/trabajo).
+        for f, p in (("ARMAR TRAILERS.command", os.path.join(HERRAMIENTAS, "ARMAR TRAILERS.command")),
+                     ("ARMAR TRAILERS.bat", os.path.join(HERRAMIENTAS, "ARMAR TRAILERS.bat")),
+                     ("LEEME.txt", os.path.join(rutas.CONFIG_PROG, "LEEME.txt"))):
             if os.path.exists(p):
                 agregar(p, f, f.endswith(".command"))
                 n += 1
-        for sub in ("FOTOS", "VIDEOS", "DRON"):
-            carpeta_vacia("1 MATERIAL/" + sub)          # lo terminado sale en «EVENTO TERMINADO - <evento>» (1.5.7)
         for raiz, dirs, archivos in os.walk(rutas.PROGRAMA):
             dirs[:] = [d for d in dirs if d not in SALTAR]
             for f in archivos:
                 if f.endswith((".pyc", ".tmp")):
                     continue
                 p = os.path.join(raiz, f)
-                rel = os.path.relpath(p, rutas.BASE).replace(os.sep, "/")
+                rel = os.path.relpath(p, RAIZ).replace(os.sep, "/")
                 agregar(p, rel)
                 n += 1
     os.replace(tmp, destino)

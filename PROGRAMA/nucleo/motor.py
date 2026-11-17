@@ -897,9 +897,11 @@ def resolve_abierto():
     """True si el proceso de DaVinci Resolve esta corriendo (sin tocar su API: nunca se cuelga)."""
     try:
         if rutas.ES_WIN:
+            # (17-nov) en bytes: tasklist responde en la pagina de codigos de la consola (Windows en espanol: acentos
+            # en cp850) y leerlo como texto UTF-8 rompia la lectura («DaVinci cerrado» aunque estuviera abierto)
             r = subprocess.run(["tasklist", "/FI", "IMAGENAME eq Resolve.exe", "/NH"], capture_output=True,
-                               text=True, timeout=5, creationflags=rutas.SIN_VENTANA)
-            return "resolve.exe" in r.stdout.lower()
+                               timeout=5, creationflags=rutas.SIN_VENTANA)
+            return b"resolve.exe" in (r.stdout or b"").lower()
         r = subprocess.run(["pgrep", "-x", "Resolve"], capture_output=True, text=True, timeout=5)
         return r.returncode == 0
     except Exception:

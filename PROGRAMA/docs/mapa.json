@@ -391,6 +391,34 @@
   ]
  },
  {
+  "id": "oido",
+  "resumen": "Oido (earshot, opcional): escucha cada toma (aplausos, vitores, risas, llanto, habla, musica, campanas) para la emocion del armado y revisa clics, huecos y saturacion del audio final (marcadores amarillos)",
+  "claves": [],
+  "archivos": [
+   "PROGRAMA/analisis/oido.py",
+   "PROGRAMA/analisis/analizar_material.py",
+   "PROGRAMA/armado/build_trailers.py",
+   "PROGRAMA/entrega/renderizar.py",
+   "PROGRAMA/entrega/revision_ia.py",
+   "PROGRAMA/interfaz/trailer_xv.py"
+  ],
+  "simbolos": [
+   "python_earshot",
+   "estado",
+   "escuchar",
+   "revisar_audio",
+   "falta",
+   "_oir",
+   "emocion",
+   "marcar",
+   "_revisar_oido"
+  ],
+  "notas": [
+   "(17-nov) earshot vive en su Python (uv tool install); oido.py le escribe un ayudante (datos/oido) que carga el AST una vez. ffmpeg por tuberia, sin la cache de audio de earshot. Corre en un hilo mientras la IA mira (CPU vs GPU). Boda: aplauso real 0,68; Crowd 0,3 en toda la pista (no cuenta). Nunca descarta tomas.",
+   "(17-nov) En Windows, si un hilo lee la tuberia de entrada, crear un proceso que la herede se traba: el ayudante vigila el PID del programa (no lee stdin) y ffmpeg va con stdin=DEVNULL. revisar_audio va con numpy en el programa: solo clics sueltos (un sintetizador daba 70 seguidos)."
+  ]
+ },
+ {
   "id": "resolve",
   "resumen": "Conexion con DaVinci: abrir, cargar/importar proyecto, cuadros que bloquean, reenlazar medios",
   "claves": [
@@ -1076,6 +1104,62 @@
    "Windows: tarea \"Trailer automatico Actualizaciones\" (cada 4 h, al iniciar sesion) corre --tarea actualizar_fondo e instala /silencioso /noabrir. Con el programa abierto: lo baja y lo instala al cerrar o con Instalar ahora.",
    "Mac: LaunchDaemon com.cinemaproductions.trailerautomatico.actualizar (root) instala el .pkg sin contrasena; pedidos en /Users/Shared/TrailerAutomatico/pedidos; .sin_abrir hace que el postinstall no abra la app.",
    "Probar sin publicar: TRAILER_URL_ACTUALIZACIONES=file:///...version.json firmado con la clave real."
+  ]
+ },
+ {
+  "id": "limpieza",
+  "resumen": "Borrar cache en Ajustes: cache de render de DaVinci (18 GB en la boda), proxies, respaldos viejos, actualizaciones instaladas y temporales; nunca material, videos, plantillas ni capturas",
+  "claves": [
+   "cache",
+   "borrar",
+   "disco",
+   "espacio",
+   "limpiar",
+   "proxies",
+   "respaldos",
+   "temporales",
+   "CacheClip"
+  ],
+  "archivos": [
+   "PROGRAMA/nucleo/limpieza.py",
+   "PROGRAMA/entrega/editable.py",
+   "PROGRAMA/interfaz/trailer_xv.py"
+  ],
+  "simbolos": [
+   "que_hay",
+   "borrar",
+   "recordar_cache",
+   "_borrar_cache",
+   "resolve_abierto"
+  ],
+  "notas": [
+   "(17-nov) La API de DaVinci no borra su cache: se borra <perfCacheClipsLocation>/<id del proyecto>, anotado en config cache_davinci por editable.recordar_cache. Con DaVinci abierto no se toca."
+  ]
+ },
+ {
+  "id": "pruebas",
+  "resumen": "Como probar sin gastar tokens: datos aislados (TRAILER_DATOS), armado sin DaVinci (storyboard / exec de build_trailers), ventana real con grab(), oido y audio final, compilar Windows + Mac Apple Silicon",
+  "claves": [],
+  "archivos": [
+   "PROGRAMA/herramientas/storyboard.py",
+   "PROGRAMA/nucleo/prueba_arrastre.py",
+   "PROGRAMA/analisis/oido.py",
+   "PROGRAMA/compilar/windows/construir.ps1",
+   "PROGRAMA/compilar/mac/construir_desde_windows.ps1"
+  ],
+  "simbolos": [
+   "planear",
+   "revisar_audio",
+   "escuchar"
+  ],
+  "notas": [
+   "Datos aislados: TRAILER_DATOS / TRAILER_BASE / TRAILER_SALIDA a una carpeta del scratchpad. PROGRAMA/datos/** no se lee (regla) y puede tener OTRO evento (17-nov: una XV): am.analizar ahi lanza la IA de vision sobre todo.",
+   "build_trailers NO se importa (pide resolve): exec con los globals de storyboard.planear (motor._ResolveFalso, DRY_RUN, SIN_RESOLVE). Con ANALISIS vacio falla al final pero deja Planificador y sus constantes.",
+   "Ventana real: modulo falso prueba_arrastre en sys.modules con Guion(w, app, carpeta, salida) + TRAILER_PRUEBA_ARRASTRE; w._ir(\"Ajustes\"); w.grab().save(png). TRAILER_VISION_MODELO=ninguno apaga la IA.",
+   "Oido sin earshot: TRAILER_EARSHOT_PY=<ruta que no existe>. Audio final: oido.revisar_audio(ruta) (numpy, 1-7 s).",
+   "Boda de practica: D:/BODA 7 NOVIEMBRE (ya renombrada); videos en Escritorio/EVENTO TERMINADO - BODA 7 NOVIEMBRE.",
+   "Salidas: | Select-Object -Last N; lo largo en segundo plano con salida a archivo (Select-Object guarda todo hasta el final). El scratchpad se puede vaciar solo: guardar ahi solo lo desechable.",
+   "Compilar (solo si se pide): version.txt; construir.ps1 (Windows, instalar /silencioso); Mac SOLO Apple Silicon: commit + push y construir_desde_windows.ps1 (GitHub Actions, gh)."
   ]
  }
 ]

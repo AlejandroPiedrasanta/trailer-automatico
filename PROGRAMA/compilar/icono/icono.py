@@ -35,8 +35,9 @@ def guardar(ruta_ico):
 
 
 def limpiar(entrada, salida=None, lado=1024):
-    """Prepara una imagen del icono (cuadro redondeado sobre fondo claro, con sombra) como icono_fuente.png: recorta
-    el cuadro, le quita el fondo y la sombra (esquinas transparentes con borde suave) y la deja de lado x lado."""
+    """Prepara una imagen del icono (cuadro redondeado sobre fondo claro con sombra, o sobre fondo negro) como
+    icono_fuente.png: recorta el cuadro, le quita el fondo y la sombra (esquinas transparentes con borde suave) y la
+    deja de lado x lado."""
     from PIL import Image, ImageDraw, ImageFilter
     import numpy as np
     salida = salida or os.path.join(PROG, "recursos", "icono_fuente.png")
@@ -44,7 +45,12 @@ def limpiar(entrada, salida=None, lado=1024):
     a = np.asarray(im).astype(np.float32)
     lum = a.mean(axis=2)
     fondo = float(np.median(np.concatenate([lum[:5, :5].ravel(), lum[-5:, -5:].ravel()])))
-    oscuro = lum < fondo - 60                               # el cuadro es oscuro; el fondo y la sombra, claros
+    if fondo > 128:
+        oscuro = lum < fondo - 60                           # el cuadro es oscuro; el fondo y la sombra, claros
+    else:
+        # (16-nov) fondo negro (el icono «Oro y terciopelo» de Higgsfield): el cuadro es lo que no es negro
+        esquina = np.median(np.concatenate([a[:5, :5].reshape(-1, 3), a[-5:, -5:].reshape(-1, 3)]), axis=0)
+        oscuro = np.abs(a - esquina).sum(axis=2) > 18
     filas = np.where(oscuro.sum(axis=1) > oscuro.shape[1] * 0.10)[0]
     cols = np.where(oscuro.sum(axis=0) > oscuro.shape[0] * 0.10)[0]
     x0, x1, y0, y1 = int(cols.min()), int(cols.max()) + 1, int(filas.min()), int(filas.max()) + 1

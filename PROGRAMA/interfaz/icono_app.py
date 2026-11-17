@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-icono_app.py - El icono del programa (el diseno que eligio la persona): cuadro redondeado morado-azul con borde neon,
-un play con perforaciones de pelicula, dentro una pareja bailando con luz dorada y el publico de fiesta, una cinta de
-pelicula que lo envuelve, tijeras de edicion y destellos.
+icono_app.py - El icono del programa (el diseno que eligio la persona). Desde el 16-nov: «Oro y terciopelo» (hecho con
+Higgsfield): cuadro de terciopelo morado, un play de oro cepillado con la pareja bailando recortada y un destello (la
+imagen en recursos/icono_fuente.png; a 16-24 px, _chico). Antes: cuadro morado-azul con borde neon, play con
+perforaciones de pelicula, la pareja bailando con el publico, cinta de pelicula, tijeras y destellos (_vectorial, que
+queda sin usar).
 
   dibujar(t) -> QImage t x t con fondo transparente. Lo usan la ventana (barra de tareas) y compilar/icono/icono.py
   (.ico de Windows, .icns de la Mac). Se dibuja con vectores: nitido en todos los tamanos; en los chicos (16-48 px)
@@ -33,15 +35,55 @@ CHICO, MEDIANO = 24, 48        # hasta CHICO px: version simplificada; hasta MED
 
 
 def dibujar(t):
-    """El icono a t x t. La imagen de la persona es muy detallada: a 16-24 px (barra de tareas, pestanas, lista de
-    programas) se volvia una mancha borrosa. En esos tamanos va la version simplificada (el mismo cuadro morado con
-    borde neon y el play dorado, que si se lee); de 25 a 48 px, la imagen con mascara de enfoque; mas grande, tal cual."""
+    """El icono a t x t. La imagen es muy detallada: a 16-24 px (barra de tareas, pestanas, lista de programas) se
+    volveria una mancha. En esos tamanos va la version simplificada (_chico: el cuadro de terciopelo y el play de oro,
+    que si se lee); de 25 a 48 px, la imagen con mascara de enfoque; mas grande, tal cual."""
     f = _fuente()
     if f and t > CHICO:
         img = _desde_imagen(f, t)
         if img is not None:
             return _afilar(img, 1.1) if t <= MEDIANO else img
-    return _vectorial(t)
+    return _chico(t)
+
+
+# (16-nov) El icono «Oro y terciopelo» (Higgsfield, la persona lo eligio entre 8 propuestas: «solo el icono sin
+# texto»): cuadro de terciopelo morado, play de oro cepillado con la pareja bailando recortada y un destello.
+TRIANGULO_ORO = ((0.245, 0.185), (0.255, 0.840), (0.825, 0.515))     # el play de ese icono, en 0-1 del cuadro
+
+
+def _chico(t):
+    """El icono simplificado para 16-24 px (y si faltara la imagen): el cuadro de terciopelo morado y el play de oro
+    con las puntas redondeadas; la pareja recortada no se ve a ese tamano."""
+    img = QImage(t, t, QImage.Format_ARGB32)
+    img.fill(Qt.transparent)
+    p = QPainter(img)
+    p.setRenderHint(QPainter.Antialiasing)
+    m = t * 0.02
+    rect = QRectF(m, m, t - 2 * m, t - 2 * m)
+    fondo = QLinearGradient(rect.topLeft(), rect.bottomRight())
+    fondo.setColorAt(0.0, QColor("#4A1442"))
+    fondo.setColorAt(1.0, QColor("#1E0619"))
+    p.setPen(Qt.NoPen)
+    p.setBrush(fondo)
+    p.drawRoundedRect(rect, rect.width() * 0.225, rect.width() * 0.225)
+
+    def P(x, y):
+        return QPointF(m + x * rect.width(), m + y * rect.height())
+    tri = QPainterPath()
+    tri.addPolygon(QPolygonF([P(x, y) for x, y in TRIANGULO_ORO]))
+    tri.closeSubpath()
+    trazo = QPainterPathStroker()
+    trazo.setWidth(t * 0.07)
+    trazo.setJoinStyle(Qt.RoundJoin)
+    tri = tri.united(trazo.createStroke(tri))                     # las puntas redondeadas, como el de oro
+    oro = QLinearGradient(P(0.25, 0.18), P(0.80, 0.85))
+    oro.setColorAt(0.0, QColor("#FFE7A6"))
+    oro.setColorAt(0.5, QColor("#F0B54A"))
+    oro.setColorAt(1.0, QColor("#B97A1E"))
+    p.setBrush(oro)
+    p.drawPath(tri)
+    p.end()
+    return img
 
 
 def _afilar(img, cuanto):

@@ -136,8 +136,33 @@ def proxies_y_cache(project, log=print):
     return n
 
 
+def recordar_cache(project):
+    """(17-nov) Anota donde guarda DaVinci la cache de render de este proyecto (<perfCacheClipsLocation>/<id>), para
+    que «Borrar caché» de Ajustes la pueda borrar aunque DaVinci este cerrado (limpieza.py). En la boda: 18 GB."""
+    try:
+        loc = project.GetSetting("perfCacheClipsLocation") or ""
+        uid = project.GetUniqueId() or ""
+    except Exception:
+        return
+    if not loc or not uid:
+        return
+    c = rutas.leer_config()
+    d = c.get("cache_davinci") or {}
+    ids = set(d.get(loc) or [])
+    if uid in ids:
+        return
+    ids.add(uid)
+    d[loc] = sorted(ids)
+    c["cache_davinci"] = d
+    try:
+        rutas.guardar_config(c)
+    except Exception:
+        pass
+
+
 def cache(project, log=print):
     """Usar los proxies cuando hay + cache de render inteligente y automatica."""
+    recordar_cache(project)
     hechos = []
     for k, v in (("perfProxyMediaMode", "1"), ("perfRenderCacheMode", "smart"), ("perfAutoRenderCacheEnable", "1"),
                  ("perfAutoRenderCacheAfterTime", "5"), ("perfAutoRenderCacheTransition", "1"),

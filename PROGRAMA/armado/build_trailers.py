@@ -89,6 +89,11 @@ PESO_PROTA, PESO_SIN_CARAS = 1.25, 0.72
 # (1.5.7) lo que VE la IA local en cada toma (analizar_material -> vision_ia, it["ia"]): los momentos clave suben, los
 # novios / la festejada un poco, y lo que no sirve (si no quedo ya fuera) casi no entra
 CLAVE_IA = {"beso", "anillos", "votos", "primer_baile", "pastel", "brindis", "entrada", "lagrimas", "risas"}
+# (1.5.9) el oido (analisis/oido.py, earshot): sonido -> (desde que probabilidad cuenta, emocion maxima). Boda 7-nov: el
+# aplauso real da 0,68; los vitores de la pista 0,2-0,4
+OIDO_EMOCION = {"aplausos": (0.3, 0.9), "vitores": (0.25, 0.85), "risas": (0.2, 0.85), "llanto": (0.2, 0.85),
+                "campanas": (0.3, 0.6)}
+OIDO_PESO_VOLUMEN = 0.5       # con el oido, el volumen solo vale la mitad
 # (1.5.7) multicamara: un plano emotivo con otra camara que grabo lo mismo se parte en dos angulos
 MULTICAM_MAX, MULTICAM_MIN_S, MULTICAM_EMOCION = 3, 2.4, 0.6
 PESO_CLAVE_IA, PESO_PROTA_IA, PESO_GENTE_IA, PESO_INUTIL_IA = 1.35, 1.12, 1.05, 0.3
@@ -557,6 +562,26 @@ class Planificador:
             fin = fr["fin"] + (8.0 if fr["tipo"] == "DECLARACION" else 2.0)    # tras "puede besar...": el beso
             for i in range(max(0, int((fr["ini"] - 1.0) / PASO_CALIDAD)), min(n, int(fin / PASO_CALIDAD) + 1)):
                 emo[i] = max(emo[i], 0.6 + 0.4 * fr.get("puntaje", 0.5))
+        # (1.5.9) lo que ESCUCHO el oido (earshot): aplausos, vitores, risas, llanto, campanas, en ventanas de 8 s cada
+        # 4 s (cada medio segundo vale el promedio de las ventanas que lo cubren). Con el oido, el volumen solo pesa
+        # menos: la musica fuerte o alguien hablando junto al micro no son emocion
+        oido = v.get("oido") or {}
+        paso, ven = oido.get("paso"), oido.get("ventana")
+        if paso and ven:
+            emo = [e * OIDO_PESO_VOLUMEN for e in emo]
+            for grupo, (umbral, tope) in OIDO_EMOCION.items():
+                serie = oido.get(grupo) or []
+                if not serie or max(serie) < umbral:
+                    continue
+                suma, cuenta = [0.0] * n, [0] * n
+                for j, p in enumerate(serie):
+                    for i in range(int(j * paso / PASO_CALIDAD), min(n, int((j * paso + ven) / PASO_CALIDAD))):
+                        suma[i] += p
+                        cuenta[i] += 1
+                for i in range(n):
+                    p = suma[i] / cuenta[i] if cuenta[i] else 0.0
+                    if p >= umbral:
+                        emo[i] = max(emo[i], tope - 0.3 + 0.3 * min(1.0, (p - umbral) / umbral))
         # (1.5.7) los instantes clave que VIO la IA local en la toma (el beso, los anillos, el pastel...): ±3 s
         for x in (v.get("ia") or {}).get("instantes") or []:
             t, et = x[0], x[1]

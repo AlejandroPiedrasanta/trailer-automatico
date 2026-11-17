@@ -1356,6 +1356,7 @@ def app():
                              ("Abrir DaVinci Resolve", rutas.abrir_resolve),
                              ("Videos terminados", self._abrir_terminado),
                              ("Nombres originales", self._restaurar_nombres),
+                             ("Borrar caché", self._borrar_cache),
                              ("Carpeta del programa", lambda: rutas.abrir(rutas.PROGRAMA))):
                 b = QPushButton(txt, objectName="borde")
                 b.clicked.connect(acc)
@@ -1410,6 +1411,23 @@ def app():
             g4.addWidget(self.b_ia)
             v.addWidget(caja4)
             QTimer.singleShot(1500, self._revisar_ia)
+            caja5 = QFrame(objectName="vidrio")                 # (1.5.9) el oido (earshot) que escucha cada toma
+            g5 = QHBoxLayout(caja5)
+            g5.setContentsMargins(26, 14, 26, 14)
+            l5 = QLabel("Oído")
+            l5.setStyleSheet("font-weight:700;")
+            g5.addWidget(l5)
+            self.l_oido = QLabel("Revisando…")
+            self.l_oido.setStyleSheet("color:%s;" % TENUE)
+            self.l_oido.setWordWrap(True)
+            g5.addWidget(self.l_oido, 1)
+            self.b_oido = QPushButton("Cómo instalarlo", objectName="borde")
+            self.b_oido.setCursor(Qt.PointingHandCursor)
+            self.b_oido.hide()
+            self.b_oido.clicked.connect(self._instalar_oido)
+            g5.addWidget(self.b_oido)
+            v.addWidget(caja5)
+            QTimer.singleShot(1600, self._revisar_oido)
             pie = QLabel("Versión %s  ·  registro: %s" % (rutas.version(), rutas.REGISTRO))
             pie.setStyleSheet("color:%s; font-size:12px;" % TENUE)
             pie.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -1451,6 +1469,28 @@ def app():
             self.l_ia.setText("Bajando el modelo… (puede tardar varios minutos)")
             qt_kit.correr_en_hilo(self, lambda: vision_ia.instalar_modelo(registro.info),
                                   lambda r, e: self._revisar_ia())
+
+        # ============================================================== oido (1.5.9)
+        def _revisar_oido(self):
+            """En un hilo: ¿esta earshot, el oido que escucha cada toma y el audio final?"""
+            import oido
+            qt_kit.correr_en_hilo(self, oido.estado, self._pintar_oido, baja=True)
+
+        def _pintar_oido(self, r, error):
+            if error is not None or not r:
+                self.l_oido.setText("No se pudo revisar el oído.")
+                return
+            texto, listo = r
+            self.l_oido.setText(texto)
+            self.b_oido.setVisible(not listo)
+
+        def _instalar_oido(self):
+            import oido
+            QApplication.clipboard().setText(oido.INSTALAR)
+            QMessageBox.information(self, TITULO_APP, "El oído es earshot (%s): libre y local, sin internet.\n\n"
+                                    "Para instalarlo, en una terminal con uv:\n\n%s\n\n(El comando ya quedó copiado.) "
+                                    "La primera vez baja su modelo de sonidos (1 GB). Luego abre el programa otra vez."
+                                    % (oido.PAGINA, oido.INSTALAR))
 
         # ============================================================== actualizaciones
         def _buscar_actualizacion(self, manual=False):
@@ -1570,6 +1610,51 @@ def app():
                                       "No se pudieron restaurar los nombres: %s" % error if error is not None
                                       else "Nombres originales restaurados: %d archivos." % (n or 0),
                                       "error" if error is not None else "ok"))
+
+        def _borrar_cache(self):
+            """(17-nov) «Borrar caché»: lo que el programa vuelve a hacer solo si hace falta (caché de render de DaVinci,
+            proxies, respaldos viejos, actualizaciones ya instaladas, temporales; limpieza.py). Nunca el material, los
+            videos terminados, las plantillas, las capturas de la intro ni los nombres originales."""
+            if self.trabajo is not None or self.copia is not None:
+                self._avisar("Espera a que termine lo que está haciendo.", "warn")
+                return
+            import limpieza
+
+            def fin(r, error):
+                if error is not None or not r:
+                    self._avisar("No se pudo borrar la caché: %s" % error, "error")
+                    return
+                libres, fallas, saltadas = r
+                texto = "Caché borrada: %s liberados." % limpieza.texto_tam(libres)
+                if "davinci" in saltadas:
+                    texto += " La de DaVinci queda: ciérralo y vuelve a borrar."
+                if fallas:
+                    texto += " %d archivos en uso quedaron." % fallas
+                self._avisar(texto, "ok")
+
+            def listo(r, error):
+                if error is not None or not r:
+                    self._avisar("No se pudo revisar la caché: %s" % error, "error")
+                    return
+                items, abierto = r
+                if not items:
+                    self._avisar("No hay caché que borrar: el disco ya está limpio.", "ok")
+                    return
+                lineas, total = [], 0
+                for it in items:
+                    extra = ""
+                    if it["clave"] == "davinci" and abierto:
+                        extra = "  (cierra DaVinci para borrarla)"
+                    else:
+                        total += it["bytes"]
+                    lineas.append("•  %s: %s%s" % (it["texto"], limpieza.texto_tam(it["bytes"]), extra))
+                msg = ("Se borra lo que el programa vuelve a hacer solo si hace falta:\n\n%s\n\nSe liberan: %s\n\n"
+                       "No se borra tu material, los videos terminados, las plantillas de DaVinci, las capturas de "
+                       "la intro ni los nombres originales." % ("\n".join(lineas), limpieza.texto_tam(total)))
+                if QMessageBox.question(self, TITULO_APP, msg) != QMessageBox.Yes:
+                    return
+                qt_kit.correr_en_hilo(self, lambda: limpieza.borrar(registro.info, davinci_abierto=abierto), fin)
+            qt_kit.correr_en_hilo(self, lambda: (limpieza.que_hay(), motor.resolve_abierto()), listo)
 
         def _abrir_terminado(self):
             """La carpeta EVENTO TERMINADO del último evento (o donde se crean, si todavía no hay ninguna)."""

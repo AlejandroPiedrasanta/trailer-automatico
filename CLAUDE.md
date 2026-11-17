@@ -26,6 +26,7 @@
 - **soltar**: Suelta la carpeta y listo: se usa DONDE ESTA (sin copiar), se une al mismo evento, sus archivos se renombran en su sitio con tipo y momento (nunca se borra nada); nuevo evento solo si el anterior ya termino
 - **rutas**: Todas las rutas: codigo vs instalado (.exe), DATOS, trabajo POR DENTRO, EVENTO TERMINADO en el Escritorio, nombres VIDEO FINAL, pasar_adentro, Resolve y LUT por sistema, ffmpeg
 - **analisis**: Analisis del material: relojes por camara, contenido, calidad/color/audio, la 'vista' de cada medio segundo y lo que VE la IA local (Qwen3-VL en Ollama): momento, escena, etiquetas y si la toma sirve
+- **oido**: Oido (earshot, opcional): escucha cada toma (aplausos, vitores, risas, llanto, habla, musica, campanas) para la emocion del armado y revisa clics, huecos y saturacion del audio final (marcadores amarillos)
 - **resolve**: Conexion con DaVinci: abrir, cargar/importar proyecto, cuadros que bloquean, reenlazar medios
 - **armado**: Armado de cada version: duplicar plantilla, planificar planos (tomas malas fuera, relleno con dron/fotos, final con foto), zonas por marcador, cortes al ritmo, camara lenta
 - **media-pool**: Media pool en carpetas numeradas 01 PLANTILLAS .. 06 EFECTOS, por momento y fuente, con colores
@@ -41,6 +42,8 @@
 - **registro**: Registro en archivo (registro.log), ganchos de errores, faulthandler; donde mirar cuando algo falla
 - **ia-resolve**: IA de Resolve Studio: personas (IntelliSearch con caras -> quien es la festejada), quien habla y pasajes de voz (transcripcion), Speed Warp, estabilizar, Smart Reframe
 - **actualizaciones**: Actualizaciones como CineCaptions: version.json firmado en trailer-automatico-releases, descarga con huella, al cerrar o en segundo plano (tarea Windows / servicio Mac)
+- **limpieza**: Borrar cache en Ajustes: cache de render de DaVinci (18 GB en la boda), proxies, respaldos viejos, actualizaciones instaladas y temporales; nunca material, videos, plantillas ni capturas
+- **pruebas**: Como probar sin gastar tokens: datos aislados (TRAILER_DATOS), armado sin DaVinci (storyboard / exec de build_trailers), ventana real con grab(), oido y audio final, compilar Windows + Mac Apple Silicon
 <!-- MAPA:FIN -->
 
 ## Reglas que no se rompen
@@ -62,6 +65,7 @@
   - Antes de dar por bueno un video: hoja de contacto (2 cuadros/s) y mirarla.
   - Estabilizar con el estabilizador propio (`armado/estabilizar.py`, Transform de Fusion con keyframes, zoom mínimo), no con `Stabilize()` de Resolve; los comps se ponen ANTES del primer render del clip (DaVinci reusa lo renderizado). La Magic Mask no se puede automatizar (puntos a mano) y el Depth Map de Fusion no se renderiza en un comp de clip (`profundidad.py` apagado).
   - Voz original solo de quien habla de corrido (pastor, brindis, discursos), nunca ruidos ni voces sueltas: siempre en 30 min, activada en 15, a elegir en 1 y 3 (Ajustes › Voz original).
+  - Oído (earshot, opcional, `oido.py`): aplausos, vítores y risas solo SUBEN la emoción de un tramo; el audio final se revisa (clics sueltos, huecos, saturación) y se marca en amarillo. Nunca descarta tomas ni frena nada; sin earshot todo sigue igual.
   - Color: la saturación nunca pasa de la de cámara (ni el CDL ni el look la suben).
   - Colores: MAQUILLAJE morado, IGLESIA verde, FIESTA rosa.
   - Entrega en MOV H.265 a -14 LUFS.
@@ -80,9 +84,11 @@
   - Usar arneses en el scratchpad: motor simulado y `grab()` a PNG de la ventana real.
   - Contra Resolve sin tocar nada: `python PROGRAMA/interfaz/trailer_xv.py --seco`.
   - El plan de una versión sin DaVinci, plano por plano: `python PROGRAMA/herramientas/storyboard.py 1min sb.jpg`.
-- **Compilar:** solo si la persona lo pide.
+- **Compilar:** solo si la persona lo pide, y SOLO Windows y Mac Apple Silicon (nada de Intel; la persona, 17-nov).
   1. Subir `PROGRAMA/config/version.txt`.
   2. Correr `pwsh -File PROGRAMA/compilar/windows/construir.ps1` (deja el .exe en `3 INSTALADORES/Windows`).
   3. Instalar con `/silencioso`.
+  4. Mac: commit + push de la rama y `pwsh -File PROGRAMA/compilar/mac/construir_desde_windows.ps1` (GitHub Actions; deja el .dmg en `3 INSTALADORES/Mac`).
+- **Ahorrar tokens:** no releer lo ya leído; recetas de prueba en `mapa id=pruebas`; salidas largas con `Select-Object -Last N`.
 - **Icono:** `PROGRAMA/interfaz/icono_app.py` (lo usan la ventana, el .ico y el .icns).
 - **Detalle e historia:** `PROGRAMA/docs/SKILL.md`, leído por secciones con Grep.

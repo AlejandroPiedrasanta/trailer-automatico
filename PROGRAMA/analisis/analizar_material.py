@@ -1532,6 +1532,21 @@ def _ver_con_ia(cache, lista, log):
     _instantes_con_ia(cache, largos, log, vision_ia)
 
 
+def _oir(cache, lista, log):
+    """(1.5.9) El oido (oido.py, earshot en la CPU) escucha cada toma en un hilo mientras la IA local la mira en la
+    GPU: aplausos, vitores, risas, discursos, musica. Queda en el cache («oido»). Sin earshot no hace nada."""
+    try:
+        import oido
+    except Exception:
+        return None
+    tomas = [cache[_clave(r)] for t, r in lista if t != "foto" and _clave(r) in cache and oido.falta(cache[_clave(r)])]
+    if not tomas or not oido.python_earshot():
+        return None
+    hilo = threading.Thread(target=oido.escuchar, args=(tomas, log), daemon=True, name="oido")
+    hilo.start()
+    return hilo
+
+
 def _instantes_con_ia(cache, largos, log, vision_ia):
     """(1.5.7) La IA mira cada toma cuadro por cuadro (uno cada 3 s): hacia donde apunta la camara, si esta de cabeza,
     si se ve la cara de la gente (la regla de la persona) y en que segundo esta cada momento clave."""
@@ -1774,7 +1789,12 @@ def analizar(base=DEF_BASE, log=print, hilos=4):
             for r, d in ex.map(uno, videos):
                 cache[_clave(r)] = d
     _nombres_originales(cache)
+    oir = _oir(cache, lista, log)               # (1.5.9) el oido (CPU) escucha mientras la IA local (GPU) mira
     _ver_con_ia(cache, lista, log)
+    if oir:
+        if oir.is_alive():
+            log("El oído termina de escuchar...")
+        oir.join()
     cache, res = _organizar(cache, lista, base, log)
     _guardar(cache, res)
     if res["items"]:

@@ -67,13 +67,22 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
             log("En DaVinci queda abierta y editable: %s" % abierta)
     # audio de entrega: -14 LUFS y picos bajo -1 dBTP en todas las versiones (no necesita Resolve)
     import masterizar
-    revisar = {}
+    revisar, revisar_audio = {}, {}
     for k, (nombre, ok, ruta) in enumerate(res, 1):
         if ok:
             if progreso:
                 progreso(100, "Masterizando audio %d de %d" % (k, len(res)))
             masterizar.masterizar(ruta, log)
             masterizar.verificar_imagen(ruta, log)       # mide saturacion y luz del video final
+            try:                                         # (1.5.9) el oido: clics sueltos, huecos y saturacion
+                import oido
+                if progreso:
+                    progreso(100, "Escuchando el audio %d de %d" % (k, len(res)))
+                seg = oido.revisar_audio(ruta, log)
+                if seg:
+                    revisar_audio[nombre] = seg
+            except Exception as ex:
+                log("Aviso: no se pudo revisar el audio de %s (%s)" % (os.path.basename(ruta), ex))
             try:                                         # (1.5.7) la IA local mira el video final
                 import revision_ia
                 if progreso:
@@ -83,7 +92,7 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
                     revisar[nombre] = malos
             except Exception as ex:
                 log("Aviso: no se pudo revisar con IA %s (%s)" % (os.path.basename(ruta), ex))
-    if revisar:                                          # marcadores rojos en la linea de DaVinci, para corregir a mano
+    if revisar or revisar_audio:                         # marcadores en la linea de DaVinci, para corregir a mano
         try:
             import revision_ia
             with motor.CANDADO:
@@ -91,10 +100,14 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
                 desde = {j["TimelineName"]: int(j.get("MarkIn") or 0) for j in jobs}
                 for i in range(1, p.GetTimelineCount() + 1):
                     tl = p.GetTimelineByIndex(i)
+                    inicio = desde.get(tl.GetName()) or tl.GetStartFrame()
                     if tl.GetName() in revisar:
-                        inicio = desde.get(tl.GetName()) or tl.GetStartFrame()
                         n = revision_ia.marcar(tl, revisar[tl.GetName()], inicio - tl.GetStartFrame())
                         log("%s: %d marcadores rojos «REVISAR (IA)» en la linea." % (tl.GetName(), n))
+                    if tl.GetName() in revisar_audio:
+                        n = revision_ia.marcar(tl, revisar_audio[tl.GetName()], inicio - tl.GetStartFrame(),
+                                               revision_ia.COLOR_AUDIO, revision_ia.MARCA_AUDIO, revision_ia.NOTA_AUDIO)
+                        log("%s: %d marcadores amarillos «REVISAR (AUDIO)» en la linea." % (tl.GetName(), n))
         except Exception as ex:
             log("Aviso: no se pudieron poner los marcadores de revision (%s)" % ex)
     return res

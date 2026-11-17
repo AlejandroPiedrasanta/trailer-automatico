@@ -1,6 +1,6 @@
 # Tráiler automático · CINEMA PRODUCTIONS
 # compilar/mac/construir_desde_windows.ps1 — arma los instaladores de Mac DESDE WINDOWS (como CineSlide): Windows no puede
-# compilar para Mac, así que lanza «Instaladores Mac» (.github/workflows/mac.yml) en las Mac de GitHub (Apple Silicon e Intel),
+# compilar para Mac, así que lanza «Instaladores Mac» (.github/workflows/mac.yml) en las Mac de GitHub (SOLO Apple Silicon: regla),
 # espera y deja los .dmg en «3 INSTALADORES\Mac» (quita los de versiones anteriores) y las capturas de la ventana del
 # instalador en PROGRAMA\datos\capturas_mac.
 #   pwsh -File PROGRAMA/compilar/mac/construir_desde_windows.ps1            el de la persona («Doble clic para instalar»)

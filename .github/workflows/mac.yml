@@ -1,5 +1,6 @@
 # Tráiler automático · CINEMA PRODUCTIONS
-# Compila los instaladores de Mac (Apple Silicon e Intel) en las Mac de GitHub, como CineCaptions.
+# Compila el instalador de Mac SOLO para Apple Silicon (regla de la persona, 17-nov: Windows y Mac Silicon; nada de
+# Intel) en las Mac de GitHub, como CineCaptions.
 # Actions > "Instaladores Mac" > Run workflow. Los .dmg quedan en "Artifacts".
 #   publico = true: la version para las actualizaciones publicas (sin musica, SFX ni fuente con licencia), la que sube
 #   PROGRAMA/herramientas/publicar_version.ps1 al repositorio trailer-automatico-releases.
@@ -19,8 +20,6 @@ jobs:
         include:
           - nombre: AppleSilicon
             runner: macos-15
-          - nombre: Intel
-            runner: macos-15-intel
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:

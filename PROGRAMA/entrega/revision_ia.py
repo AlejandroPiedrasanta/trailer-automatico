@@ -23,6 +23,10 @@ COLOR = "Red"
 NOMBRE_MARCA = "REVISAR (IA)"
 NOTA = ("La IA local ve aquí algo que no debería ir en el video (el piso, una cámara o su pantalla, borroso o a oscuras). "
         "Cambia este plano y pulsa «Renderizar lo editado» en el programa.")
+COLOR_AUDIO = "Yellow"           # (1.5.9) lo que oye earshot en el audio final (oido.revisar_audio)
+MARCA_AUDIO = "REVISAR (AUDIO)"
+NOTA_AUDIO = ("El oído oye aquí un clic, un hueco de silencio o saturación en el audio. Escúchalo; si molesta, pon un "
+              "fundido corto en el corte y pulsa «Renderizar lo editado» en el programa.")
 
 
 def _duracion(ruta):
@@ -74,13 +78,14 @@ def revisar(ruta, log=print):
     return malos
 
 
-def marcar(timeline, segundos, desde_frame=0):
-    """Marcadores rojos «REVISAR (IA)» en la linea, en esos segundos del video (desde_frame: donde empezo el render)."""
+def marcar(timeline, segundos, desde_frame=0, color=COLOR, nombre=NOMBRE_MARCA, nota=NOTA):
+    """Marcadores rojos «REVISAR (IA)» en la linea, en esos segundos del video (desde_frame: donde empezo el render).
+    (1.5.9) Con color/nombre/nota, los amarillos del audio."""
     fps = float(timeline.GetSetting("timelineFrameRate") or 24)
     n = 0
     for s in segundos or []:
         try:
-            n += bool(timeline.AddMarker(int(desde_frame + s * fps), COLOR, NOMBRE_MARCA, NOTA, 1, ""))
+            n += bool(timeline.AddMarker(int(desde_frame + s * fps), color, nombre, nota, 1, ""))
         except Exception:
             pass
     return n

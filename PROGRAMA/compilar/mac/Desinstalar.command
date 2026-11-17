@@ -3,7 +3,7 @@
 # tocan. Va dentro de la app (Contents/Resources o Frameworks): desde la 1.5.2 el disco solo trae la app y el enlace a Aplicaciones.
 # Sirve para las dos formas de instalar: arrastrada a Aplicaciones (es tuya: no pide contraseña) y con el .pkg de antes (pide la
 # contraseña de la Mac para quitar la app y el servicio del sistema).
-osascript -e 'display dialog "¿Desinstalar Tráiler automático?\n\nTus carpetas de trabajo (1 MATERIAL, 2 VIDEOS TERMINADOS) y tus videos no se borran." buttons {"Cancelar", "Desinstalar"} default button 2 with title "Tráiler automático"' >/dev/null 2>&1 || exit 0
+osascript -e 'display dialog "¿Desinstalar Tráiler automático?\n\nTus eventos terminados (EVENTO TERMINADO en el Escritorio) y el material guardado no se borran." buttons {"Cancelar", "Desinstalar"} default button 2 with title "Tráiler automático"' >/dev/null 2>&1 || exit 0
 ETQ="com.cinemaproductions.trailerautomatico.actualizar"
 APP="/Applications/TrailerAutomatico.app"
 pkill -f "TrailerAutomatico.app/Contents/MacOS/TrailerAutomatico" 2>/dev/null

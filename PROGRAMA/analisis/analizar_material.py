@@ -36,9 +36,25 @@ import rutas
 
 DEF_BASE = rutas.BASE
 CARPETAS = rutas.CARPETAS             # {"foto": .../1 MATERIAL/FOTOS, "video": .../VIDEOS, "dron": .../DRON}
-EXT = {"foto": {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".heic", ".webp"},
+# (1.5.7, la persona: «solo imágenes JPG; las demás no las tomes en cuenta»): RAW, DNG, PNG, HEIC... ni se usan ni se tocan
+EXT = {"foto": {".jpg", ".jpeg"},
        "video": {".mp4", ".mov", ".mkv", ".avi", ".mxf", ".m4v", ".mts", ".m2ts", ".wmv"}}
 EXT["dron"] = EXT["video"]
+CARPETAS_DRON = ("dron", "drone", "aereo", "aéreo", "aerea", "aérea", "mavic")
+
+
+def tipo_de_archivo(ruta):
+    """'foto', 'video' o 'dron' segun la extension. Dron: archivos DJI_ o «DRON ...» (ya renombrados) o dentro de una
+    carpeta llamada DRON, Drone, Aereo, Mavic... None si no sirve."""
+    ext = os.path.splitext(ruta)[1].lower()
+    if ext in EXT["foto"]:
+        return "foto"
+    if ext in EXT["video"]:
+        if os.path.basename(ruta).upper().startswith(("DJI_", "DJI-", "DRON ")):
+            return "dron"
+        carpeta = os.path.basename(os.path.dirname(ruta)).lower()
+        return "dron" if any(p in carpeta for p in CARPETAS_DRON) else "video"
+    return None
 MOMENTOS = ["MAQUILLAJE", "IGLESIA", "FIESTA"]
 ARCHIVO_CLASIF = os.path.basename(rutas.CLASIFICACION)
 SIN_VENTANA = rutas.SIN_VENTANA        # que ffmpeg no abra ventanas negras
@@ -123,6 +139,25 @@ def listar(base):
                         out.append((tipo, ruta))
                 except OSError:
                     pass
+    # (1.5.7) las carpetas del evento DONDE ESTAN (soltadas: no se copian) y las capturas de la intro
+    vistos = {os.path.normcase(os.path.abspath(r)) for _, r in out}
+    for raiz in rutas.fuentes():
+        for r, dirs, fs in os.walk(raiz):
+            dirs[:] = sorted(d for d in dirs if not d.startswith((".", "$")) and d.lower() != "anteriores")
+            for f in sorted(fs):
+                if f.startswith(("~", ".")):
+                    continue
+                ruta = os.path.join(r, f)
+                tipo = tipo_de_archivo(ruta)
+                clave = os.path.normcase(os.path.abspath(ruta))
+                if tipo is None or clave in vistos:
+                    continue
+                try:
+                    if os.path.getsize(ruta) > 0:
+                        out.append((tipo, ruta))
+                        vistos.add(clave)
+                except OSError:
+                    pass
     return out
 
 
@@ -151,7 +186,11 @@ def huella(base):
     for tipo, ruta in listar(base):
         try:
             st = os.stat(ruta)
-            h.append("%s|%d|%d" % (os.path.relpath(ruta, base), st.st_size, int(st.st_mtime)))
+            try:
+                rel = os.path.relpath(ruta, base)
+            except ValueError:                    # carpeta del evento en otro disco (D:\BODA...)
+                rel = ruta
+            h.append("%s|%d|%d" % (rel, st.st_size, int(st.st_mtime)))
         except OSError:
             pass
     return "\n".join(h)
@@ -619,7 +658,8 @@ def _jornada(dt):
 
 
 def _camara(it):
-    pref = re.match(r"[A-Za-z]+", it["nombre"])
+    # (1.5.7) el prefijo del nombre ORIGINAL («C0001», «IMG_1246»): renombrados, todos empiezan con «VIDEO»
+    pref = re.match(r"[A-Za-z]+", it.get("nombre_original") or it["nombre"])
     nombre = it.get("camara") or (pref.group(0).upper() if pref else "?")
     tipo = {"foto": "fotos", "video": "videos", "dron": "dron"}[it["tipo"]]
     return "%s · %s%s" % (nombre, tipo, " · sin hora" if it.get("origen_hora") == "archivo" else "")
@@ -1187,6 +1227,7 @@ def clasificar(items, base, log=print):
     if nuevo:
         inicios = _inicios_validos({"momentos": _auto([i for i in items if i["reloj"] != "dudoso"] or items, fecha)})
     avisos += _alinear_horas(items, fecha, inicios, z)
+    avisos += _sincronizar_por_audio(items)          # (1.5.7) la hora real de una camara con el reloj mal, por el sonido
     confiables = [i for i in items if i["reloj"] != "dudoso"]
     if nuevo:                                            # con las camaras ya en hora, los huecos del dia salen mejor
         cfg = {"fecha": fecha.isoformat(), "revisado": False,
@@ -1233,13 +1274,14 @@ def clasificar(items, base, log=print):
                                   datetime.timedelta(minutes=x)).isoformat(timespec="seconds")
                     it["momento"] = m
                     it["por"] = "contenido"
+    _segun_lo_que_ve(items, fecha)
     # excepciones a mano, descartes, zonas inutiles y videos largos que cruzan de un momento a otro
     for it in items:
         n = it["nombre"].upper()
         it.pop("tramos", None)
         if n in excep:
             it["momento"], it["por"] = excep[n], "manual"
-        elif it["tipo"] != "foto" and it["reloj"] != "dudoso" and it.get("dur", 0) > 20:
+        elif it["tipo"] != "foto" and it["reloj"] != "dudoso" and it.get("dur", 0) > 20 and it.get("por") != "ia":
             m0 = _min(it["hora"], fecha)
             m1 = m0 + it["dur"] / 60.0
             cortes = [(ini, nom) for ini, nom in inicios if m0 < ini < m1]
@@ -1254,6 +1296,41 @@ def clasificar(items, base, log=print):
         it["descartar"] = n in fuera
         if n in inutil:
             it["oscuros"] = (it.get("oscuros") or []) + inutil[n]
+    # (1.5.7) lo que la IA local ve que no sirve (el piso, la pantalla de una camara, borrosa...) queda fuera del montaje
+    # (el archivo no se toca). Si dijera que casi nada sirve, no se le hace caso.
+    # (1.5.7, 16-nov) y si en la revision cuadro por cuadro la mayor parte de la toma no sirve (apunta al techo, de
+    # cabeza, gente sin cabeza o sin ninguna cara), la toma entera; si sirve una parte, el armado usa solo esa parte
+    def _razon(it):
+        ia = it.get("ia") or {}
+        if ia.get("util") is False:
+            return ia.get("escena", "")
+        try:
+            import vision_ia
+            parte, motivo = vision_ia.parte_mala(ia, dron=it["tipo"] == "dron")
+            if it["tipo"] == "foto" and parte >= 1.0:          # foto o captura que no cumple la regla
+                return vision_ia.MOTIVOS.get(motivo, motivo)
+            limite = PARTE_MALA_TOMA if it.get("dur", 0) <= TOMA_CORTA_S else PARTE_MALA_LARGA
+            if parte >= limite and len(ia.get("instantes") or []) >= 2:
+                return "%s en el %.0f%%" % (vision_ia.MOTIVOS.get(motivo, motivo), 100 * parte)
+        except Exception:
+            pass
+        return None
+    inutiles = [(it, _razon(it)) for it in items if it["nombre"].upper() not in excep]
+    inutiles = [(it, r) for it, r in inutiles if r is not None]
+    if len(inutiles) > PARTE_IA_MAX * len(items):      # si dijera que casi nada sirve: solo las peores
+        try:
+            import vision_ia
+            inutiles.sort(key=lambda p: -(1.0 if (p[0].get("ia") or {}).get("util") is False
+                                          else vision_ia.parte_mala(p[0].get("ia"), p[0]["tipo"] == "dron")[0]))
+        except Exception:
+            pass
+        inutiles = inutiles[:int(PARTE_IA_MAX * len(items))]
+    if inutiles:
+        for it, r in inutiles:
+            it["descartar"], it["por_descarte"] = True, "ia: %s" % r
+        avisos.append("La IA local dejó fuera %d tomas que no sirven: %s" % (
+            len(inutiles), ", ".join("%s (%s)" % (i["nombre"], r) for i, r in inutiles[:4])
+            + ("…" if len(inutiles) > 4 else "")))
     cfg["_avisos"], cfg["_camaras"] = avisos, _resumen_camaras(items)
     for a in avisos:
         log("Aviso: " + a)
@@ -1281,6 +1358,328 @@ def _leer_cache():
         nueva = "%s|%s" % (re.split(r"[\\/]", partes[0])[-1], partes[1]) if len(partes) == 3 else k
         viejo[nueva] = v
     return viejo
+
+
+PASO_AUDIO = 0.5             # s por muestra del nivel de audio («audio» de cada video)
+SOLAPE_MIN = 24              # muestras (12 s) que dos tomas deben sonar juntas para decir que son el mismo momento
+CRUCE_MIN = 0.6              # parecido minimo del sonido (correlacion de los niveles, -1..1)
+
+
+def _envolvente(it):
+    """El nivel del audio de un video, normalizado (media 0, desvio 1); None si no tiene o es plano."""
+    if np is None or it["tipo"] == "foto" or not it.get("audio_pista", True):
+        return None
+    a = np.asarray(it.get("audio") or [], dtype=np.float32)
+    if len(a) < SOLAPE_MIN:
+        return None
+    a = np.maximum(a, -60.0)
+    if float(a.std()) < 1.5:
+        return None
+    return (a - a.mean()) / a.std()
+
+
+def _cruce(a, b):
+    """(parecido, L, solape): el desfase L (en muestras) en que a[i] suena como b[i+L], o None."""
+    n, m = len(a), len(b)
+    c = np.correlate(b, a, mode="full")                       # c[k]: L = k - (n - 1)
+    lags = np.arange(-(n - 1), m)
+    solape = np.minimum(n, m - lags) - np.maximum(0, -lags)
+    validos = solape >= SOLAPE_MIN
+    if not validos.any():
+        return None
+    r = np.where(validos, c / np.maximum(solape, 1), -9.0)
+    k = int(np.argmax(r))
+    mejor = float(r[k])
+    otro = np.concatenate([r[:max(0, k - 6)], r[k + 7:]])     # el pico debe destacar (no ser musica pareja)
+    if mejor < CRUCE_MIN or (len(otro) and float(otro.max()) > mejor - 0.15):
+        return None
+    return mejor, int(lags[k]), int(solape[k])
+
+
+def _sincronizar_por_audio(items):
+    """(1.5.7) Una camara con el reloj mal (otra fecha, «dudoso») se pone en hora comparando su SONIDO con el de las
+    tomas que tienen la hora bien (el celular): si en una toma de la camara y una del celular el nivel del audio sube y
+    baja igual, grabaron lo mismo, y eso da la hora real de la camara. Hacen falta 2 tomas que coincidan en el desfase
+    (o 1 muy clara). Tambien anota las tomas SIMULTANEAS de distintas camaras («simultaneas»: para alternar angulos)."""
+    if np is None:
+        return []
+    avisos = []
+    buenos = [i for i in items if i["tipo"] != "foto" and i.get("reloj") != "dudoso" and _envolvente(i) is not None]
+    env = {id(i): _envolvente(i) for i in items if i["tipo"] != "foto"}
+    for camara, g in _grupos([i for i in items if i.get("reloj") == "dudoso" and i["tipo"] != "foto"]).items():
+        desfases = []
+        for d in g:
+            ed = env.get(id(d))
+            if ed is None or not d.get("hora_camara"):
+                continue
+            for b in buenos:
+                if _camara(b) == camara:
+                    continue
+                r = _cruce(ed, env[id(b)])
+                if r:
+                    real = _dt(b) + datetime.timedelta(seconds=r[1] * PASO_AUDIO)
+                    camara_dt = datetime.datetime.fromisoformat(d["hora_camara"])
+                    desfases.append(((real - camara_dt).total_seconds(), r[0], r[2]))
+        if not desfases:
+            continue
+        valores = sorted(x[0] for x in desfases)
+        med = valores[len(valores) // 2]
+        cerca = [x for x in desfases if abs(x[0] - med) <= 60]
+        if len(cerca) >= 2 or (len(cerca) == 1 and cerca[0][1] >= 0.8 and cerca[0][2] >= 40):
+            off = sorted(x[0] for x in cerca)[len(cerca) // 2]
+            for i in g:
+                if i.get("hora_camara"):
+                    i["hora"] = (datetime.datetime.fromisoformat(i["hora_camara"]) +
+                                 datetime.timedelta(seconds=off)).isoformat(timespec="seconds")
+                    i["reloj"] = "audio"
+            avisos.append("%s: el reloj estaba mal; la puse en hora por el SONIDO (coincide con %d tomas de otras camaras)."
+                          % (camara, len(cerca)))
+    # tomas simultaneas de distintas camaras (con la hora ya buena): para alternar angulos en los momentos clave
+    con_hora = [i for i in items if i["tipo"] != "foto" and i.get("reloj") != "dudoso" and i.get("dur")]
+    for i in con_hora:
+        i.pop("simultaneas", None)
+    for x in range(len(con_hora)):
+        a = con_hora[x]
+        a0 = _dt(a)
+        for y in range(x + 1, len(con_hora)):
+            b = con_hora[y]
+            if _camara(a) == _camara(b):
+                continue
+            desde = (_dt(b) - a0).total_seconds()             # b empieza «desde» s despues que a
+            if desde >= a["dur"] or -desde >= b["dur"]:
+                continue
+            ea, eb = env.get(id(a)), env.get(id(b))
+            oido = False
+            if ea is not None and eb is not None:             # el sonido afina el desfase (medio segundo) y CONFIRMA
+                r = _cruce(ea, eb)
+                if r and abs(-r[1] * PASO_AUDIO - desde) <= 90:
+                    desde, oido = -r[1] * PASO_AUDIO, True
+            if min(a["dur"], desde + b["dur"]) - max(0.0, desde) < 2.0:
+                continue
+            a.setdefault("simultaneas", []).append({"ruta": b["ruta"], "desde": round(desde, 2), "audio": oido})
+            b.setdefault("simultaneas", []).append({"ruta": a["ruta"], "desde": round(-desde, 2), "audio": oido})
+    return avisos
+
+
+def _nombres_originales(cache):
+    """(1.5.7) El nombre con que llego cada archivo (antes de renombrarlo), por la lista datos/analisis/nombres.json: lo
+    usa _camara para saber de que camara es. Lo nuevo ya lo anota renombrar_cache; esto completa lo de antes."""
+    try:
+        with open(os.path.join(rutas.ANALISIS, "nombres.json"), encoding="utf-8") as f:
+            hist = json.load(f)
+    except Exception:
+        return
+    original = {}                                # nombre de hoy -> nombre con que llego
+    for vez in hist:                             # cada vez, todos los cambios a la vez (dos archivos pueden intercambiar)
+        nuevo, movidos = {}, set()
+        for a, b in vez.get("cambios") or []:
+            va, vb = os.path.basename(a), os.path.basename(b)
+            nuevo[vb] = original.get(va, va)
+            movidos.add(va)
+        for k, v in original.items():
+            if k not in movidos and k not in nuevo:
+                nuevo[k] = v
+        original = nuevo
+    for d in cache.values():
+        if "nombre_original" not in d and d.get("nombre") in original:
+            d["nombre_original"] = original[d["nombre"]]
+
+
+MAX_FOTOS_IA = 200         # con mas fotos que esto, las fotos se ordenan por su hora (EXIF) y la IA mira solo los videos
+PARTE_MALA_TOMA = 0.5      # si en la revision cuadro por cuadro no sirve esta parte de la toma, fuera la toma entera
+PARTE_MALA_LARGA = 0.8     # en las tomas largas (mas de TOMA_CORTA_S) solo si casi toda es mala: lo bueno de una
+TOMA_CORTA_S = 30.0        # ceremonia de 7 min se usa aunque la mitad sea de espaldas (el armado usa solo los tramos buenos)
+PARTE_IA_MAX = 0.6         # la IA no deja fuera mas de esta parte de los archivos (si no, solo los peores)
+
+
+def _ver_con_ia(cache, lista, log):
+    """(1.5.7) Lo que VE la IA local en cada toma (vision_ia, Qwen3-VL en Ollama): momento, escena, etiquetas y si sirve.
+    Una vez por archivo (queda en el cache, «ia»). Sin IA local no hace nada."""
+    try:
+        import vision_ia
+    except Exception:
+        return
+    falta = [(t, r) for t, r in lista if _clave(r) in cache and not cache[_clave(r)].get("error")
+             and (cache[_clave(r)].get("ia") or {}).get("v", 0) < vision_ia.VERSION]
+    if sum(1 for t, _ in lista if t == "foto") > MAX_FOTOS_IA:
+        falta = [p for p in falta if p[0] != "foto"]
+    pocas_fotos = sum(1 for t, _ in lista if t == "foto") <= MAX_FOTOS_IA       # (16-nov) las fotos tambien
+    largos = [(t, r) for t, r in lista if (t != "foto" or pocas_fotos) and _clave(r) in cache
+              and not cache[_clave(r)].get("error")
+              and (t == "foto" or cache[_clave(r)].get("dur", 0) >= vision_ia.INSTANTES_DESDE_S)
+              and (cache[_clave(r)].get("ia") or {}).get("instantes_v", 0) < vision_ia.INSTANTES_V]
+    if not (falta or largos) or not vision_ia.modelo(log):
+        return
+    if not falta:
+        return _instantes_con_ia(cache, largos, log, vision_ia)
+    import time
+    log("Viendo cada toma con la IA local (%s): %d archivos..." % (vision_ia.modelo(), len(falta)))
+    t0 = time.time()
+
+    def una(par):
+        d = cache[_clave(par[1])]
+        return d, vision_ia.describir(par[0], par[1], d.get("dur", 0.0), log)
+    # en paralelo (la persona: «que use el máximo rendimiento»): mientras la GPU mira una toma, la otra ya saca sus
+    # cuadros con ffmpeg; si Ollama atiende varias a la vez (OLLAMA_NUM_PARALLEL), tambien se aprovecha
+    with ThreadPoolExecutor(vision_ia.PARALELO) as ex:
+        for n, (d, ia) in enumerate(ex.map(una, falta), 1):
+            if ia:
+                d["ia"] = ia
+            if n % 10 == 0 or n == len(falta):
+                log("  IA %d/%d  %s: %s" % (n, len(falta), d["nombre"], (ia or {}).get("escena", "?")))
+    log("La IA local vio %d tomas en %.0f s." % (len(falta), time.time() - t0))
+    largos = [(t, r) for t, r in largos if (cache[_clave(r)].get("ia") or {}).get("instantes_v", 0) < vision_ia.INSTANTES_V]
+    _instantes_con_ia(cache, largos, log, vision_ia)
+
+
+def _instantes_con_ia(cache, largos, log, vision_ia):
+    """(1.5.7) La IA mira cada toma cuadro por cuadro (uno cada 3 s): hacia donde apunta la camara, si esta de cabeza,
+    si se ve la cara de la gente (la regla de la persona) y en que segundo esta cada momento clave."""
+    largos = [(t, r) for t, r in largos if cache[_clave(r)].get("ia")]
+    if not largos:
+        return
+    if not vision_ia.en_gpu():                     # con DaVinci llenando la GPU iria 5-10 veces mas lento: despues
+        log("La GPU está ocupada (DaVinci abierto): la revisión cuadro por cuadro de %d tomas se hace la próxima vez "
+            "(cierra DaVinci antes de pulsar ▶ para que se haga ahora)." % len(largos))
+        return
+    import time
+    t0 = time.time()
+    total = sum(cache[_clave(r)].get("dur", 0.0) for _, r in largos)
+    log("La IA local revisa cada toma cuadro por cuadro (uno cada %.0f s, %.0f min de video): hacia dónde apunta, "
+        "si se ven las caras..." % (vision_ia.INSTANTES_CADA_S, total / 60.0))
+
+    def una(par):
+        d = cache[_clave(par[1])]
+        if par[0] == "foto":                    # la foto entera es un solo cuadro (la misma regla de la cara)
+            return d, vision_ia.revisar_foto(par[1], log)
+        return d, vision_ia.instantes(par[1], d.get("dur", 0.0), log)
+    # las largas primero: asi no queda una sola al final mientras las demas ya terminaron
+    largos = sorted(largos, key=lambda p: -cache[_clave(p[1])].get("dur", 0.0))
+    with ThreadPoolExecutor(vision_ia.PARALELO) as ex:
+        for n, (d, inst) in enumerate(ex.map(una, largos), 1):
+            if inst is not None:
+                d["ia"]["instantes"] = inst
+                d["ia"]["instantes_v"] = vision_ia.INSTANTES_V
+            if n % 10 == 0 or n == len(largos):
+                parte, motivo = vision_ia.parte_mala(d.get("ia"))
+                log("  IA revisión %d/%d  %s: %.0f%% no sirve%s" % (
+                    n, len(largos), d["nombre"], 100 * parte,
+                    " (%s)" % vision_ia.MOTIVOS.get(motivo, motivo) if motivo else ""))
+    cuadros = [x for _, r in largos for x in (cache[_clave(r)]["ia"].get("instantes") or [])]
+    claves = sum(1 for x in cuadros if set(x[1]) & {"beso", "anillos", "votos", "primer_baile", "pastel", "brindis",
+                                                       "entrada"})
+    malos = {}
+    for x in cuadros:
+        if x[2] is False and len(x) > 3:                  # (en el dron, la falta de caras no cuenta en el armado)
+            malos[x[3]] = malos.get(x[3], 0) + 1
+    log("La IA local revisó %d cuadros en %.0f s: %d momentos clave; no sirven %d (%s)." % (
+        len(cuadros), time.time() - t0, claves, sum(malos.values()),
+        ", ".join("%s %d" % (vision_ia.MOTIVOS.get(k, k), v) for k, v in sorted(malos.items(), key=lambda kv: -kv[1]))
+        or "ninguno"))
+
+
+def _en_orden(seq, prohibidos=()):
+    """Momentos de una secuencia en el orden del dia (MAQUILLAJE -> IGLESIA -> FIESTA, sin volver atras) que menos
+    contradicen a la IA: contradecir lo que la IA vio cuesta 1; cambiar el momento por hora/color de una toma que la IA no
+    vio (o no supo), 0,3. Asi una toma suelta mal vista («hombre de traje» en plena fiesta = preparativos) o que la IA no
+    sabe (el dron sobre la iglesia, una foto) toma el momento de las de alrededor."""
+    n, K = len(seq), len(MOMENTOS)
+    if not n:
+        return []
+    costo = []
+    for it in seq:
+        ia = (it.get("ia") or {}).get("momento")
+        if ia in MOMENTOS:
+            fila = [0.0 if ia == m else 1.0 for m in MOMENTOS]
+        else:
+            fila = [0.0 if it.get("momento") == m else 0.3 for m in MOMENTOS]
+        costo.append([c + (5.0 if m in prohibidos else 0.0) for c, m in zip(fila, MOMENTOS)])
+    dp = [costo[0][:]]
+    atras = [[0] * K]
+    for i in range(1, n):
+        fila, desde = [], []
+        for k in range(K):
+            j = min(range(k + 1), key=lambda j: (dp[i - 1][j], j != k))       # empate: seguir en el mismo momento
+            fila.append(dp[i - 1][j] + costo[i][k])
+            desde.append(j)
+        dp.append(fila)
+        atras.append(desde)
+    k = min(range(K), key=lambda k: dp[-1][k])
+    out = [0] * n
+    for i in range(n - 1, -1, -1):
+        out[i] = k
+        k = atras[i][k]
+    return [MOMENTOS[k] for k in out]
+
+
+def _segun_lo_que_ve(items, fecha):
+    """(1.5.7) Lo que ve la IA local manda sobre la hora y el color (que siempre repartian tres momentos, aunque el evento
+    no tuviera maquillaje). Las tomas que la IA no sabe (OTRO) y tienen el reloj dudoso toman el momento de sus vecinas.
+    Las de reloj dudoso que cambian de momento se reparten de nuevo dentro de su momento, en el mismo orden."""
+    if not any((i.get("ia") or {}).get("momento") in MOMENTOS for i in items):
+        return
+    # en orden: las de reloj bueno por su hora (todas las camaras juntas); las de reloj dudoso, en el orden de su camara
+    confiables = sorted([i for i in items if i.get("reloj") != "dudoso"], key=lambda i: i["hora"])
+    dud = [i for i in items if i.get("reloj") == "dudoso"]
+    secuencias = [confiables] if confiables else []
+    for g in _grupos(dud).values():
+        sin_hora = g[0].get("origen_hora") == "archivo"
+        secuencias.append(sorted(g, key=lambda i: _numero(i["nombre"]) if sin_hora else (i.get("hora_camara") or i["hora"],
+                                                                                        i["nombre"])))
+    # si la IA vio casi todo y NO vio preparativos (maquillaje, vestido, traje), el evento no los tiene: no se fuerzan
+    # (antes siempre habia tres momentos y la ceremonia acababa como MAQUILLAJE)
+    # (cuentan los preparativos que el orden del dia CONFIRMA: una toma suelta de la fiesta que la IA creyo «traje» no)
+    resultado = [_en_orden(seq) for seq in secuencias]
+    confirmados = any(m == "MAQUILLAJE" and (it.get("ia") or {}).get("momento") == "MAQUILLAJE"
+                      for seq, ms in zip(secuencias, resultado) for it, m in zip(seq, ms))
+    if not confirmados and sum(1 for i in items if i.get("ia")) >= 0.6 * len(items):
+        resultado = [_en_orden(seq, ("MAQUILLAJE",)) for seq in secuencias]
+    for seq, ms in zip(secuencias, resultado):
+        for it, m in zip(seq, ms):
+            ia = (it.get("ia") or {}).get("momento")
+            it["por"] = "ia" if ia == m else ("ia (orden del dia)" if ia in MOMENTOS or it["momento"] != m else it.get("por"))
+            it["momento"] = m
+    dud.sort(key=lambda i: i["hora"])
+    rango = {}
+    for m in MOMENTOS:
+        ms = sorted(_min(i["hora"], fecha) for i in items if i.get("reloj") != "dudoso" and i["momento"] == m)
+        if ms:
+            rango[m] = (ms[len(ms) // 10], ms[(len(ms) * 9) // 10])
+    sinteticos = {"MAQUILLAJE": (10 * 60, 13 * 60), "IGLESIA": (13 * 60 + 30, 15 * 60), "FIESTA": (16 * 60, 23 * 60)}
+    for m in MOMENTOS:
+        sel = [i for i in dud if i["momento"] == m]
+        lo, hi = rango.get(m) or sinteticos[m]
+        for n, it in enumerate(sel):
+            x = lo + (hi - lo) * (n + 0.5) / len(sel)
+            it["hora"] = (datetime.datetime.combine(fecha, datetime.time()) +
+                          datetime.timedelta(minutes=x)).isoformat(timespec="seconds")
+
+
+def renombrar_cache(cambios):
+    """(1.5.7) Los archivos se renombraron en su sitio [(ruta_vieja, ruta_nueva)]: lo ya medido sigue valiendo (la clave
+    es nombre|tamaño), asi no se vuelve a leer ningun video. Devuelve cuantos paso."""
+    try:
+        with open(_cache_ruta(), encoding="utf-8") as f:
+            todo = json.load(f)
+    except Exception:
+        return 0
+    cache = todo.get("cache", {})
+    n = 0
+    for viejo, nuevo in cambios:
+        try:
+            tam = os.path.getsize(nuevo)
+        except OSError:
+            continue
+        kv, kn = "%s|%d" % (os.path.basename(viejo), tam), "%s|%d" % (os.path.basename(nuevo), tam)
+        if kv in cache and kv != kn:
+            d = cache.pop(kv)
+            d.setdefault("nombre_original", os.path.basename(viejo))
+            d["ruta"], d["nombre"] = nuevo, os.path.basename(nuevo)
+            cache[kn] = d
+            n += 1
+    todo["cache"] = cache
+    _guardar_json(_cache_ruta(), todo)
+    return n
 
 
 def _organizar(cache, lista, base, log):
@@ -1335,7 +1734,7 @@ def _resumen_log(items, log):
 def analizar(base=DEF_BASE, log=print, hilos=4):
     lista = listar(base)
     if not lista:
-        log("No hay material en 1 MATERIAL (FOTOS, VIDEOS, DRON).")
+        log("No hay material: suelta la carpeta del evento (fotos JPG y videos).")
         return {"fecha": None, "items": [], "huella": "", "clasificacion": {}, "avisos": [], "camaras": []}
     os.makedirs(rutas.ANALISIS, exist_ok=True)
     cache = _leer_cache()
@@ -1369,9 +1768,13 @@ def analizar(base=DEF_BASE, log=print, hilos=4):
         with ThreadPoolExecutor(hilos) as ex:
             for r, d in ex.map(uno, fotos):
                 cache[_clave(r)] = d
-        with ThreadPoolExecutor(3) as ex:          # los videos pesan: 3 a la vez
+        # los videos pesan: 3 a la vez, o mas si la PC tiene nucleos de sobra (hasta 6: el disco y el decodificador de
+        # la GPU tambien tienen limite)
+        with ThreadPoolExecutor(max(3, min(6, (os.cpu_count() or 4) // 2))) as ex:
             for r, d in ex.map(uno, videos):
                 cache[_clave(r)] = d
+    _nombres_originales(cache)
+    _ver_con_ia(cache, lista, log)
     cache, res = _organizar(cache, lista, base, log)
     _guardar(cache, res)
     if res["items"]:

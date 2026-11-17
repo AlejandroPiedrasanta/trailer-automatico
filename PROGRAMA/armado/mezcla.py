@@ -18,8 +18,9 @@ import re
 import json
 import subprocess
 
-OBJETIVOS = [("MUSICA", -18.0), ("WHOOSH", -22.0), ("CAMPANAS", -23.0), ("GRITO", -23.0),
-             ("CHISPA", -24.0), ("PUBLICO", -25.0), ("SFX", -24.0), ("VOZ", -10.0)]
+# (1.5.7, la persona: «mejora los sfx») los efectos acompañan, no tapan la musica: 2-3 dB mas bajos que antes
+OBJETIVOS = [("MUSICA", -18.0), ("WHOOSH", -24.0), ("CAMPANAS", -25.0), ("GRITO", -26.0),
+             ("CHISPA", -27.0), ("PUBLICO", -27.0), ("SFX", -26.5), ("VOZ", -10.0)]
 # VOZ: se mide el audio de camara ENTERO (voz + ambiente), y despues el aislamiento de voz de Resolve le quita el
 # ambiente: con -15 la voz quedaba unos 6 dB por debajo de la musica de alrededor (medido en el video final).
 GANANCIA = (-18.0, 12.0)        # dB maximos que se baja / sube un clip

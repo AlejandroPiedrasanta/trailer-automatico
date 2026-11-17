@@ -21,12 +21,17 @@
    "armar_todo",
    "cli",
    "espacio_para_render",
-   "esperar_copias"
+   "esperar_copias",
+   "estimar_segundos",
+   "texto_tiempo",
+   "_poner_eta",
+   "_estimar"
   ],
   "notas": [
    "armar() ejecuta build_trailers.py con exec y globals (EVENTO, SOLO, NOMBRE_XV, TIPO_EVENTO, RUIDO, IGUALAR...).",
    "CLI: --todo (arma+render), --una-vez (solo arma), --seco (plan), --tarea instalar|verificar <txt>.",
-   "Antes de renderizar: espacio en disco (~71 MB/min x2); la PC no se suspende mientras trabaja; espera copias en curso."
+   "Antes de renderizar: espacio en disco (~71 MB/min x2); la PC no se suspende mientras trabaja; espera copias en curso.",
+   "(1.5.7) Tiempo estimado: motor.estimar_segundos (boda 7-nov ~60 min) al soltar y mientras trabaja (_poner_eta mezcla lo calculado con lo real)."
   ]
  },
  {
@@ -158,7 +163,7 @@
  },
  {
   "id": "material",
-  "resumen": "1 MATERIAL: minimos, pedir lo que falta, arrastrar/agregar, y el panel 'Como quedo organizado' (linea del dia)",
+  "resumen": "Material: solo fotos JPG, al menos 1 video (las fotos de la intro salen de capturas del video si faltan), arrastrar/agregar y el panel 'Como quedo organizado' (linea del dia)",
   "claves": [
    "fotos",
    "videos",
@@ -189,15 +194,17 @@
    "_cargar_organizacion",
    "_pintar_organizacion",
    "_analizar_ahora",
-   "_limites_cambiados"
+   "_limites_cambiados",
+   "capturas_intro"
   ],
   "notas": [
-   "Arrastrar Iglesia/Fiesta en la linea guarda CLASIFICACION (revisado) y reclasifica sin volver a medir."
+   "Arrastrar Iglesia/Fiesta en la linea guarda CLASIFICACION (revisado) y reclasifica sin volver a medir.",
+   "(1.5.7) am.EXT['foto'] = .jpg/.jpeg; am.tipo_de_archivo (dron: DJI_, «DRON ...» o carpeta). MINIMOS foto 0: motor.capturas_intro saca FOTOS_INTRO (9) cuadros nitidos por momento a rutas.CAPTURAS con la hora en EXIF. armar_todo: si hay videos verticales suma el pase VERTICAL 1min (auto_vertical)."
   ]
  },
  {
   "id": "soltar",
-  "resumen": "Suelta la carpeta y listo: examinar, evento nuevo (ANTERIORES), copiar con avance, ordenar FOTOS/VIDEOS/DRON, armar solo; plan previo sin DaVinci y prueba de arrastre",
+  "resumen": "Suelta la carpeta y listo: se usa DONDE ESTA (sin copiar), se une al mismo evento, sus archivos se renombran en su sitio con tipo y momento (nunca se borra nada); nuevo evento solo si el anterior ya termino",
   "claves": [
    "soltar",
    "arrastre",
@@ -242,20 +249,31 @@
    "crear_material",
    "Guion",
    "separar",
-   "_auto_contenido"
+   "_auto_contenido",
+   "es_evento_nuevo",
+   "marcar_terminado",
+   "evento_terminado",
+   "usar_carpeta",
+   "renombrar_material",
+   "renombrar_cache",
+   "fuentes",
+   "nombres_de_hoy",
+   "restaurar_nombres"
   ],
   "notas": [
-   "Flujo de la ventana (self.flujo): mirando -> pregunta (evento nuevo) -> copiando -> datos (tipo y nombres) o cuenta -> _play().",
+   "Flujo de la ventana (self.flujo): mirando -> copiando -> datos (tipo y nombres) o cuenta -> _play(). (1.5.7) Sin pregunta: lo soltado se une al evento que hay; si ese ya esta terminado (estado.terminado == estado.evento, lo pone motor.marcar_terminado tras un render con videos), motor.es_evento_nuevo() lo dice y archivar_material guarda el anterior en 1 MATERIAL/ANTERIORES (por dentro).",
+   "(1.5.7) Copia.run: carpeta soltada -> motor.usar_carpeta (estado.carpetas); am.listar lee rutas.fuentes(). Al armar: motor.renombrar_material (VIDEO HORIZONTAL/VERTICAL, DRON, FOTO + numero por hora + (MAQUILLAJE|CEREMONIA|FIESTA); en dos pasos; am.renombrar_cache conserva lo medido; nombres viejos en datos/analisis/nombres.json).",
    "Ajuste 'auto_armar' (ch_auto): si esta apagado, al soltar solo copia y ordena.",
    "plan_previo corre build_trailers con DRY_RUN y SIN_RESOLVE usando recursos/plantillas_marcadores.json; lo guarda en datos/analisis/plan_previo.json.",
    "Prueba local: python PROGRAMA/herramientas/probar_arrastre.py [--programa <exe>] [--dos-eventos] [--con-davinci] [--salida <dir>]. Usa TRAILER_BASE y TRAILER_DATOS aparte: no toca 1 MATERIAL ni el proyecto de Resolve.",
    "En GitHub: Actions > 'Prueba de arrastre' (Windows 2022/2025/ARM y Mac 15/26/Intel, con el codigo y con el programa compilado).",
-   "La prueba se activa con TRAILER_PRUEBA_ARRASTRE; en ese modo no se buscan actualizaciones ni se crea la tarea programada."
+   "La prueba se activa con TRAILER_PRUEBA_ARRASTRE; en ese modo no se buscan actualizaciones ni se crea la tarea programada.",
+   "(1.5.7) reenlazar sigue nombres.json (nombres_de_hoy) y ReplaceClip; boton «Nombres originales» = restaurar_nombres."
   ]
  },
  {
   "id": "rutas",
-  "resumen": "Todas las rutas: codigo vs instalado (.exe), DATOS, carpeta de trabajo, Resolve y LUT por sistema, ffmpeg",
+  "resumen": "Todas las rutas: codigo vs instalado (.exe), DATOS, trabajo POR DENTRO, EVENTO TERMINADO en el Escritorio, nombres VIDEO FINAL, pasar_adentro, Resolve y LUT por sistema, ffmpeg",
   "claves": [
    "rutas",
    "carpetas",
@@ -276,17 +294,25 @@
    "codigo",
    "crear_carpetas",
    "migrar_datos",
-   "perfiles"
+   "perfiles",
+   "carpeta_terminado",
+   "videos_terminados",
+   "plantillas_evento",
+   "nombre_video",
+   "pasar_adentro",
+   "_salida"
   ],
   "notas": [
-   "Instalado: recursos en sys._MEIPASS, datos en %LOCALAPPDATA%/TrailerAutomatico, BASE = config.carpeta_trabajo o Escritorio/TRAILER XV AUTOMATICO.",
-   "El codigo va en carpetas (nucleo, analisis, armado, entrega, interfaz, herramientas): import rutas las pone en sys.path; rutas.codigo(nombre) y rutas.CONFIG_PROG. En el .exe todo queda junto.",
-   "EDITABLES = <carpeta de trabajo>/3 PLANTILLAS EDITABLES (la crea crear_carpetas junto a 2 VIDEOS TERMINADOS)."
+   "Instalado (1.5.7): recursos en sys._MEIPASS; datos en %LOCALAPPDATA%/TrailerAutomatico (Mac ~/Library/Application Support/TrailerAutomatico); BASE (1 MATERIAL) = DATOS/trabajo, por dentro. Codigo: BASE = carpeta del proyecto. TRAILER_BASE / TRAILER_DATOS para pruebas.",
+   "Lo unico a la vista: SALIDA (Escritorio, o config.carpeta_terminados de Ajustes) / «EVENTO TERMINADO - <evento>» con VIDEO TERMINADO y PLANTILLAS DE LOS VIDEOS: carpeta_terminado, videos_terminados, plantillas_evento. TERMINADOS = SALIDA (espacio del render).",
+   "nombre_video(linea): «... - 15min» -> «VIDEO FINAL 15 MIN»; «... - VERTICAL 1min» -> «VIDEO FINAL VERTICAL 1 MIN» (video y su .drp).",
+   "pasar_adentro (lo llama tareas.instalar): lo de la carpeta de trabajo vieja a la vista (config.carpeta_trabajo o Escritorio/Trailer automatico) pasa a su sitio y la carpeta se quita si queda vacia. La que tiene PROGRAMA/ (la del proyecto) nunca se toca.",
+   "El codigo va en carpetas (nucleo, analisis, armado, entrega, interfaz, herramientas): import rutas las pone en sys.path; rutas.codigo(nombre) y rutas.CONFIG_PROG. En el .exe todo queda junto."
   ]
  },
  {
   "id": "analisis",
-  "resumen": "Analisis del material: relojes por camara, contenido, calidad/color/audio y la 'vista' absoluta de cada medio segundo (enfoque, quemado, torcida, barrido) en 1 lectura",
+  "resumen": "Analisis del material: relojes por camara, contenido, calidad/color/audio, la 'vista' de cada medio segundo y lo que VE la IA local (Qwen3-VL en Ollama): momento, escena, etiquetas y si la toma sirve",
   "claves": [
    "analizar",
    "exif",
@@ -308,7 +334,8 @@
    "vista"
   ],
   "archivos": [
-   "PROGRAMA/analisis/analizar_material.py"
+   "PROGRAMA/analisis/analizar_material.py",
+   "PROGRAMA/analisis/vision_ia.py"
   ],
   "simbolos": [
    "analizar",
@@ -332,15 +359,34 @@
    "_auto_contenido",
    "_vista_cuadros",
    "_barrido_de",
-   "_quemado"
+   "_quemado",
+   "_ver_con_ia",
+   "_segun_lo_que_ve",
+   "_en_orden",
+   "describir",
+   "modelo",
+   "_sincronizar_por_audio",
+   "_cruce",
+   "_envolvente",
+   "_nombres_originales",
+   "instantes",
+   "en_gpu",
+   "motivo_cuadro",
+   "parte_mala",
+   "cuadro_malo",
+   "_instantes_con_ia"
   ],
   "notas": [
+   "(1.5.7) vision_ia: el mejor modelo de vision de Ollama (qwen3-vl primero; capabilities=vision), 3 cuadros por video (Pillow para fotos), JSON {momento PREPARATIVOS|IGLESIA|FIESTA|OTRO, escena, etiquetas, util}; ~4 s por toma, 3 en paralelo; cache «ia» por archivo. clasificar -> _segun_lo_que_ve: _en_orden (DP MAQUILLAJE<=IGLESIA<=FIESTA que menos contradice a la IA; sin preparativos confirmados no hay MAQUILLAJE); util=false -> descartar. Boda 7-nov: antes la ceremonia salia MAQUILLAJE; ahora 0/14/53 bien.",
    "Cache material.json con clave nombre|tamano (sobrevive a mover carpetas); VERSION sube y lo viejo se completa solo.",
    "Relojes: UTC se detecta comparando la fecha del ARCHIVO (hora local de la camara) con creation_time; fecha mala con hora buena se pasa al dia del evento; lo demas se ordena por contenido.",
    "Contenido: luz/negro/saturacion/calidez/grises en la escala de CADA camara + orden de sus archivos (DP MAQUILLAJE->IGLESIA->FIESTA). Los vecinos de otras camaras empeoraban (MEZCLA_VECINOS=0).",
    "Medido rompiendo relojes a proposito: UTC 100%, fecha mala 100%, fotos sin hora 97%, todo sin hora 92%, material real sin falsos positivos.",
    "Reloj sin poner (otra fecha y otra hora, pero corre): _reloj_corrido lo alinea con las camaras fiables. Ceremonia: primer tramo de video casi seguido tras una pausa larga (_ceremonia_tras_pausa).",
-   "vista (v4): por cada medio segundo, medidas ABSOLUTAS: nit (enfoque), con, quem (luces reventadas), eje/giro/pico (camara torcida o al piso), pan (barrido) y hash (huella de la imagen). La 'calidad' vieja es relativa al propio video: un video entero malo puntuaba como bueno."
+   "vista (v4): por cada medio segundo, medidas ABSOLUTAS: nit (enfoque), con, quem (luces reventadas), eje/giro/pico (camara torcida o al piso), pan (barrido) y hash (huella de la imagen). La 'calidad' vieja es relativa al propio video: un video entero malo puntuaba como bueno.",
+   "(1.5.7) _sincronizar_por_audio: camara con reloj dudoso puesta en hora por el nivel del audio contra las de reloj bueno; simultaneas (audio=True si el sonido lo confirma). _camara usa nombre_original (renombrados empiezan con VIDEO).",
+   "(1.5.7) vision_ia VERSION 2: 'equipo' (camara/flash/celular en primer plano) -> util false; en_gpu(): con DaVinci llenando la GPU no hay instantes y la revision mira 30 cuadros; NUM_CTX 8192.",
+   "(16-nov) Revision cuadro por cuadro (INSTANTES_V 4): TODAS las tomas cada 3 s; apunta/de_cabeza/cara/sin_cabeza con respuesta cerrada. Regla de la persona: si sale gente se le ve la cara; techo, de cabeza, sin cabeza, sin cara -> fuera ese tramo; toma entera si es la mitad de una corta o el 80% de una larga."
   ]
  },
  {
@@ -400,7 +446,9 @@
    "camara lenta"
   ],
   "archivos": [
-   "PROGRAMA/armado/build_trailers.py"
+   "PROGRAMA/armado/build_trailers.py",
+   "PROGRAMA/armado/estabilizar.py",
+   "PROGRAMA/armado/profundidad.py"
   ],
   "simbolos": [
    "Planificador",
@@ -424,7 +472,16 @@
    "foto_final",
    "heroe",
    "marcar_efectos",
-   "marcar_acercados"
+   "marcar_acercados",
+   "repartir_zonas",
+   "capacidad_f",
+   "multicamara",
+   "ia_tramos",
+   "lo_que_ve",
+   "_enfoque_evento",
+   "_cuadro_malo",
+   "_luz_pieza",
+   "enfoque_cine"
   ],
   "notas": [
    "zonas_de: si el marcador ACTO esta a menos de 5 s, el momento empieza en el cambio de cancion.",
@@ -436,7 +493,10 @@
    "30 c/s en linea de 24: los planos van al 80 % (CONFORMAR_30_A_24) para ver todos los cuadros; los sincronizados con voz, al 100 %.",
    "transiciones(): encadenado corto entre dos planos casi iguales (no en la apertura) y al entrar/salir de una foto de relleno.",
    "FINAL: desde 1,5 s antes del marcador CIERRE va una sola imagen: la mejor foto de la festejada (retrato, la mas nitida) con zoom dinamico y la tarjeta final en el tercio inferior; si no hay foto, el mejor plano en camara lenta (heroe).",
-   "Camaras lentas: 3/6/12/18 por version, solo en tomas firmes, como mucho el 45 % en un mismo momento; UMBRAL_PLANO descarta tramos flojos."
+   "Camaras lentas: 3/6/12/18 por version, solo en tomas firmes, como mucho el 45 % en un mismo momento; UMBRAL_PLANO descarta tramos flojos.",
+   "(1.5.7) repartir_zonas: zonas segun el material (Planificador.capacidad_f); multicamara: 2 angulos en planos emotivos con simultaneas confirmadas; emocion sube en los instantes clave de la IA; foto_final/intro con los novios.",
+   "(1.5.7) Transiciones: disolvencia en todos los cortes (tr suave/apertura/zona por version); UMBRAL_TEMBLOR 0,35 y PESO_TEMBLOR.",
+   "(16-nov) vista(): tramos malos de la IA fuera; nitidez contra la MEJOR camara (FOCO_ABS_MIN 0,55; vertical en horizontal 0,75); TEMBLOR_MAX 3, BARRIDO_MAX 6; estabilizar solo 0,35-2,5; Speed Warp solo en tomas muy firmes; corte al ritmo y encadenado solo en camara lenta, fotos y saltos de luz (SALTO_LUZ)."
   ]
  },
  {
@@ -544,7 +604,8 @@
    "NUNCA InsertFusionTitleIntoTimeline: inserta en V1 con ripple. Textos nuevos = PNG transparente + AddFusionComp.",
    "Nunca la herramienta Shadow de Fusion (pidio 47 GB y tumbo Resolve): sombreado de Text+ (elementos 3 y 5).",
    "Los titulos propios de la plantilla son macros (mWedding, MultiText): no se pueden redisenar; velos_plantilla pone un velo oscuro en la pista TEXTOS (debajo de ellos) mientras estan en pantalla.",
-   "disenar_titulo(abajo=True): la tarjeta final en el tercio inferior. Frases 0,088 de tamano y velo 0,55."
+   "disenar_titulo(abajo=True): la tarjeta final en el tercio inferior. Frases 0,088 de tamano y velo 0,55.",
+   "(1.5.7) DUR_CAPITULO/FRASE/GRACIAS 5/6/6,5 s, SEPARACION_TEXTOS 4, frases repartidas despues del capitulo y TRAS_CORTE_S."
   ]
  },
  {
@@ -596,7 +657,8 @@
    "Musica bajo la voz SIN escalon: el tramo bajo va en la pista «MUSICA BAJA (voz)» con la misma cancion en fase y fundidos de 14 cuadros (la suma es una rampa).",
    "VOZ a -10 LUFS medido en crudo: el aislamiento le quita el ambiente y con -15 quedaba 6 dB bajo la musica.",
    "Cambio de cancion (cruces_de_musica mide el sonido con ffmpeg): si la que sale sigue sonando, se alarga 2,5 s y se apaga en 4 s; si se ACABA antes (huecos casi en silencio), se retrasa entera para terminar donde entra la otra, de la ultima a la primera: la primera se alarga y la musica de fiesta no se mueve de su marcador.",
-   "SFX PROPIOS (recursos/sfx/XV_*.wav, los crea herramientas/hacer_sfx.py con numeros, sin licencias): golpe y subida a la entrada de la fiesta (marcador ACTO ... FIESTA), destellos en el titulo y el final, paso en capitulos, obturador en las fotos de la intro. Pista «SFX MOMENTOS»."
+   "SFX PROPIOS (recursos/sfx/XV_*.wav, los crea herramientas/hacer_sfx.py con numeros, sin licencias): golpe y subida a la entrada de la fiesta (marcador ACTO ... FIESTA), destellos en el titulo y el final, paso en capitulos, obturador en las fotos de la intro. Pista «SFX MOMENTOS».",
+   "(1.5.7) SFX 2-3 dB mas bajos (mezcla.OBJETIVOS) y whoosh con fundido de entrada/salida."
   ]
  },
  {
@@ -659,22 +721,28 @@
   "archivos": [
    "PROGRAMA/entrega/renderizar.py",
    "PROGRAMA/entrega/masterizar.py",
-   "PROGRAMA/herramientas/revisar_video.py"
+   "PROGRAMA/herramientas/revisar_video.py",
+   "PROGRAMA/entrega/revision_ia.py"
   ],
   "simbolos": [
    "renderizar",
    "masterizar",
    "verificar_imagen",
-   "medir"
+   "medir",
+   "revisar",
+   "marcar"
   ],
   "notas": [
+   "Salida: EVENTO TERMINADO - <evento>/VIDEO TERMINADO/VIDEO FINAL 1 MIN.mov (TargetDir y CustomName en build_trailers y motor.encolar_render).",
    "renderizar(solo=[...]): solo esas versiones; las demas que sigan en la cola no se vuelven a renderizar.",
-   "herramientas/revisar_video.py (hoja | cuadros | audio): revisar un video terminado sin verlo entero."
+   "herramientas/revisar_video.py (hoja | cuadros | audio): revisar un video terminado sin verlo entero.",
+   "(1.5.7) revision_ia: la IA mira el video final (cada 3 s, max 180) y pone marcadores rojos REVISAR (IA) en la linea.",
+   "(16-nov) revision_ia usa la misma regla que el analisis y dice el motivo de cada marca REVISAR."
   ]
  },
  {
   "id": "editable",
-  "resumen": "Cada evento terminado queda editable en DaVinci: linea abierta en Edicion, copia .drt en 3 PLANTILLAS EDITABLES, «Editar en DaVinci» y «Renderizar lo editado» (sin volver a armar)",
+  "resumen": "Cada evento terminado queda editable en DaVinci: linea abierta en Edicion, un proyecto .drp por video (solo esa linea, proxies y cache) en EVENTO TERMINADO/PLANTILLAS DE LOS VIDEOS, «Editar en DaVinci» y «Renderizar lo editado» (sin volver a armar)",
   "claves": [
    "editable",
    "plantilla",
@@ -690,7 +758,8 @@
    "PROGRAMA/entrega/renderizar.py",
    "PROGRAMA/armado/build_trailers.py",
    "PROGRAMA/interfaz/trailer_xv.py",
-   "PROGRAMA/nucleo/rutas.py"
+   "PROGRAMA/nucleo/rutas.py",
+   "PROGRAMA/entrega/editable.py"
   ],
   "simbolos": [
    "lineas_del_evento",
@@ -705,14 +774,23 @@
    "_ya_armado",
    "_preguntar_ya_armado",
    "_arrancar",
-   "_chips_editable"
+   "_chips_editable",
+   "etiqueta_de",
+   "nombre_linea",
+   "preparar_edicion",
+   "proxies_y_cache",
+   "proyecto_por_video",
+   "hacer_proxy",
+   "cache"
   ],
   "notas": [
    "Al terminar (con o sin render) DaVinci queda en la pagina Edicion con la linea mas corta del evento abierta (dejar_editable); las lineas viven en 02 EVENTOS/<evento> del proyecto EVENTOS CINEMA.",
-   "Copia por version: 3 PLANTILLAS EDITABLES/<evento>/<linea>.drt + LEEME.txt (rutas.EDITABLES: carpeta propia de la carpeta de trabajo, aparte de los videos; build_trailers.EDITABLE la apaga).",
-   "renderizar_editado: vuelve a poner en cola cada linea TAL COMO ESTA (entre sus marcas de entrada y salida), renderiza, masteriza a -14 LUFS y actualiza el .drt. No arma nada.",
+   "Copia por video: EVENTO TERMINADO - <evento>/PLANTILLAS DE LOS VIDEOS/VIDEO FINAL 1 MIN.drt + LEEME.txt (rutas.plantillas_evento + rutas.nombre_video; build_trailers.EDITABLE la apaga). Los videos al lado, en VIDEO TERMINADO.",
+   "renderizar_editado: vuelve a poner en cola cada linea TAL COMO ESTA (entre sus marcas de entrada y salida), renderiza, masteriza a -14 LUFS y rehace los .drp (proxies y cache). No arma nada.",
    "▶ sobre un evento ya armado con el mismo material (estado.huella == motor.huella()) pregunta: Renderizar lo editado / Volver a armar (reemplaza las lineas) / Cancelar. El armado automatico tras soltar material no pregunta (_play(auto=True)).",
-   "Trabajo(op, funcion): el mismo hilo y la misma escena para armar todo o renderizar lo editado (_arrancar)."
+   "Trabajo(op, funcion): el mismo hilo y la misma escena para armar todo o renderizar lo editado (_arrancar).",
+   "(1.5.7) La linea se llama como el video: rutas.nombre_linea -> «EVENTO - VIDEO FINAL 1 MIN»; rutas.etiqueta_de entiende el nombre de antes («EVENTO - 1min») y el nuevo.",
+   "(1.5.7) Al entregar: proxies 540p con la GPU (BASE/PROXIES) enlazados con LinkProxyMedia, cache de render smart+auto, y un proyecto por video (VIDEO FINAL 1 MIN.drp en PLANTILLAS DE LOS VIDEOS, solo esa linea y sus clips; reemplaza al .drt)."
   ]
  },
  {
@@ -891,7 +969,9 @@
   "archivos": [
    "PROGRAMA/analisis/escenas_ia.py",
    "PROGRAMA/armado/build_trailers.py",
-   "PROGRAMA/armado/indexar.py"
+   "PROGRAMA/armado/indexar.py",
+   "PROGRAMA/armado/estabilizar.py",
+   "PROGRAMA/armado/profundidad.py"
   ],
   "simbolos": [
    "TIPOS_VOZ",
@@ -916,7 +996,14 @@
    "reconocer",
    "aplicar_personas",
    "gente",
-   "reencuadrar"
+   "reencuadrar",
+   "_con_limite",
+   "estado",
+   "instalar_modelo",
+   "calcular",
+   "movimiento",
+   "zoom_para",
+   "enfoque_cine"
   ],
   "notas": [
    "TranscribeAudio y PerformAudioClassification devuelven False si Resolve no esta en la pagina MEDIOS (entender la abre y vuelve).",
@@ -931,7 +1018,11 @@
    "PERSONAS: MediaPoolItem.AnalyzeForIntellisearch(True, False) deja en el metadato «People» las caras del clip o la foto («Rostro 3, Rostro 6», las mismas entre archivos). escenas_ia.reconocer las guarda (datos/analisis/personas.json); la protagonista es la cara que sale en mas archivos. 0,7 s por foto y ~1 s por cada 5 de video, una vez por evento.",
    "El plan las usa: video con la festejada x1,25, sin ninguna cara x0,72 (y accidental si sirve < 35 %); intro, relleno y foto final con ella. Un video grabado por accidente sale sin caras.",
    "HABLANTE: cada segmento de GetTranscription trae «speaker». Un pasaje es de quien mas habla en el (pureza >= 0,55) y pesa mas quien mas habla en todo el evento (el pastor), no una voz suelta.",
-   "Smart Reframe (TimelineItem.SmartReframe) para los videos verticales cuando Ajustes los activa."
+   "Smart Reframe (TimelineItem.SmartReframe) para los videos verticales cuando Ajustes los activa.",
+   "La API de Resolve solo devuelve las CARAS de IntelliSearch (metadato People); objetos/escenas no salen al script: eso lo hace la IA local (analisis/vision_ia.py). build_trailers.lo_que_ve premia beso, anillos, votos, primer baile, pastel, brindis (CLAVE_IA) y los novios; textos_extra no pone capitulo de un momento que el evento no tiene.",
+   "(1.5.7) _con_limite: AnalyzeForIntellisearch con limite de tiempo (DaVinci se trabo en «Inicializando»). Ajustes > IA local: vision_ia.estado / instalar_modelo (ollama pull) / Descargar Ollama.",
+   "(16-nov) Estabilizador PROPIO (estabilizar.py): correlacion de fase en 12 tejas, camino suavizado, zoom minimo (ZOOM_MAX 1,08) y Transform de Fusion «ESTABILIZADOR» con un keyframe por cuadro; reemplaza a TimelineItem.Stabilize(). El script «Stabilize Tracker Transform» es manual y su licencia no deja incluirlo.",
+   "(16-nov) Magic Mask: sus puntos solo se ponen a mano (no automatizable). Depth Map de Fusion no se renderiza en un comp de clip (DaVinci 21.2): profundidad.py queda apagado (ENFOQUE_CINE False). Los comps se ponen ANTES del primer render (DaVinci reusa lo renderizado)."
   ]
  },
  {

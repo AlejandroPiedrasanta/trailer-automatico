@@ -3,9 +3,8 @@
 - **Qué es:** app PySide6 (Python 3.14, versión en `PROGRAMA/config/version.txt`) que arma tráilers de eventos (XV, boda, bautizo, graduación, cumpleaños) en DaVinci Resolve Studio 21 y los renderiza. Funciona en Windows y Mac.
 - **En Resolve:** base `EVENTOS`, proyecto `EVENTOS CINEMA`, plantillas `TRAILER XV - 1min/3min/15min/30min`.
 - **Carpetas:**
-  - `1 MATERIAL`: FOTOS · VIDEOS · DRON.
-  - `2 VIDEOS TERMINADOS`.
-  - `3 PLANTILLAS EDITABLES`: `<evento>/<línea>.drt`, la línea de DaVinci de cada versión para retocar (aparte de los videos).
+  - `1 MATERIAL`: FOTOS · VIDEOS · DRON · ANTERIORES (instalado va POR DENTRO, en `DATOS/trabajo`: nada a la vista). Desde la 1.5.7 una carpeta soltada NO se copia aquí: se usa donde está.
+  - `EVENTO TERMINADO - <evento>`: lo único a la vista (instalado, en el Escritorio): `VIDEO TERMINADO` (`VIDEO FINAL 1 MIN`, `VIDEO FINAL VERTICAL 1 MIN`…) y `PLANTILLAS DE LOS VIDEOS` (un proyecto `.drp` por video, mismo nombre: solo esa línea, con proxies y caché). `2 VIDEOS TERMINADOS` y `3 PLANTILLAS EDITABLES` son de antes de la 1.5.7.
   - `3 INSTALADORES`: Windows (.exe) · Mac (.dmg).
   - `PROGRAMA`: solo carpetas. Código en `interfaz/` (ventana, icono, Inicio), `nucleo/` (motor, rutas, registro, tareas), `analisis/` (material, escenas IA, ritmo), `armado/` (plantillas, SFX, mezcla, IntelliSearch), `entrega/` (render, master) y `herramientas/` (mapa_codigo, empaquetar). Además `config/` (versión, perfiles, requisitos, LEEME), `datos/` (cachés, respaldos, `registro/`), `recursos/`, `recursos_protegidos/`, `dctl/`, `compilar/` (`windows/`, `mac/`, `icono/`) y `docs/` (SKILL, mapa, capturas).
   - Ocultos en la raíz: `.git*`, `.github` y este `CLAUDE.md`.
@@ -23,10 +22,10 @@
 - **inicio-escena**: Pantalla de Inicio = la de CineCaptions: esfera de particulas, astrolabio GO, cometas, explosion
 - **ventana**: Ventana sin marco: portada al instante, pestanas Material/Textos/Ajustes (voz original, verticales, ruido), chequeo de arranque, instancia unica
 - **arranque**: Abrir sin tiempo de carga y con fluidez: portada nativa, fuentes (una familia, sin simbolos de reserva, hilo por ctypes), numpy/Pillow al primer uso, linea del dia y cielo guardados, tiempos con TRAILER_TIEMPOS
-- **material**: 1 MATERIAL: minimos, pedir lo que falta, arrastrar/agregar, y el panel 'Como quedo organizado' (linea del dia)
-- **soltar**: Suelta la carpeta y listo: examinar, evento nuevo (ANTERIORES), copiar con avance, ordenar FOTOS/VIDEOS/DRON, armar solo; plan previo sin DaVinci y prueba de arrastre
-- **rutas**: Todas las rutas: codigo vs instalado (.exe), DATOS, carpeta de trabajo, Resolve y LUT por sistema, ffmpeg
-- **analisis**: Analisis del material: relojes por camara, contenido, calidad/color/audio y la 'vista' absoluta de cada medio segundo (enfoque, quemado, torcida, barrido) en 1 lectura
+- **material**: Material: solo fotos JPG, al menos 1 video (las fotos de la intro salen de capturas del video si faltan), arrastrar/agregar y el panel 'Como quedo organizado' (linea del dia)
+- **soltar**: Suelta la carpeta y listo: se usa DONDE ESTA (sin copiar), se une al mismo evento, sus archivos se renombran en su sitio con tipo y momento (nunca se borra nada); nuevo evento solo si el anterior ya termino
+- **rutas**: Todas las rutas: codigo vs instalado (.exe), DATOS, trabajo POR DENTRO, EVENTO TERMINADO en el Escritorio, nombres VIDEO FINAL, pasar_adentro, Resolve y LUT por sistema, ffmpeg
+- **analisis**: Analisis del material: relojes por camara, contenido, calidad/color/audio, la 'vista' de cada medio segundo y lo que VE la IA local (Qwen3-VL en Ollama): momento, escena, etiquetas y si la toma sirve
 - **resolve**: Conexion con DaVinci: abrir, cargar/importar proyecto, cuadros que bloquean, reenlazar medios
 - **armado**: Armado de cada version: duplicar plantilla, planificar planos (tomas malas fuera, relleno con dron/fotos, final con foto), zonas por marcador, cortes al ritmo, camara lenta
 - **media-pool**: Media pool en carpetas numeradas 01 PLANTILLAS .. 06 EFECTOS, por momento y fuente, con colores
@@ -35,7 +34,7 @@
 - **sonido**: SFX por momento, SFX propios en los momentos clave, whoosh, cambio de cancion sin huecos, musica bajo la voz en rampa y mezcla medida en LUFS
 - **formatos**: Dos formatos en Inicio con las mismas duraciones: HORIZONTAL (16:9, acepta videos horizontales y verticales) y VERTICAL (9:16 para celular, solo videos grabados en vertical)
 - **entrega**: Render de la cola (solo las versiones pedidas), audio a -14 LUFS con limitador, medicion del video final y revisar_video.py
-- **editable**: Cada evento terminado queda editable en DaVinci: linea abierta en Edicion, copia .drt en 3 PLANTILLAS EDITABLES, «Editar en DaVinci» y «Renderizar lo editado» (sin volver a armar)
+- **editable**: Cada evento terminado queda editable en DaVinci: linea abierta en Edicion, un proyecto .drp por video (solo esa linea, proxies y cache) en EVENTO TERMINADO/PLANTILLAS DE LOS VIDEOS, «Editar en DaVinci» y «Renderizar lo editado» (sin volver a armar)
 - **perfiles**: Tipos de evento (xv, boda, bautizo, graduacion, cumpleanos): titulos, capitulos, frases, gracias
 - **instalador**: Instalador .exe de 1 MB + .dat (abre al instante) como el de CineCaptions: banner animado, PASOS, % y barra; PyInstaller + C#; icono
 - **mac**: Mac: .dmg de «Doble clic para instalar» como CineSlide: ventana nativa (Swift) igual a la de Windows que copia a Aplicaciones sin contrasena, Dock, primer arranque, abre y expulsa; se compila desde Windows en GitHub Actions
@@ -52,11 +51,16 @@
   - Nunca `InsertFusionTitleIntoTimeline` ni la herramienta Shadow de Fusion.
   - Los cambios de clips solo funcionan en la timeline activa y ya asentada.
 - **Plantillas:** `TRAILER XV - *` no se tocan; cada evento es un duplicado.
-- **Editable:** al terminar, la línea del evento queda abierta en Edición y su `.drt` en `3 PLANTILLAS EDITABLES/<evento>` (carpeta propia, aparte de los videos). ▶ rearma y reemplaza las líneas: sobre un evento ya armado se pregunta antes; lo retocado a mano se saca con «Renderizar lo editado».
+- **Editable:** al terminar, la línea del evento queda abierta en Edición y un `.drp` por video (solo esa línea) en `EVENTO TERMINADO - <evento>/PLANTILLAS DE LOS VIDEOS`. ▶ rearma y reemplaza las líneas: sobre un evento ya armado se pregunta antes; lo retocado a mano se saca con «Renderizar lo editado».
+- **Soltar:** la carpeta soltada se usa DONDE ESTÁ (no se copia; `estado.carpetas`, `rutas.fuentes()`). Al armar, sus archivos se renombran en su sitio: `VIDEO HORIZONTAL 001 (CEREMONIA).MP4`, `VIDEO VERTICAL 004 (FIESTA).MOV`, `DRON 001 (FIESTA).MP4`, `FOTO 003 (MAQUILLAJE).JPG` (nombres viejos en `datos/analisis/nombres.json`). NUNCA se borra ningún archivo. Otra carpeta soltada se une al mismo evento sin preguntar; solo si el evento ya está terminado (con sus videos) empieza uno nuevo.
+- **Material:** solo fotos JPG (RAW, DNG, PNG, HEIC no cuentan ni se tocan). Sin fotos JPG para la intro, se sacan capturas del video (`motor.capturas_intro`, por dentro en `CAPTURAS`). Si hay videos verticales, se arma solo también el VERTICAL 1 min.
 - **Montaje:**
   - 8 fotos en la intro y UNA al final (la mejor de la persona festejada, con la tarjeta final abajo). Fotos dentro del video solo como relleno en el de 30 min (cuando no alcanzan las tomas buenas), antes que repetir o meter una toma fea.
   - Personas: las reconoce DaVinci (IntelliSearch con caras → `it["caras"]`, `it["prota"]`); la festejada es la cara que sale en más archivos y sus tomas y fotos van primero.
-  - Tomas malas fuera: desenfocadas, quemadas, torcidas o al piso (medidas `vista` del analizador, en absoluto).
+  - Tomas malas fuera: desenfocadas, quemadas, torcidas o al piso (medidas `vista` del analizador, en absoluto; nitidez también contra la mejor cámara del evento).
+  - **Si sale gente, se le ve la cara**: la IA local revisa cada toma cada 3 s (`vision_ia.instantes`); techo, piso, de cabeza, tapada, sin cabeza, de espaldas o sin ninguna cara → fuera ese tramo (o la toma entera si es la mayor parte). Lo muy movido no entra (el estabilizador lo deforma).
+  - Antes de dar por bueno un video: hoja de contacto (2 cuadros/s) y mirarla.
+  - Estabilizar con el estabilizador propio (`armado/estabilizar.py`, Transform de Fusion con keyframes, zoom mínimo), no con `Stabilize()` de Resolve; los comps se ponen ANTES del primer render del clip (DaVinci reusa lo renderizado). La Magic Mask no se puede automatizar (puntos a mano) y el Depth Map de Fusion no se renderiza en un comp de clip (`profundidad.py` apagado).
   - Voz original solo de quien habla de corrido (pastor, brindis, discursos), nunca ruidos ni voces sueltas: siempre en 30 min, activada en 15, a elegir en 1 y 3 (Ajustes › Voz original).
   - Color: la saturación nunca pasa de la de cámara (ni el CDL ni el look la suben).
   - Colores: MAQUILLAJE morado, IGLESIA verde, FIESTA rosa.
@@ -75,6 +79,7 @@
 - **Probar:**
   - Usar arneses en el scratchpad: motor simulado y `grab()` a PNG de la ventana real.
   - Contra Resolve sin tocar nada: `python PROGRAMA/interfaz/trailer_xv.py --seco`.
+  - El plan de una versión sin DaVinci, plano por plano: `python PROGRAMA/herramientas/storyboard.py 1min sb.jpg`.
 - **Compilar:** solo si la persona lo pide.
   1. Subir `PROGRAMA/config/version.txt`.
   2. Correr `pwsh -File PROGRAMA/compilar/windows/construir.ps1` (deja el .exe en `3 INSTALADORES/Windows`).

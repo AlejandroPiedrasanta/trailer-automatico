@@ -556,8 +556,8 @@ class Ventana : Form, IVista
     {
         string carpeta = Instalador.Destino.Replace(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "%USERPROFILE%");
         if (desinstalar)
-            return "Se quita el programa, sus accesos directos y su entrada en Aplicaciones. Tus carpetas de trabajo " +
-                   "(1 MATERIAL, 2 VIDEOS TERMINADOS) y tus videos no se tocan.";
+            return "Se quita el programa, sus accesos directos y su entrada en Aplicaciones. Tus eventos terminados " +
+                   "(EVENTO TERMINADO en el Escritorio) y el material guardado no se tocan.";
         string t = "Se instala solo para tu usuario (sin permisos de administrador) en " + carpeta +
                    ". Trae ffmpeg, las plantillas, la música, los SFX y las fuentes. Tus carpetas y tus videos no se tocan.";
         string v = Instalador.VersionInstalada();

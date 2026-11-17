@@ -22,7 +22,7 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
         p = r.GetProjectManager().GetCurrentProject()
         jobs = [j for j in p.GetRenderJobList() or [] if evento and j.get("TimelineName", "").startswith(evento + " - ")]
         if solo:
-            jobs = [j for j in jobs if j["TimelineName"].split(" - ")[-1] in solo]
+            jobs = [j for j in jobs if motor.rutas.etiqueta_de(j["TimelineName"]) in solo]
         if not jobs:
             log("No hay trabajos de render para %s en la cola." % evento)
             return []
@@ -44,7 +44,7 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
                 s = p.GetRenderJobStatus(j["JobId"]) or {}
                 pct = float(s.get("CompletionPercentage", 0) or 0)
                 total += pct if s.get("JobStatus") != "Complete" else 100.0
-                estado.append("%s %s %d%%" % (j["TimelineName"].split(" - ")[-1], s.get("JobStatus", "?"), pct))
+                estado.append("%s %s %d%%" % (motor.rutas.etiqueta_de(j["TimelineName"]), s.get("JobStatus", "?"), pct))
             linea = " | ".join(estado)
             if linea != ultimo:
                 log("%5.0f s  %s" % (time.time() - t0, linea))
@@ -62,17 +62,41 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
             log("%s: %s  %s (%.0f MB)" % (j["TimelineName"], s.get("JobStatus"), ruta, tam))
             res.append((j["TimelineName"], ok, ruta))
         # DaVinci queda en Edicion con la linea del evento abierta: lista para retocar lo que no guste
-        abierta = motor.dejar_editable(r, p, evento, [j["TimelineName"].split(" - ")[-1] for j in jobs])
+        abierta = motor.dejar_editable(r, p, evento, [motor.rutas.etiqueta_de(j["TimelineName"]) for j in jobs])
         if abierta:
             log("En DaVinci queda abierta y editable: %s" % abierta)
     # audio de entrega: -14 LUFS y picos bajo -1 dBTP en todas las versiones (no necesita Resolve)
     import masterizar
+    revisar = {}
     for k, (nombre, ok, ruta) in enumerate(res, 1):
         if ok:
             if progreso:
                 progreso(100, "Masterizando audio %d de %d" % (k, len(res)))
             masterizar.masterizar(ruta, log)
             masterizar.verificar_imagen(ruta, log)       # mide saturacion y luz del video final
+            try:                                         # (1.5.7) la IA local mira el video final
+                import revision_ia
+                if progreso:
+                    progreso(100, "Revisando con IA %d de %d" % (k, len(res)))
+                malos = revision_ia.revisar(ruta, log)
+                if malos:
+                    revisar[nombre] = malos
+            except Exception as ex:
+                log("Aviso: no se pudo revisar con IA %s (%s)" % (os.path.basename(ruta), ex))
+    if revisar:                                          # marcadores rojos en la linea de DaVinci, para corregir a mano
+        try:
+            import revision_ia
+            with motor.CANDADO:
+                p = motor.conectar_resolve(log).GetProjectManager().GetCurrentProject()
+                desde = {j["TimelineName"]: int(j.get("MarkIn") or 0) for j in jobs}
+                for i in range(1, p.GetTimelineCount() + 1):
+                    tl = p.GetTimelineByIndex(i)
+                    if tl.GetName() in revisar:
+                        inicio = desde.get(tl.GetName()) or tl.GetStartFrame()
+                        n = revision_ia.marcar(tl, revisar[tl.GetName()], inicio - tl.GetStartFrame())
+                        log("%s: %d marcadores rojos «REVISAR (IA)» en la linea." % (tl.GetName(), n))
+        except Exception as ex:
+            log("Aviso: no se pudieron poner los marcadores de revision (%s)" % ex)
     return res
 
 

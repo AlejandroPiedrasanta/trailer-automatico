@@ -10,7 +10,8 @@ y comprueba que se ordene, se organice y empiece a armar. Todo en local (sin int
      Mac:     /Applications/TrailerAutomatico.app/Contents/MacOS/TrailerAutomatico
   --salida <carpeta>     donde dejar resultado.txt y las capturas (por defecto, una carpeta temporal)
   --con-davinci          deja que conecte con DaVinci Resolve y arme de verdad (crea «BODA 2026-10-17 - 1min»)
-  --dos-eventos          antes suelta OTRO evento, para probar la pregunta «¿evento nuevo?» y la carpeta ANTERIORES
+  --dos-eventos          antes deja OTRO evento ya terminado: lo soltado empieza uno nuevo sin preguntar y el anterior
+                         queda en ANTERIORES (1.5.7: si no estuviera terminado, se uniria al mismo evento)
 Sin --con-davinci la prueba hace como si DaVinci no estuviera: llega hasta el plan de las plantillas y el aviso claro.
 """
 import os
@@ -53,7 +54,10 @@ def main(args):
         print("FALLA  no se pudo crear el material de prueba: %s" % (open(err, encoding="utf-8").read()[:600]
                                                                      if os.path.exists(err) else r.returncode))
         return 1
-    if "--dos-eventos" in args:                         # otro evento ya en 1 MATERIAL (de otro dia)
+    if "--dos-eventos" in args:                         # otro evento ya en 1 MATERIAL, YA TERMINADO (con sus videos):
+        estado.update({"evento": "EVENTO VIEJO", "terminado": "EVENTO VIEJO"})       # lo soltado empieza uno nuevo
+        with open(os.path.join(zona, "datos", "analisis", "estado_programa.json"), "w", encoding="utf-8") as f:
+            json.dump(estado, f)
         viejo = os.path.join(env["TRAILER_BASE"], "1 MATERIAL")
         os.makedirs(os.path.join(viejo, "FOTOS"))
         os.makedirs(os.path.join(viejo, "VIDEOS"))

@@ -8,13 +8,14 @@ se instala y abre el programa solo. El archivo .dat que está a su lado es el pr
 No pide permisos de administrador. Crea "Tráiler automático" en el Escritorio y en el menú Inicio,
 instala las fuentes de los títulos y el color/ruido en DaVinci. Trae su propio ffmpeg, las
 plantillas, la música y los SFX. Para quitarlo: Configuración > Aplicaciones > Tráiler automático.
-Tus carpetas (1 MATERIAL, 2 VIDEOS TERMINADOS) nunca se borran. La carpeta de trabajo se puede
-cambiar en Ajustes. Si algo falla, el registro está en %LOCALAPPDATA%\TrailerAutomatico\registro\registro.log.
+El material y el trabajo van por dentro del programa: a la vista solo queda, en el Escritorio, una
+carpeta por evento terminado (se puede cambiar en Ajustes). Si algo falla, el registro está en %LOCALAPPDATA%\TrailerAutomatico\registro\registro.log.
 
 COMO SE USA (3 pasos)
 1. Abre "Tráiler automático" (o doble clic en ARMAR TRAILERS.bat / .command sin instalar).
-2. Pon el material: arrastra fotos, videos o carpetas a la ventana (se ordenan solos en
-   1 MATERIAL\FOTOS, VIDEOS y DRON) o usa la pestana "Material" > Agregar...
+2. Pon el material: arrastra la carpeta del evento (o fotos y videos sueltos) a la ventana: se ordena
+   solo en FOTOS, VIDEOS y DRON. Si arrastras otra carpeta despues, se une al mismo evento.
+   Tambien puedes usar la pestana "Material" > Agregar...
      FOTOS   al menos 8 (se usan para los destellos de la intro)
      VIDEOS  al menos 1 (camara y celular de todo el evento)
      DRON    opcional
@@ -25,20 +26,26 @@ COMO SE USA (3 pasos)
    del centro. En "Textos" eliges el tipo de evento y escribes los nombres.
 
 Si algo no te gusta, se retoca: cada evento terminado queda editable en DaVinci Resolve (proyecto
-EVENTOS CINEMA, carpeta 02 EVENTOS) y su copia en la carpeta 3 PLANTILLAS EDITABLES/<evento>, aparte
-de los videos. Pulsa "Editar en DaVinci", cambia lo que quieras y luego "Renderizar lo editado": saca
+EVENTOS CINEMA, carpeta 02 EVENTOS) y su copia en EVENTO TERMINADO - <evento>/PLANTILLAS DE LOS
+VIDEOS. Pulsa "Editar en DaVinci", cambia lo que quieras y luego "Renderizar lo editado": saca
 el video de nuevo SIN volver a armarlo. (El boton ▶ si lo arma desde cero.)
 
 El programa hace todo solo: ordena el material (maquillaje, iglesia, fiesta), lo arma en las
 4 plantillas de DaVinci Resolve (1, 3, 15 y 30 min) con textos, transiciones, musica, SFX y
-color, renderiza, deja el audio listo para redes y abre  2 VIDEOS TERMINADOS  con los videos.
+color, renderiza, deja el audio listo para redes y abre la carpeta del evento terminado.
 
-Para un evento nuevo: vacia 1 MATERIAL, copia el material nuevo y pulsa ▶ otra vez.
+Para un evento nuevo: cuando el anterior ya esta terminado, arrastra la carpeta del nuevo y listo
+(el material del anterior queda guardado por dentro; no se borra nada).
 
 
-CARPETAS
-  1 MATERIAL ............ aqui va el material del evento
-  2 VIDEOS TERMINADOS ... aqui salen los videos listos (una carpeta por evento)
+LO QUE SALE (en el Escritorio, una carpeta por evento)
+  EVENTO TERMINADO - <evento>
+    VIDEO TERMINADO ............ VIDEO FINAL 1 MIN, VIDEO FINAL 3 MIN... y VIDEO FINAL VERTICAL 1 MIN...
+    PLANTILLAS DE LOS VIDEOS ... un proyecto de DaVinci por video (.drp, mismo nombre), con SOLO esa linea,
+                                 ya con proxies para que reproduzca fluido: por si hay que corregir algo
+
+CARPETAS (version sin instalar)
+  1 MATERIAL ............ el material del evento (lo llena el programa al arrastrar la carpeta)
   PROGRAMA .............. lo tecnico: no hace falta abrirla
   ARMAR TRAILERS ........ el boton
 

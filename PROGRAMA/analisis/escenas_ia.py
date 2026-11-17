@@ -376,6 +376,26 @@ def _pantalla_despierta(si):
     return None
 
 
+def _con_limite(fn, limite_s):
+    """fn() en un hilo aparte, esperando como mucho limite_s: TimeoutError si DaVinci no contesta."""
+    import threading
+    res = {}
+
+    def correr():
+        try:
+            res["v"] = fn()
+        except Exception as ex:
+            res["e"] = ex
+    h = threading.Thread(target=correr, daemon=True)
+    h.start()
+    h.join(limite_s)
+    if h.is_alive():
+        raise TimeoutError("DaVinci no contesto en %.0f s" % limite_s)
+    if "e" in res:
+        raise res["e"]
+    return res.get("v")
+
+
 def reconocer(pares, log=print, limite_s=VIDEOS_LIMITE_S, renderizando=None):
     """pares: [(MediaPoolItem, item del analisis)] de fotos y videos. Pasa por IntelliSearch con caras (modo rapido)
     lo que aun no se analizo y lee las personas de cada uno.
@@ -429,10 +449,18 @@ def reconocer(pares, log=print, limite_s=VIDEOS_LIMITE_S, renderizando=None):
                 log("  %d videos largos se reconocen después, en segundo plano." % (len(pendientes) - n + 1))
                 break
             try:
-                if not c.AnalyzeForIntellisearch(True, False):
+                # (1.5.7) con limite: el 2026-11-16 DaVinci se trabo en «Indice de archivos - Inicializando...» con 3
+                # videos y el armado espero para siempre (ni su «Cancelar» respondia). Si no termina, se sigue sin las
+                # caras de lo que falta (quedan neutras) y se avisa.
+                if not _con_limite(lambda: c.AnalyzeForIntellisearch(True, False),
+                                   90.0 + 0.6 * float(it.get("dur") or 0)):
                     continue
                 cache[k] = personas_de(c)
                 hechos_n += 1
+            except TimeoutError:
+                log("  DaVinci se quedó trabado reconociendo %s: sigo sin las caras de lo que falta (cierra la ventana "
+                    "«Analizar para IntelliSearch» de DaVinci si quedó abierta)." % it["nombre"])
+                break
             except Exception as ex:
                 log("  %s: no se pudo reconocer (%s)" % (it["nombre"], ex))
             if n % 25 == 0:

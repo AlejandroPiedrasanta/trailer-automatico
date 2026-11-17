@@ -31,7 +31,7 @@ VERSIONES = ["1min", "3min", "15min", "30min"]
 SEGUNDOS = {"1min": 60, "3min": 180, "15min": 900, "30min": 1800}      # lo que dura cada version
 ETIQUETA_VERTICAL = "VERTICAL"      # las lineas del formato vertical: «XV 2026-11-08 - VERTICAL 1min»
 SIN_VERTICALES = ("El formato vertical solo usa videos grabados en vertical (celular parado) y no alcanzan los que hay "
-                  "en 1 MATERIAL/VIDEOS. Agrega videos verticales o arma el formato horizontal.")
+                  "en el material. Suelta más videos verticales o arma el formato horizontal.")
 # Voz original (pastor, brindis, discursos) sobre la musica: como viene cada version en Ajustes. En la de 30 min va
 # siempre y no se pregunta (igual que VOZ_DEFECTO / VOZ_SIEMPRE de build_trailers.py).
 VOZ_DEFECTO = {"1min": False, "3min": False, "15min": True}
@@ -51,6 +51,22 @@ def leer_estado():
 
 def guardar_estado(d):
     am._guardar_json(ESTADO, d)            # escritura segura: si se corta la luz, el estado anterior queda entero
+
+
+def marcar_terminado(evento, videos):
+    """El evento ya tiene su EVENTO TERMINADO con al menos un video bueno: lo siguiente que se suelte empieza un evento
+    nuevo (la persona, 2026-11-16: «al terminar el anterior»). videos = [(linea, ok, ruta)] de renderizar."""
+    if evento and any(ok for _, ok, _ in videos or []):
+        est = leer_estado()
+        est["terminado"] = evento
+        guardar_estado(est)
+
+
+def evento_terminado():
+    """El nombre del evento que hay en 1 MATERIAL si ya quedo terminado (con sus videos), o ''."""
+    est = leer_estado()
+    terminado = est.get("terminado") or ""
+    return terminado if terminado == est.get("evento") else ""
 
 
 # ------------------------------------------------------------------ prevenir errores
@@ -86,7 +102,7 @@ GB_POR_VERSION = {"1min": 0.1, "3min": 0.25, "15min": 1.1, "30min": 2.2}     # M
 
 
 def espacio_para_render(versiones):
-    """(libre_gb, necesita_gb) en el disco de 2 VIDEOS TERMINADOS (con margen para el masterizado)."""
+    """(libre_gb, necesita_gb) en el disco donde quedan los EVENTO TERMINADO (con margen para el masterizado)."""
     import shutil
     d = rutas.TERMINADOS
     while d and not os.path.isdir(d):
@@ -134,8 +150,10 @@ def resumen_carpetas():
     return cuenta
 
 
-# Lo minimo para armar: 8 fotos para los destellos de la intro y al menos un video. El dron es opcional.
-MINIMOS = {"foto": 8, "video": 1, "dron": 0}
+# Lo minimo para armar: al menos un video. Las 8 fotos de la intro (y la del final) salen de capturas del video si no hay
+# fotos JPG (1.5.7, la persona: «si no hay fotos para la intro tomas capturas del video»). El dron es opcional.
+MINIMOS = {"foto": 0, "video": 1, "dron": 0}
+FOTOS_INTRO = 9                                   # 8 en la intro y 1 al final
 NOMBRE_CARPETA = {"foto": "FOTOS", "video": "VIDEOS", "dron": "DRON"}
 
 
@@ -147,21 +165,8 @@ def revisar_material():
 
 
 RAW = {".cr2", ".cr3", ".nef", ".arw", ".dng", ".raf", ".orf", ".rw2", ".srw"}
-CARPETAS_DRON = ("dron", "drone", "aereo", "aéreo", "aerea", "aérea", "mavic")
-
-
-def tipo_de_archivo(ruta):
-    """'foto', 'video' o 'dron' segun la extension. Dron: archivos DJI_ o dentro de una carpeta llamada DRON, Drone,
-    Aereo, Mavic... None si no sirve."""
-    ext = os.path.splitext(ruta)[1].lower()
-    if ext in am.EXT["foto"]:
-        return "foto"
-    if ext in am.EXT["video"]:
-        if os.path.basename(ruta).upper().startswith(("DJI_", "DJI-")):
-            return "dron"
-        carpeta = os.path.basename(os.path.dirname(ruta)).lower()
-        return "dron" if any(p in carpeta for p in CARPETAS_DRON) else "video"
-    return None
+CARPETAS_DRON = am.CARPETAS_DRON
+tipo_de_archivo = am.tipo_de_archivo        # solo JPG como foto (1.5.7); dron por nombre o carpeta
 
 
 class Cancelado(Exception):
@@ -275,6 +280,14 @@ def evento_actual():
     return leer_estado().get("evento") or fecha or "evento anterior", fecha
 
 
+def es_evento_nuevo():
+    """(1.5.7) Lo que se suelta se une al evento que hay; solo si ese ya quedo terminado (con su EVENTO TERMINADO y sus
+    videos) lo soltado empieza un evento nuevo. Devuelve el nombre del terminado o ''."""
+    if not any(resumen_carpetas().values()):
+        return ""
+    return evento_terminado()
+
+
 def es_otro_evento(fecha_nueva, fecha_actual):
     """True si lo que se suelta es de otro dia (mas de un dia de diferencia: la fiesta pasa de medianoche)."""
     import datetime
@@ -310,11 +323,320 @@ def archivar_material(nombre):
     if os.path.exists(rutas.CLASIFICACION):               # las correcciones a mano eran de ESE evento
         os.makedirs(destino, exist_ok=True)
         shutil.move(rutas.CLASIFICACION, os.path.join(destino, os.path.basename(rutas.CLASIFICACION)))
+    if os.path.isdir(rutas.CAPTURAS):                     # las capturas de la intro eran de ESE evento
+        os.makedirs(destino, exist_ok=True)
+        shutil.move(rutas.CAPTURAS, os.path.join(destino, "CAPTURAS"))
     est = leer_estado()
-    for clave in ("nombre_xv", "frase", "fecha_lugar", "evento_manual", "evento", "huella", "timelines", "resumen_versiones"):
+    for clave in ("nombre_xv", "frase", "fecha_lugar", "evento_manual", "evento", "huella", "timelines", "resumen_versiones",
+                  "terminado", "carpetas", "sin_renombrar"):
         est.pop(clave, None)
     guardar_estado(est)
     return destino, n
+
+
+def usar_carpeta(carpeta, anterior=None):
+    """(1.5.7, la persona: «si te arrastran la carpeta, es la ruta donde está») La carpeta soltada se usa DONDE ESTA: no
+    se copia nada. Se une a las del evento; si el anterior ya estaba terminado (anterior = su nombre) empieza un evento
+    nuevo (sus textos quedan en blanco y lo suyo se guarda en ANTERIORES). Nada se borra. Devuelve las carpetas."""
+    if anterior:
+        archivar_material(anterior)
+    est = leer_estado()
+    lista = [c for c in est.get("carpetas") or [] if os.path.isdir(c)]
+    nueva = os.path.abspath(carpeta)
+    if os.path.normcase(nueva) not in [os.path.normcase(os.path.abspath(c)) for c in lista]:
+        lista.append(nueva)
+    est["carpetas"] = lista
+    guardar_estado(est)
+    return lista
+
+
+MOMENTO_NOMBRE = {"MAQUILLAJE": "MAQUILLAJE", "IGLESIA": "CEREMONIA", "FIESTA": "FIESTA"}
+
+
+def _de_carpetas_evento(ruta):
+    r = os.path.normcase(os.path.abspath(ruta))
+    caps = os.path.normcase(os.path.abspath(rutas.CAPTURAS))
+    return any(r.startswith(c + os.sep) for c in (os.path.normcase(os.path.abspath(x)) for x in rutas.fuentes())
+               if c != caps)
+
+
+def renombrar_material(analisis, log=print):
+    """(1.5.7, la persona: «simplemente renombras todos los archivos: si son dron, dron; si es video vertical, video
+    vertical; si es horizontal también; y entre paréntesis si es maquillaje, ceremonia o fiesta; nunca borres ningún
+    archivo») Cada archivo del evento se renombra EN SU SITIO (misma carpeta: nada se mueve ni se borra), numerado por hora
+    dentro de su tipo: «VIDEO HORIZONTAL 001 (CEREMONIA).MP4», «VIDEO VERTICAL 004 (FIESTA).MOV», «DRON 001 (FIESTA).MP4»,
+    «FOTO 003 (MAQUILLAJE).JPG». Lo ya medido sigue valiendo (am.renombrar_cache) y los nombres de antes quedan en
+    datos/analisis/nombres.json, para poder deshacerlo. Devuelve [(ruta_vieja, ruta_nueva)]."""
+    if leer_estado().get("sin_renombrar"):     # la persona restauro los nombres originales: no se vuelve a renombrar
+        return []
+    items = [i for i in analisis.get("items") or [] if _de_carpetas_evento(i["ruta"]) and os.path.exists(i["ruta"])]
+    grupos = {}
+    for i in items:
+        if i["tipo"] == "foto":
+            t = "FOTO"
+        elif i["tipo"] == "dron":
+            t = "DRON"
+        else:
+            t = "VIDEO HORIZONTAL" if i.get("horizontal", True) else "VIDEO VERTICAL"
+        grupos.setdefault(t, []).append(i)
+    plan = []
+    for t, lista in grupos.items():
+        lista.sort(key=lambda i: (str(i.get("hora") or ""), i["nombre"]))
+        for k, i in enumerate(lista, 1):
+            mom = MOMENTO_NOMBRE.get(i.get("momento"))
+            ext = os.path.splitext(i["ruta"])[1]
+            nombre = "%s %03d%s%s" % (t, k, " (%s)" % mom if mom else "", ext)
+            nuevo = os.path.join(os.path.dirname(i["ruta"]), nombre)
+            if os.path.normcase(nuevo) != os.path.normcase(i["ruta"]):
+                plan.append((i["ruta"], nuevo))
+    if not plan:
+        return []
+    origenes = {os.path.normcase(a) for a, _ in plan}
+    final = []
+    for a, b in plan:                         # un archivo ajeno que ya se llame asi no se pisa: «... (2)»
+        base, ext = os.path.splitext(b)
+        k = 2
+        while os.path.exists(b) and os.path.normcase(b) not in origenes:
+            b = "%s (%d)%s" % (base, k, ext)
+            k += 1
+        final.append((a, b))
+    registro = os.path.join(rutas.ANALISIS, "nombres.json")       # primero la lista: si algo se corta, se sabe que era
+    try:
+        with open(registro, encoding="utf-8") as f:
+            hist = json.load(f)
+    except Exception:
+        hist = []
+    hist.append({"fecha": time.strftime("%Y-%m-%d %H:%M:%S"), "cambios": final})
+    am._guardar_json(registro, hist)
+    # en dos pasos (a un nombre de paso y luego al final): asi dos archivos pueden intercambiar su numero sin pisarse
+    pasos, hechos = [], []
+    for n, (a, b) in enumerate(final):
+        tmp = os.path.join(os.path.dirname(a), "~renombrando %d%s" % (n, os.path.splitext(a)[1]))
+        try:
+            os.rename(a, tmp)
+            pasos.append((a, tmp, b))
+        except OSError as ex:
+            log("Aviso: no pude renombrar %s (%s)" % (os.path.basename(a), ex))
+    for a, tmp, b in pasos:
+        try:
+            os.rename(tmp, b)
+            hechos.append((a, b))
+        except OSError as ex:
+            try:
+                os.rename(tmp, a)
+            except OSError:
+                pass
+            log("Aviso: no pude renombrar %s (%s)" % (os.path.basename(a), ex))
+    am.renombrar_cache(hechos)
+    log("Renombrados en su carpeta: %d archivos (nombres de antes en %s)" % (len(hechos), registro))
+    return hechos
+
+
+def _historial_nombres():
+    try:
+        with open(os.path.join(rutas.ANALISIS, "nombres.json"), encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def nombres_de_hoy():
+    """{ruta de cualquier nombre de antes (normcase): ruta de hoy}, siguiendo todos los renombrados (nombres.json) en orden.
+    Lo usa reenlazar: un archivo importado en DaVinci y renombrado despues se vuelve a encontrar."""
+    hoy = {}
+    for vez in _historial_nombres():
+        cambios = {os.path.normcase(os.path.abspath(a)): b for a, b in vez.get("cambios") or []}
+        for k, v in list(hoy.items()):
+            nuevo = cambios.get(os.path.normcase(os.path.abspath(v)))
+            if nuevo:
+                hoy[k] = nuevo
+        hoy.update(cambios)
+    return hoy
+
+
+def restaurar_nombres(log=print):
+    """(1.5.7) Deshace el renombrado: cada archivo vuelve a su nombre ORIGINAL (el que traia antes del primer renombrado),
+    en su misma carpeta; si ese nombre ya lo usa otro archivo, se queda como esta. Lo deja anotado (asi DaVinci lo vuelve
+    a encontrar) y el evento ya no se renombra solo (estado.sin_renombrar). Devuelve cuantos restauro."""
+    hoy = nombres_de_hoy()
+    originales = {}                             # ruta de hoy (normcase) -> nombre original
+    vistos = set()
+    for vez in _historial_nombres():
+        for a, _ in vez.get("cambios") or []:
+            k = os.path.normcase(os.path.abspath(a))
+            if k in vistos:
+                continue
+            vistos.add(k)
+            if k in hoy and not any(k == os.path.normcase(os.path.abspath(b)) for b in hoy.values() if b):
+                originales.setdefault(os.path.normcase(os.path.abspath(hoy[k])), a)
+    plan = [(hoy_r, orig) for hoy_r, orig in originales.items() if os.path.exists(hoy_r)
+            and os.path.normcase(hoy_r) != os.path.normcase(orig)]
+    pasos, hechos = [], []
+    for n, (a, b) in enumerate(plan):
+        tmp = os.path.join(os.path.dirname(a), "~restaurando %d%s" % (n, os.path.splitext(a)[1]))
+        try:
+            os.rename(a, tmp)
+            pasos.append((a, tmp, b))
+        except OSError:
+            pass
+    for a, tmp, b in pasos:
+        destino = b if not os.path.exists(b) else a
+        try:
+            os.rename(tmp, destino)
+            if destino == b:
+                hechos.append((a, b))
+        except OSError:
+            try:
+                os.rename(tmp, a)
+            except OSError:
+                pass
+    if hechos:
+        hist = _historial_nombres()
+        hist.append({"fecha": time.strftime("%Y-%m-%d %H:%M:%S"), "cambios": hechos, "restaurado": True})
+        am._guardar_json(os.path.join(rutas.ANALISIS, "nombres.json"), hist)
+        am.renombrar_cache(hechos)
+    est = leer_estado()
+    est["sin_renombrar"] = True
+    guardar_estado(est)
+    log("Nombres originales restaurados: %d archivos" % len(hechos))
+    return len(hechos)
+
+
+def capturas_intro(analisis, cuantas, log=print):
+    """(1.5.7, la persona: «si no hay fotos para la intro tomas capturas del video») Cuadros nitidos de los videos (sin
+    quemar, sin barrido, camara firme), uno por video, repartidos entre maquillaje, ceremonia y fiesta. Se guardan POR
+    DENTRO (rutas.CAPTURAS) como «CAPTURA 001 (CEREMONIA).jpg», con la hora del momento en EXIF (asi caen en su momento
+    al analizarlas). Devuelve cuantas hizo."""
+    import math
+    import subprocess
+    import datetime
+    from collections import defaultdict
+    vids = [i for i in analisis.get("items") or [] if i["tipo"] == "video" and not i.get("descartar")
+            and (i.get("ia") or {}).get("util") is not False
+            and (i.get("vista") or {}).get("nit") and i.get("hora") and i.get("dur", 0) > 3]
+    horizontales = [i for i in vids if i.get("horizontal", True)]
+    vids = horizontales if len(horizontales) >= cuantas else vids
+    if not vids:
+        return 0
+    refs = defaultdict(list)
+    for v in vids:
+        refs[(v.get("camara"), v.get("ancho"))] += v["vista"]["nit"]
+    refs = {k: sorted(x)[len(x) // 2] for k, x in refs.items() if x}
+    cand = []
+    for v in vids:
+        vi = v["vista"]
+        nit, quem, pan = vi.get("nit") or [], vi.get("quem") or [], vi.get("pan") or []
+        tem, col = v.get("temblor") or [], v.get("color") or []
+        ref = refs.get((v.get("camara"), v.get("ancho"))) or 1.0
+        oscuros = v.get("oscuros") or []
+        # lo que vio la IA local: los novios / la festejada y los momentos clave dan las mejores fotos de intro
+        et = set((v.get("ia") or {}).get("etiquetas") or [])
+        ia_peso = (1.5 if et & {"beso", "anillos", "primer_baile", "pastel", "brindis"} else 1.0) * \
+            (1.3 if et & {"novia", "novio", "festejada"} else 1.0)
+        mejor = None
+        # (16-nov) donde la IA vio que no sirve (techo, de cabeza, gente sin cara o sin cabeza...), ninguna captura
+        malos_ia = [x[0] for x in (v.get("ia") or {}).get("instantes") or [] if len(x) > 2 and x[2] is False]
+        for k in range(1, len(nit) - 1):
+            t = k * 0.5 + 0.25
+            if t < 1.0 or t > v["dur"] - 1.0 or any(a - 1 <= t <= b + 1 for a, b in oscuros) \
+                    or any(abs(t - m) <= 1.6 for m in malos_ia):
+                continue
+            q = quem[k] if k < len(quem) else 0.0
+            p = max((math.hypot(*pan[j]) if j < len(pan) else 0.0) for j in (k - 1, k, k + 1))
+            tb = tem[k] if k < len(tem) else 0.0
+            luz = col[k][0] if k < len(col) else 0.3
+            if q > 0.06 or p > 2.5 or tb > 3.0 or not 0.18 <= luz <= 0.85:
+                continue
+            puntos = min(nit[k] / ref, 2.0) * (1 - 4 * q) * (1 - 0.15 * p) * ia_peso
+            if mejor is None or puntos > mejor[0]:
+                mejor = (puntos, t)
+        if mejor:
+            cand.append((mejor[0], v, mejor[1]))
+    if not cand:
+        return 0
+    por_momento = defaultdict(list)
+    for c in sorted(cand, key=lambda c: -c[0]):
+        por_momento[c[1].get("momento") or "FIESTA"].append(c)
+    elegidas = []
+    objetivo = cuantas * 2                     # el doble: luego la IA local mira cada una y se quedan las mejores
+    while len(elegidas) < objetivo and any(por_momento.values()):   # por turnos: maquillaje, ceremonia, fiesta...
+        for m in ("MAQUILLAJE", "IGLESIA", "FIESTA") + tuple(k for k in por_momento if k not in MOMENTO_NOMBRE):
+            if por_momento.get(m) and len(elegidas) < objetivo:
+                elegidas.append(por_momento[m].pop(0))
+    hechas_rutas = []
+    os.makedirs(rutas.CAPTURAS, exist_ok=True)
+    hechas = 0
+    previas = len([f for f in os.listdir(rutas.CAPTURAS) if f.lower().endswith(".jpg")])
+    for n, (_, v, t) in enumerate(sorted(elegidas, key=lambda c: (str(c[1]["hora"]), c[2])), previas + 1):
+        mom = MOMENTO_NOMBRE.get(v.get("momento"), "FIESTA")
+        salida = os.path.join(rutas.CAPTURAS, "CAPTURA %03d (%s).jpg" % (n, mom))
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", "%.2f" % t, "-i", v["ruta"],
+                            "-frames:v", "1", "-q:v", "2", salida], capture_output=True, creationflags=rutas.SIN_VENTANA)
+        if r.returncode != 0 or not os.path.exists(salida):
+            log("Aviso: no pude sacar la captura de %s" % v["nombre"])
+            continue
+        try:                                   # la hora del cuadro en EXIF: cae en su momento al analizarla
+            from PIL import Image
+            hora = datetime.datetime.fromisoformat(str(v["hora"])) + datetime.timedelta(seconds=t)
+            with Image.open(salida) as im:
+                im.load()
+                ex = Image.Exif()
+                ex[306] = hora.strftime("%Y:%m:%d %H:%M:%S")
+                ex[271] = "CAPTURA DE VIDEO"
+                im.save(salida, quality=95, exif=ex)
+            os.utime(salida, (hora.timestamp(), hora.timestamp()))
+        except Exception as ex:
+            log("Aviso: captura sin hora (%s)" % ex)
+        hechas += 1
+        hechas_rutas.append((salida, v))
+    hechas -= _quedarse_con_las_mejores(hechas_rutas, cuantas, log)
+    log("Sin fotos JPG suficientes para la intro: %d capturas de los videos (por dentro, en %s)" % (hechas, rutas.CAPTURAS))
+    return hechas
+
+
+def _quedarse_con_las_mejores(capturas, cuantas, log=print):
+    """La IA local mira cada captura y se quedan las `cuantas` mejores: los novios / la festejada y los momentos clave
+    (beso, anillos, votos, primer baile, pastel, brindis), al menos 2 de cada momento si hay; las demas pasan a
+    CAPTURAS/.descartadas (no se borran; la carpeta con punto no se usa). Sin IA local, se quedan todas. Devuelve cuantas
+    aparto."""
+    if len(capturas) <= cuantas:
+        return 0
+    try:
+        import vision_ia
+        if not vision_ia.modelo(log):
+            return 0
+    except Exception:
+        return 0
+    puntos = []
+    for salida, v in capturas:
+        ia = vision_ia.describir("foto", salida, 0.0, log) or {}
+        et = set(ia.get("etiquetas") or [])
+        p = 0.0 if ia.get("util") is False else 1.0 + 1.0 * bool(et & {"novia", "novio", "festejada"}) + \
+            0.8 * bool(et & {"beso", "anillos", "votos", "primer_baile", "pastel", "brindis"}) + \
+            0.2 * bool(et & {"familia", "grupo"})
+        puntos.append((p, salida, v.get("momento")))
+    puntos.sort(key=lambda x: -x[0])
+    quedan = []
+    for m in ("MAQUILLAJE", "IGLESIA", "FIESTA"):                # primero las 2 mejores de cada momento
+        quedan += [x for x in puntos if x[2] == m][:2]
+    quedan = quedan[:cuantas]
+    for x in puntos:
+        if len(quedan) >= cuantas:
+            break
+        if x not in quedan:
+            quedan.append(x)
+    aparte = os.path.join(rutas.CAPTURAS, ".descartadas")
+    n = 0
+    for x in puntos:
+        if x not in quedan:
+            os.makedirs(aparte, exist_ok=True)
+            try:
+                os.replace(x[1], os.path.join(aparte, os.path.basename(x[1])))
+                n += 1
+            except OSError:
+                pass
+    log("La IA local eligio las %d mejores capturas para la intro (de %d)." % (len(quedan), len(puntos)))
+    return n
 
 
 def _huella_rapida(ruta, tam):
@@ -339,7 +661,7 @@ def copiar_material(rutas_origen, avance=None, forzar_tipo=None, cancelado=None,
     pares, total = examen["pares"], max(1, examen["bytes"])
     libre = shutil.disk_usage(rutas.MATERIAL if os.path.isdir(rutas.MATERIAL) else BASE).free
     if examen["bytes"] > libre - 500e6:
-        raise RuntimeError("No hay espacio en el disco de 1 MATERIAL: hacen falta %.1f GB y quedan %.1f GB."
+        raise RuntimeError("No hay espacio en el disco para el material: hacen falta %.1f GB y quedan %.1f GB."
                            % (examen["bytes"] / 1e9, libre / 1e9))
     hechos = {t: 0 for t in CARPETAS}
     ya, hecho_b, copiado_b = 0, 0, 0
@@ -494,9 +816,9 @@ def chequeo():
     c = m["cuenta"]
     res.append(("Fotos de la intro", c["foto"] >= MINIMOS["foto"],
                 "%d fotos" % c["foto"] if c["foto"] >= MINIMOS["foto"] else
-                "faltan %d fotos en 1 MATERIAL/FOTOS" % (MINIMOS["foto"] - c["foto"])))
+                "faltan %d fotos" % (MINIMOS["foto"] - c["foto"])))
     res.append(("Videos", c["video"] >= MINIMOS["video"],
-                "%d videos" % c["video"] if c["video"] else "no hay videos en 1 MATERIAL/VIDEOS"))
+                "%d videos" % c["video"] if c["video"] else "no hay videos"))
     res.append(("Dron", True, "%d tomas" % c["dron"] if c["dron"] else "sin tomas de dron (opcional)"))
     ff = bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
     res.append(("ffmpeg", ff, "listo" if ff else "falta ffmpeg"))
@@ -758,8 +1080,23 @@ def reenlazar(project, log=print):
     recorrer(mp.GetRootFolder())
     if not perdidos:
         return 0
+    n, total = 0, len(perdidos)
+    # (1.5.7) archivos que se renombraron en su carpeta despues de importarlos: su nombre de hoy, por la lista de nombres
+    renombres = nombres_de_hoy()
+    quedan = []
+    for c, nombre in perdidos:
+        hoy = renombres.get(os.path.normcase(os.path.abspath(c.GetClipProperty("File Path") or "")))
+        if hoy and os.path.exists(hoy):
+            try:
+                if c.ReplaceClip(hoy):
+                    n += 1
+                    continue
+            except Exception:
+                pass
+        quedan.append((c, nombre))
+    perdidos = quedan
     hay = {}
-    for raiz in (rutas.MATERIAL, rutas.RECURSOS, rutas.AUDIO):
+    for raiz in [rutas.MATERIAL, rutas.RECURSOS, rutas.AUDIO] + rutas.fuentes():
         for d, _, fs in os.walk(raiz):
             for x in fs:
                 hay.setdefault(x.lower(), d)
@@ -767,7 +1104,6 @@ def reenlazar(project, log=print):
     for c, nombre in perdidos:
         if nombre.lower() in hay:
             por_carpeta.setdefault(hay[nombre.lower()], []).append((c, nombre))
-    n = 0
     for d, grupo in por_carpeta.items():
         if mp.RelinkClips([c for c, _ in grupo], d):
             n += len(grupo)
@@ -777,8 +1113,8 @@ def reenlazar(project, log=print):
                 n += bool(c.ReplaceClip(os.path.join(d, nombre)))
             except Exception:
                 pass
-    log("Archivos reenlazados en DaVinci: %d%s" % (n, (" (faltan %d que no estan en las carpetas)"
-                                                         % (len(perdidos) - n)) if n < len(perdidos) else ""))
+    log("Archivos reenlazados en DaVinci: %d%s" % (n, (" (faltan %d que no estan en las carpetas)" % (total - n))
+                                                         if n < total else ""))
     return n
 
 
@@ -926,11 +1262,14 @@ def quitar_ruido_davinci():
     return ruido.estado_davinci()
 
 
-LEEME_EDITABLE = """PLANTILLA EDITABLE - %(evento)s
+LEEME_EDITABLE = """PLANTILLAS DE LOS VIDEOS - %(evento)s
 
-Cada archivo .drt de esta carpeta es la linea de tiempo de una version, tal como la armo el programa
-(cortes, color, textos, musica, efectos de sonido y voz). Sirve para retocar lo que no te guste.
-Los videos terminados estan aparte, en la carpeta 2 VIDEOS TERMINADOS.
+Cada archivo de esta carpeta es la plantilla de DaVinci de UN video, con el mismo nombre que el video
+(VIDEO FINAL 1 MIN.drp es la de VIDEO FINAL 1 MIN.mov), tal como la armo el programa (cortes, color, textos,
+musica, efectos de sonido y voz). Sirve para corregir lo que no te guste.
+Doble clic en el .drp (o en DaVinci: Archivo > Importar proyecto): se abre un proyecto con SOLO esa linea de
+tiempo y sus clips, ya con proxies (reproduce fluido) y la cache de render automatica.
+Los videos estan al lado, en la carpeta VIDEO TERMINADO.
 
 LO MAS RAPIDO: ya esta dentro de DaVinci Resolve.
   Proyecto EVENTOS CINEMA > carpeta 02 EVENTOS > %(evento)s. En el programa: boton "Editar en DaVinci".
@@ -940,15 +1279,17 @@ LO MAS RAPIDO: ya esta dentro de DaVinci Resolve.
   entrada y salida (teclas I y O) en la linea: se renderiza lo que quede entre ellas.
   Ojo: el boton grande de play vuelve a armar desde cero y reemplaza lo que hayas cambiado a mano.
 
-DESDE EL ARCHIVO (otro proyecto u otra computadora):
-  En DaVinci: Archivo > Importar > Linea de tiempo... y elige el .drt. Necesita el mismo material
-  (1 MATERIAL) y los recursos del programa; si salen sin conexion, clic derecho > Volver a enlazar.
+TAMBIEN EN DAVINCI: en el Administrador de proyectos, carpeta %(evento)s, hay un proyecto por video
+  («%(evento)s - VIDEO FINAL 1 MIN»...), el mismo que el .drp de aqui.
+
+EN OTRA COMPUTADORA: importa el .drp. Necesita el mismo material y los recursos del programa; si salen
+  sin conexion, clic derecho > Volver a enlazar.
 """
 
 
 def _etiqueta(nombre_linea):
-    """«XV 2026-11-08 - VERTICAL 1min» -> «VERTICAL 1min»."""
-    return nombre_linea.split(" - ")[-1]
+    """«XV 2026-11-08 - VERTICAL 1min» o «... - VIDEO FINAL VERTICAL 1 MIN» (1.5.7) -> «VERTICAL 1min»."""
+    return rutas.etiqueta_de(nombre_linea)
 
 
 def lineas_del_evento(project, evento):
@@ -966,11 +1307,11 @@ def lineas_del_evento(project, evento):
 
 
 def leeme_editable(evento):
-    """El LEEME de la carpeta de plantillas editables del evento (3 PLANTILLAS EDITABLES/<EVENTO>), si ya existe."""
+    """El LEEME de la carpeta de plantillas del evento (EVENTO TERMINADO - <EVENTO>/PLANTILLAS DE LOS VIDEOS), si ya existe."""
     try:
-        carpeta = os.path.join(rutas.EDITABLES, evento)
+        carpeta = rutas.plantillas_evento(evento)
         leeme = os.path.join(carpeta, "LEEME.txt")
-        if os.path.isdir(carpeta) and not os.path.exists(leeme):
+        if os.path.isdir(carpeta):                       # (1.5.7) siempre el texto de hoy (.drp por video)
             with open(leeme, "w", encoding="utf-8") as f:
                 f.write(LEEME_EDITABLE % {"evento": evento})
     except OSError:
@@ -978,12 +1319,12 @@ def leeme_editable(evento):
 
 
 def guardar_editable(resolve, tl, evento, log=None):
-    """Deja la linea editable de esa version en su carpeta, aparte de los videos: 3 PLANTILLAS EDITABLES/<EVENTO>/
-    <linea>.drt, con un LEEME de como usarla. Devuelve la ruta o None."""
+    """Deja la linea de ese video junto a el: EVENTO TERMINADO - <EVENTO>/PLANTILLAS DE LOS VIDEOS/VIDEO FINAL 1 MIN.drt,
+    con un LEEME de como usarla. Devuelve la ruta o None."""
     try:
-        carpeta = os.path.join(rutas.EDITABLES, evento)
+        carpeta = rutas.plantillas_evento(evento)
         os.makedirs(carpeta, exist_ok=True)
-        ruta = os.path.join(carpeta, tl.GetName() + ".drt")
+        ruta = os.path.join(carpeta, rutas.nombre_video(tl.GetName()) + ".drt")
         if not tl.Export(ruta, resolve.EXPORT_DRT):
             return None
         leeme_editable(evento)
@@ -1061,14 +1402,14 @@ def encolar_render(project, tl, evento):
     las conserva), la duracion de siempre de esa version (1, 3, 15 o 30 min) o hasta donde llegue la linea si la
     acorto. Las verticales salen del tamano de la linea. Devuelve True/False."""
     nombre = tl.GetName()
-    salida = os.path.join(rutas.TERMINADOS, evento)
+    salida = rutas.videos_terminados(evento)
     os.makedirs(salida, exist_ok=True)
     for job in project.GetRenderJobList() or []:
         if job.get("TimelineName") == nombre:
             project.DeleteRenderJob(job.get("JobId"))
     project.SetCurrentTimeline(tl)
     time.sleep(0.5)
-    ajustes = {"SelectAllFrames": True, "TargetDir": salida, "CustomName": nombre}
+    ajustes = {"SelectAllFrames": True, "TargetDir": salida, "CustomName": rutas.nombre_video(nombre)}
     try:
         marcas = (tl.GetMarkInOut() or {}).get("video") or {}
         ini, fin = tl.GetStartFrame(), tl.GetEndFrame() - 1
@@ -1135,8 +1476,62 @@ def renderizar_editado(log, avance=None, evento=None):
         import renderizar
         videos = renderizar.renderizar(log, evento, lambda pct, texto: paso(45 + int(pct * 0.5), texto), etiquetas)
         paso(100, "Listo")
-        return {"evento": evento, "videos": videos, "carpeta": os.path.join(rutas.TERMINADOS, evento), "avisos": [],
+        marcar_terminado(evento, videos)
+        preparar_edicion(evento, log)
+        return {"evento": evento, "videos": videos, "carpeta": rutas.carpeta_terminado(evento), "avisos": [],
                 "editado": True}
+
+
+def estimar_segundos(n_videos, gb, versiones=None, verticales=None, render=True, nuevos=None):
+    """(1.5.7, la persona: «que me diga en cuánto tiempo va a estar listo») Cuanto tarda TODO, aproximado, medido en la
+    boda del 7-nov (73 videos, 29 GB, las 4 versiones y el vertical de 1 min: analisis 7 min, IA 5, armado 9, render 25,
+    masterizado y revision 6, proxies y plantillas 6): ~60 min. nuevos = videos sin analizar todavia."""
+    versiones = list(VERSIONES) if versiones is None else list(versiones)
+    verticales = ["1min"] if verticales is None else list(verticales)
+    nuevos = n_videos if nuevos is None else nuevos
+    parte_nueva = nuevos / float(max(1, n_videos))
+    s = 30.0 + nuevos * 3.0 + gb * 8.0 * parte_nueva                     # analisis (lo ya medido no se repite)
+    s += nuevos * 5.0                                                     # la IA local mira cada toma
+    s += gb * 40.0 * parte_nueva                  # (16-nov) y la revisa cuadro por cuadro, uno cada 3 s (boda: 53 min de
+    #                                               video, ~1070 cuadros, 15-28 min segun la respuesta)
+    armado = {"1min": 45, "3min": 50, "15min": 140, "30min": 260}
+    s += sum(armado.get(v, 60) for v in versiones) + 40 * len(verticales) + n_videos * 1.0
+    if render:
+        dur = sum(SEGUNDOS.get(v, 60) for v in versiones) + sum(SEGUNDOS.get(v, 60) for v in verticales)
+        n = len(versiones) + len(verticales)
+        s += dur * 0.5 + n * 40 + dur * 0.05                              # render, masterizado y revision con IA
+        s += gb * 8.0 * parte_nueva + n * 30                              # proxies y una plantilla por video
+    return s
+
+
+def texto_tiempo(segundos):
+    """«unos 45 min (listo a las 17:40)»."""
+    m = max(1, int(round(segundos / 60.0)))
+    hora = time.strftime("%H:%M", time.localtime(time.time() + segundos))
+    return ("unos %d min" % m if m < 90 else "unas %.1f h" % (m / 60.0)) + " (listo a las %s)" % hora
+
+
+def preparar_edicion(evento, log=print):
+    """(1.5.7) Con los videos ya entregados: proxies de todo el material y cache de render (editar con fluidez) y una
+    plantilla por video (.drp con SOLO esa linea) en EVENTO TERMINADO/PLANTILLAS DE LOS VIDEOS, en lugar del .drt. Al
+    final DaVinci queda otra vez en EVENTOS CINEMA, en Edicion, con la linea del evento abierta. Nunca rompe la entrega."""
+    if not evento:
+        return
+    try:
+        import editable
+        with CANDADO:
+            resolve = conectar_resolve(log)
+            project = resolve.GetProjectManager().GetCurrentProject()
+            editable.proxies_y_cache(project, log)
+            lineas = [t.GetName() for t in lineas_del_evento(project, evento)]
+            for drp in editable.proyecto_por_video(resolve, evento, lineas, log):
+                drt = os.path.splitext(drp)[0] + ".drt"          # la plantilla es el .drp: no quedan dos
+                if os.path.exists(drt):
+                    os.remove(drt)
+            project = resolve.GetProjectManager().GetCurrentProject()
+            dejar_editable(resolve, project, evento)
+    except Exception as ex:
+        log("Aviso: no se pudieron preparar los proxies y las plantillas por video (%s)" % ex)
 
 
 def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", frase="", tipo_evento="xv",
@@ -1155,10 +1550,16 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
         if not analisis.get("items"):
             log("No hay material para armar.")
             return None
+        if not seco:                          # (1.5.7) nombres con tipo y momento, en su carpeta; capturas si no hay fotos
+            if renombrar_material(analisis, log):
+                analisis = am.analizar(BASE, log=log)      # ya medido: solo se ordena de nuevo, con los nombres nuevos
+            fotos = sum(1 for i in analisis["items"] if i["tipo"] == "foto" and not i.get("descartar"))
+            if fotos < FOTOS_INTRO and capturas_intro(analisis, FOTOS_INTRO - fotos, log):
+                analisis = am.analizar(BASE, log=log)      # solo se miden las capturas nuevas
         usables = [i for i in analisis["items"] if i["tipo"] != "foto" and not i.get("descartar")
                    and i.get("dur", 0) - sum(b - a for a, b in i.get("oscuros") or []) > 3]
         if not usables:                       # todos dañados, en negro o de menos de 3 s: el trailer saldria en negro
-            raise RuntimeError("No hay videos que se puedan usar (dañados, en negro o muy cortos). Revisa 1 MATERIAL/VIDEOS: "
+            raise RuntimeError("No hay videos que se puedan usar (dañados, en negro o muy cortos). Revisa los videos que soltaste: "
                                + "; ".join(a for a in analisis.get("avisos", [])[:2]))
         if vertical and all(i.get("horizontal", True) for i in usables):
             raise RuntimeError(SIN_VERTICALES)
@@ -1197,7 +1598,7 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
             lineas = [v["timeline"] for v in rep.get("versiones", [])]
             if vertical:                      # se suman a las horizontales de este mismo evento
                 otras = [t for t in est.get("timelines") or [] if est.get("evento") == rep.get("evento")
-                         and " - %s " % ETIQUETA_VERTICAL not in t]
+                         and not _etiqueta(t).startswith(ETIQUETA_VERTICAL)]
                 est.update({"huella": analisis["huella"], "evento": rep.get("evento"),
                             "armado": time.strftime("%Y-%m-%d %H:%M"), "timelines": otras + lineas,
                             "resumen_versiones_vertical": rep.get("versiones", [])})
@@ -1226,6 +1627,7 @@ def armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, **
     pases = [("horizontal", op.get("solo"))] if horizontal or not vertical else []
     if vertical:
         pases.append(("vertical", [v for v in VERSIONES if v in vertical]))
+    auto_vertical = op.pop("auto_vertical", True)
     with SinDormir():                        # una suspension a media render deja el trabajo colgado
         paso(3, "Revisando el material")
         evento, etiquetas, pedidas, avisos = None, [], [], []
@@ -1249,13 +1651,22 @@ def armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, **
                         avisos.append(SIN_VERTICALES)
                         continue
                     raise RuntimeError(SIN_VERTICALES)
-                raise RuntimeError("No se armo ninguna version (revisa que haya fotos y videos en 1 MATERIAL).")
+                raise RuntimeError("No se armo ninguna version (revisa que haya fotos y videos en el material).")
             evento = evento or rep.get("evento")
             etiquetas += [_etiqueta(v["timeline"]) for v in rep["versiones"]]
-            pedidas += [v["timeline"].split(" ")[-1] for v in rep["versiones"]]
+            pedidas += [_etiqueta(v["timeline"]).split(" ")[-1] for v in rep["versiones"]]
             if formato == "vertical":            # versiones que se quedaron sin armar por falta de video vertical
                 avisos += [a for a in rep.get("avisos") or [] if "no se arma" in a]
-        salida = {"evento": evento, "videos": [], "carpeta": os.path.join(rutas.TERMINADOS, evento or ""),
+            # (1.5.7, la persona: «si hay videos verticales, automáticamente activas las plantillas verticales de un
+            # minuto») aunque no se haya pedido el formato vertical
+            if formato == "horizontal" and auto_vertical and not any(f == "vertical" and "1min" in (s or [])
+                                                                     for f, s in pases):
+                verticales = [i for i in (am.leer_ultimo().get("items") or []) if i.get("tipo") == "video"
+                              and not i.get("horizontal", True) and not i.get("descartar")]
+                if verticales:
+                    log("Hay %d videos verticales: se arma tambien el VERTICAL 1 min." % len(verticales))
+                    pases.append(("vertical", ["1min"]))
+        salida = {"evento": evento, "videos": [], "carpeta": rutas.carpeta_terminado(evento) if evento else rutas.SALIDA,
                   "avisos": avisos}
         if not render:
             paso(100, "Armado en DaVinci")
@@ -1268,5 +1679,8 @@ def armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, **
         import renderizar
         salida["videos"] = renderizar.renderizar(
             log, evento, lambda pct, texto: paso(45 + int(pct * 0.5), texto), etiquetas)
+        marcar_terminado(evento, salida["videos"])
+        paso(97, "Proxies y plantillas para editar")
+        preparar_edicion(evento, log)
         paso(100, "Listo")
         return salida

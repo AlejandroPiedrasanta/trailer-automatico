@@ -6,7 +6,8 @@ El boton del centro (▶) hace todo:
   1. revisa que 1 MATERIAL tenga fotos y videos (si falta algo, lo pide),
   2. analiza y clasifica el material (maquillaje, iglesia, fiesta),
   3. lo arma en las plantillas elegidas abajo (1, 3, 15 y/o 30 min) en DaVinci Resolve,
-  4. renderiza, deja el audio a -14 LUFS, mide la imagen y abre 2 VIDEOS TERMINADOS.
+  4. renderiza, deja el audio a -14 LUFS, mide la imagen y abre «EVENTO TERMINADO - <evento>» (VIDEO TERMINADO y
+   PLANTILLAS DE LOS VIDEOS). El material y el trabajo van por dentro del programa (1.5.7).
 Se pueden arrastrar fotos, videos o carpetas a la ventana: se copian solos a FOTOS, VIDEOS o DRON.
 
 Uso:  doble clic en "ARMAR TRAILERS" (.bat en Windows, .command en Mac)
@@ -419,6 +420,19 @@ def app():
         def run(self):
             try:
                 res = {}
+                carpetas = [a for a in self.archivos if os.path.isdir(a)]
+                if self.tipo is None and carpetas and len(carpetas) == len(self.archivos):
+                    # (1.5.7, la persona: «si te arrastran la carpeta, es la ruta donde está: simplemente renombras») la
+                    # carpeta se usa DONDE ESTA, sin copiar; sus archivos se renombran en su sitio al armar
+                    for k, c in enumerate(carpetas):
+                        motor.usar_carpeta(c, self.anterior if k == 0 else None)
+                        self.avance.emit((k + 1) / float(len(carpetas)), os.path.basename(c), k + 1, len(carpetas))
+                    ex = self.examen or {}
+                    res.update({"copiados": dict(ex.get("cuenta") or {}), "ya_estaban": 0, "otros": ex.get("otros") or {},
+                                "bytes": 0, "en_su_sitio": True,
+                                "archivado": (None, 1) if self.anterior is not None else None})
+                    self.fin.emit(res)
+                    return
                 if self.anterior is not None:
                     res["archivado"] = motor.archivar_material(self.anterior)
                 ultimo = [0.0, 0]
@@ -1340,7 +1354,8 @@ def app():
             fila = QHBoxLayout()
             for txt, acc in (("Clasificación del evento", self._clasificacion),
                              ("Abrir DaVinci Resolve", rutas.abrir_resolve),
-                             ("Videos terminados", lambda: rutas.abrir(rutas.TERMINADOS)),
+                             ("Videos terminados", self._abrir_terminado),
+                             ("Nombres originales", self._restaurar_nombres),
                              ("Carpeta del programa", lambda: rutas.abrir(rutas.PROGRAMA))):
                 b = QPushButton(txt, objectName="borde")
                 b.clicked.connect(acc)
@@ -1350,9 +1365,9 @@ def app():
             caja2 = QFrame(objectName="vidrio")
             g2 = QGridLayout(caja2)
             g2.setContentsMargins(26, 18, 26, 18)
-            l2 = QLabel("Carpeta de trabajo")
+            l2 = QLabel("Eventos terminados")             # (1.5.7) el trabajo va por dentro; a la vista, solo esto
             l2.setStyleSheet("color:%s; font-weight:600;" % TENUE)
-            self.l_base = QLabel(rutas.BASE)
+            self.l_base = QLabel(rutas.SALIDA)
             self.l_base.setWordWrap(True)
             g2.addWidget(l2, 0, 0)
             g2.addWidget(self.l_base, 0, 1)
@@ -1378,12 +1393,64 @@ def app():
             self.b_buscar.clicked.connect(lambda: self._buscar_actualizacion(manual=True))
             g3.addWidget(self.b_buscar)
             v.addWidget(caja3)
+            caja4 = QFrame(objectName="vidrio")                 # (1.5.7) la IA local que ve cada toma
+            g4 = QHBoxLayout(caja4)
+            g4.setContentsMargins(26, 14, 26, 14)
+            l4 = QLabel("IA local")
+            l4.setStyleSheet("font-weight:700;")
+            g4.addWidget(l4)
+            self.l_ia = QLabel("Revisando…")
+            self.l_ia.setStyleSheet("color:%s;" % TENUE)
+            self.l_ia.setWordWrap(True)
+            g4.addWidget(self.l_ia, 1)
+            self.b_ia = QPushButton("Instalar", objectName="borde")
+            self.b_ia.setCursor(Qt.PointingHandCursor)
+            self.b_ia.hide()
+            self.b_ia.clicked.connect(self._instalar_ia)
+            g4.addWidget(self.b_ia)
+            v.addWidget(caja4)
+            QTimer.singleShot(1500, self._revisar_ia)
             pie = QLabel("Versión %s  ·  registro: %s" % (rutas.version(), rutas.REGISTRO))
             pie.setStyleSheet("color:%s; font-size:12px;" % TENUE)
             pie.setTextInteractionFlags(Qt.TextSelectableByMouse)
             v.addWidget(pie)
             v.addStretch(1)
             return w
+
+        # ============================================================== IA local (1.5.7)
+        def _revisar_ia(self):
+            """En un hilo: ¿hay IA local que vea las tomas? (Ollama con un modelo de vision)."""
+            import vision_ia
+            qt_kit.correr_en_hilo(self, vision_ia.estado, self._pintar_ia, baja=True)
+
+        def _pintar_ia(self, r, error):
+            if error is not None or not r:
+                self.l_ia.setText("No se pudo revisar la IA local.")
+                return
+            texto, accion = r
+            self.l_ia.setText(texto)
+            self.b_ia.setVisible(accion is not None)
+            self.b_ia.setEnabled(True)
+            self.b_ia.setText({"modelo": "Instalar el modelo", "ollama": "Descargar Ollama"}.get(accion, "Instalar"))
+            self._accion_ia = accion
+
+        def _instalar_ia(self):
+            import vision_ia
+            if getattr(self, "_accion_ia", None) == "ollama":
+                from PySide6.QtCore import QUrl
+                from PySide6.QtGui import QDesktopServices
+                QDesktopServices.openUrl(QUrl(vision_ia.DESCARGA_OLLAMA))
+                self.l_ia.setText("Instala Ollama (se abrió su página), abre el programa otra vez y pulsa «Instalar el modelo».")
+                return
+            r = QMessageBox.question(self, TITULO_APP, "¿Bajar el modelo de IA local %s (unos 6 GB)?\n\nCon él el programa ve "
+                                     "cada toma (iglesia, fiesta, preparativos, los momentos clave) y arma mejor. Se baja "
+                                     "una sola vez; luego todo es local, sin internet." % vision_ia.MODELO_RECOMENDADO)
+            if r != QMessageBox.Yes:
+                return
+            self.b_ia.setEnabled(False)
+            self.l_ia.setText("Bajando el modelo… (puede tardar varios minutos)")
+            qt_kit.correr_en_hilo(self, lambda: vision_ia.instalar_modelo(registro.info),
+                                  lambda r, e: self._revisar_ia())
 
         # ============================================================== actualizaciones
         def _buscar_actualizacion(self, manual=False):
@@ -1478,13 +1545,37 @@ def app():
                 self._avisar("No se pudo empezar la instalación: se intenta al cerrar.", "error")
 
         def _cambiar_base(self):
-            d = QFileDialog.getExistingDirectory(self, "Carpeta de trabajo (ahí van 1 MATERIAL y 2 VIDEOS TERMINADOS)",
-                                                 rutas.BASE)
+            """Dónde se crean las carpetas «EVENTO TERMINADO - <evento>» (por defecto, el Escritorio). El material y el
+            trabajo van siempre por dentro del programa (1.5.7)."""
+            d = QFileDialog.getExistingDirectory(self, "Dónde quedan los eventos terminados", rutas.SALIDA)
             if d:
                 c = rutas.leer_config()
-                c["carpeta_trabajo"] = d
+                c["carpeta_terminados"] = d
                 rutas.guardar_config(c)
                 QMessageBox.information(self, TITULO_APP, "Listo. Cierra y vuelve a abrir el programa para usar:\n%s" % d)
+
+        def _restaurar_nombres(self):
+            """(1.5.7) Deshace el renombrado del material del evento (vuelven los nombres que traian los archivos)."""
+            if self.trabajo is not None or self.copia is not None:
+                self._avisar("Espera a que termine lo que está haciendo.", "warn")
+                return
+            r = QMessageBox.question(self, TITULO_APP,
+                                     "¿Devolver a los archivos del evento los nombres que traían?\n\n"
+                                     "No se borra ni se mueve nada; DaVinci los vuelve a encontrar. Mientras sea este "
+                                     "evento, el programa ya no los renombrará.")
+            if r != QMessageBox.Yes:
+                return
+            qt_kit.correr_en_hilo(self, lambda: motor.restaurar_nombres(registro.info),
+                                  lambda n, error: self._avisar(
+                                      "No se pudieron restaurar los nombres: %s" % error if error is not None
+                                      else "Nombres originales restaurados: %d archivos." % (n or 0),
+                                      "error" if error is not None else "ok"))
+
+        def _abrir_terminado(self):
+            """La carpeta EVENTO TERMINADO del último evento (o donde se crean, si todavía no hay ninguna)."""
+            evento = (self.resultado or {}).get("evento") or motor.leer_estado().get("evento")
+            carpeta = rutas.carpeta_terminado(evento) if evento else ""
+            rutas.abrir(carpeta if carpeta and os.path.isdir(carpeta) else rutas.SALIDA)
 
         # ============================================================== estado
         def _ir(self, nombre):
@@ -1526,6 +1617,17 @@ def app():
             """Las pastillas de los dos formatos (y, si se piden, sus botones «Todas» y sus etiquetas)."""
             return list(self.pills.values()) + list(self.pills_v.values()) + (self.bs_todas if con_todas else []) + \
                 (self.etqs_formato if con_etiquetas else [])
+
+        def _estimar(self, examen=None):
+            """Segundos que tardara todo, con lo que hay (o lo que se acaba de soltar) y las versiones elegidas."""
+            try:
+                cuenta = (examen or {}).get("cuenta") or self.material.get("cuenta") or {}
+                n = int(cuenta.get("video", 0)) + int(cuenta.get("dron", 0))
+                gb = float((examen or {}).get("bytes") or 0) / 1e9 or n * 0.4
+                vert = self._versiones_v() or (["1min"] if n else [])
+                return motor.estimar_segundos(n, gb, self._versiones(), vert, getattr(self, "_con_render", True))
+            except Exception:
+                return None
 
         def _versiones(self):
             """Versiones elegidas del formato horizontal."""
@@ -1679,34 +1781,26 @@ def app():
             self._ir("Inicio")
             self.titulo.setText("Mirando lo que soltaste…")
             self._sub("Contando fotos, videos y tomas de dron…")
-            qt_kit.correr_en_hilo(self, lambda: (motor.examinar_origen(archivos, tipo), motor.evento_actual()),
-                                  self._recibido)
+            qt_kit.correr_en_hilo(self, lambda: (motor.examinar_origen(archivos, tipo), motor.evento_actual(),
+                                                 motor.es_evento_nuevo()), self._recibido)
 
         def _recibido(self, r, error):
             archivos, tipo = self._soltado
             if error is not None or not r:
                 self._fin_flujo("No pude leer lo que soltaste: %s" % error, "error")
                 return
-            examen, (ev_nombre, ev_fecha) = r
+            examen, (ev_nombre, ev_fecha), terminado = r
+            self._examen_soltado = examen
             c = examen["cuenta"]
             otros = motor.texto_otros(examen["otros"])
             if not sum(c.values()):
                 self._fin_flujo("Ahí no encontré fotos ni videos que sirvan%s." % ((" (" + otros + ")") if otros else ""),
                                 "warn")
                 return
-            if tipo is None and motor.es_otro_evento(examen["fecha"], ev_fecha):
-                self.flujo = "pregunta"
-                hay = self.material["cuenta"]
-                self.hoja.mostrar(
-                    "pregunta", "¿Es un evento nuevo?",
-                    "Lo que soltaste es del %s y en 1 MATERIAL hay material del %s (%d fotos, %d videos).\n\n"
-                    "Si es un evento nuevo, el anterior se guarda en 1 MATERIAL › ANTERIORES: no se borra nada."
-                    % (_fecha_bonita(examen["fecha"]), _fecha_bonita(ev_fecha), hay["foto"], hay["video"] + hay["dron"]),
-                    [("Evento nuevo", lambda: self._copiar(archivos, tipo, examen, ev_nombre), True),
-                     ("Es del mismo evento", lambda: self._copiar(archivos, tipo, examen, None), False),
-                     ("Cancelar", lambda: self._fin_flujo("No se copió nada."), False)], icono="?")
-            else:
-                self._copiar(archivos, tipo, examen, None)
+            # (1.5.7, la persona: «se vuelva a arrastrar otra carpeta, solo la unes al análisis») sin preguntar: se une al
+            # evento que hay; si ese ya está terminado (con su EVENTO TERMINADO), lo soltado empieza uno nuevo y el
+            # material del anterior se guarda por dentro (no se borra nada)
+            self._copiar(archivos, tipo, examen, (ev_nombre or terminado) if tipo is None and terminado else None)
 
         def _copiar(self, archivos, tipo, examen, anterior):
             self.hoja.ocultar()
@@ -1714,7 +1808,7 @@ def app():
             self._evento_nuevo = anterior is not None or not any(self.material["cuenta"].values())
             self._tipo_copia = tipo
             c = examen["cuenta"]
-            self.titulo.setText("Copiando el material…")
+            self.titulo.setText("Tomando el material…")
             self._sub("%d fotos · %d videos · %d dron  ·  %.1f GB" % (c["foto"], c["video"], c["dron"], examen["bytes"] / 1e9), "ok")
             self.boton.poner_estado("trabajando", centro="Copiando")
             self.boton.poner_progreso(0.0)
@@ -1745,19 +1839,23 @@ def app():
             self.titulo.setText("Material ordenado")
             if "error" in res:
                 self._revisar_material()
-                self._fin_flujo("Copia cancelada: lo ya copiado queda en 1 MATERIAL." if res.get("cancelada")
+                self._fin_flujo("Copia cancelada: lo ya copiado queda guardado." if res.get("cancelada")
                                 else "No se pudo copiar: %s" % res["error"], "warn" if res.get("cancelada") else "error")
                 return
             c = res["copiados"]
             partes = ["%d %s" % (n, motor.NOMBRE_CARPETA[t].lower()) for t, n in c.items() if n]
-            resumen = "Ordenado: " + (" · ".join(partes) if partes else "nada nuevo")
+            resumen = ("En su carpeta: " if res.get("en_su_sitio") else "Ordenado: ") + (
+                " · ".join(partes) if partes else "nada nuevo")
+            seg = self._estimar(getattr(self, "_examen_soltado", None))      # (1.5.7) en cuanto tiempo estara listo
+            if seg:
+                resumen += "  ·  estará listo en " + motor.texto_tiempo(seg)
             if res["ya_estaban"]:
                 resumen += "  ·  %d ya estaban" % res["ya_estaban"]
             otros = motor.texto_otros(res["otros"])
             if otros:
                 resumen += "\nNo se usan: " + otros
             if res.get("archivado") and res["archivado"][1]:
-                resumen += "\nEl evento anterior quedó en 1 MATERIAL › ANTERIORES."
+                resumen += "\nEvento nuevo: el anterior ya estaba terminado (su material queda guardado por dentro)."
             if self._evento_nuevo and self._tipo_copia is None:      # los textos del evento anterior no valen
                 for w in (self.e_nombre, self.e_frase, self.e_fecha):
                     w.setText("")
@@ -1957,7 +2055,7 @@ def app():
                 return
             self._revisar_material()
             if not self.material["ok"]:
-                self._avisar("Falta material en 1 MATERIAL: agrégalo y vuelve a pulsar ▶.", "warn")
+                self._avisar("Falta material: suelta la carpeta del evento y vuelve a pulsar ▶.", "warn")
                 self._pedir_material()
                 return
             if not auto:                                  # ya armado con este material: ¿lo editado o desde cero?
@@ -1979,7 +2077,7 @@ def app():
                     caja = QMessageBox(self)
                     caja.setWindowTitle(TITULO_APP)
                     caja.setIcon(QMessageBox.Warning)
-                    caja.setText("Quedan %.1f GB libres en el disco de 2 VIDEOS TERMINADOS y el render necesita unos "
+                    caja.setText("Quedan %.1f GB libres en el disco donde quedan los videos y el render necesita unos "
                                  "%.1f GB.\n\nLibera espacio, o arma solo en DaVinci y renderiza después." % (libre, necesita))
                     b_sin = caja.addButton("Armar sin renderizar", QMessageBox.AcceptRole)
                     caja.addButton("Cancelar", QMessageBox.RejectRole)
@@ -2020,6 +2118,8 @@ def app():
             except Exception:
                 pass
             self.linea.editable = False
+            self._t_trabajo = time.time()
+            self._eta_previo = self._estimar()
             self.trabajo = Trabajo(op, funcion)
             self.trabajo.linea.connect(self._linea)
             self.trabajo.avance.connect(self._avance)
@@ -2060,6 +2160,28 @@ def app():
             self._prog = f
             self.boton.poner_progreso(f)
             self.escena.progreso(f)
+            self._poner_eta(f)
+
+        def _poner_eta(self, f):
+            """(1.5.7, la persona: «que me diga en cuánto tiempo va a estar listo») Lo que falta: al principio, lo
+            calculado por el material; a medida que avanza, cada vez mas lo que de verdad va tardando."""
+            t0 = getattr(self, "_t_trabajo", None)
+            if t0 is None or self.trabajo is None:
+                return
+            pasado = time.time() - t0
+            previo = getattr(self, "_eta_previo", None)
+            resto_previo = max(0.0, previo - pasado) if previo else None
+            resto_real = pasado * (1.0 - f) / f if f >= 0.06 else None
+            if resto_real is None and resto_previo is None:
+                return
+            if resto_real is None:
+                resto = resto_previo
+            elif resto_previo is None:
+                resto = resto_real
+            else:
+                w = min(1.0, max(0.0, (f - 0.06) / 0.5))            # cuanto mas avanza, mas manda lo real
+                resto = (1 - w) * resto_previo + w * resto_real
+            self.titulo.setText("Trabajando… listo en " + motor.texto_tiempo(resto))
 
         def _linea(self, m):
             self.registro.appendPlainText(m)
@@ -2197,8 +2319,8 @@ def app():
             self.escena.explotar(cerrar)
             self.titulo.setText("¡Listo!")
             if videos:
-                self._sub("%d de %d videos en 2 VIDEOS TERMINADOS · %s" % (len(ok), len(videos),
-                                                                            self.resultado.get("evento", "")),
+                self._sub("%d de %d videos en «%s»" % (len(ok), len(videos), os.path.basename(
+                    rutas.carpeta_terminado(self.resultado.get("evento", "")))),
                           "ok" if len(ok) == len(videos) else "error")
                 self._avisar("Terminado: %d videos con audio a -14 LUFS%s." % (
                     len(ok), " (con lo que editaste en DaVinci)" if self.resultado.get("editado") else ""))
@@ -2211,9 +2333,9 @@ def app():
             for a in (self.resultado.get("avisos") or [])[:3]:        # lo que el formato vertical no pudo armar
                 self._avisar(a, "warn")
             if not self.resultado.get("editado"):
-                self._avisar("La línea queda editable en DaVinci (02 EVENTOS › %s) y su copia en la carpeta «%s». Si "
+                self._avisar("La línea queda editable en DaVinci (02 EVENTOS › %s) y su copia en «%s». Si "
                              "retocas algo, pulsa «Renderizar lo editado»."
-                             % (self.resultado.get("evento", ""), os.path.basename(rutas.EDITABLES)))
+                             % (self.resultado.get("evento", ""), rutas.PLANTILLAS_EVENTO))
             self.chip_editar.show()
             self.chip_render.show()
 
@@ -2259,7 +2381,7 @@ def app():
             QTimer.singleShot(6000, lambda: self.titulo.setText("Un clic y listo") if self.trabajo is None else None)
 
         def _abrir_videos(self):
-            rutas.abrir((self.resultado or {}).get("carpeta") or rutas.TERMINADOS)
+            rutas.abrir((self.resultado or {}).get("carpeta") or rutas.SALIDA)
 
         def _clasificacion(self):
             if os.path.exists(rutas.CLASIFICACION):

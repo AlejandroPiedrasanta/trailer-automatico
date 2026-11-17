@@ -44,13 +44,11 @@ class Estado:
 def instalar(est):
     import motor
     est.progreso(10, "Creando las carpetas de trabajo")
-    rutas.crear_carpetas()
+    rutas.crear_carpetas()                         # por dentro (1.5.7): a la vista solo los EVENTO TERMINADO
+    notas = []
+    n_a = rutas.pasar_adentro(notas.append)        # lo que habia a la vista en la carpeta de trabajo de antes
     est.progreso(20, "Guardando la musica y los SFX aparte")
     n_p = rutas.guardar_protegidos(lambda m: None)
-    leeme = os.path.join(rutas.BASE, "LEEME.txt")
-    origen = os.path.join(rutas.CONFIG_PROG, "LEEME.txt")
-    if not os.path.exists(leeme) and os.path.exists(origen):
-        shutil.copy2(origen, leeme)
     est.progreso(35, "Instalando las fuentes de los titulos")
     n_f = motor.instalar_fuentes(lambda m: None)
     est.progreso(60, "Instalando el color y la reduccion de ruido en DaVinci")
@@ -82,8 +80,9 @@ def instalar(est):
             n_t = " · actualizaciones: " + actualizar_fondo.asegurar_programada()
         except Exception as ex:                    # el programa la vuelve a intentar al abrirse
             n_t = " · aviso: sin tarea de actualizaciones (%s)" % str(ex)[:160]
-    texto = "Listo: carpeta %s · %d de musica guardados · %d fuentes · %d archivos de color · %d datos%s" % (
-        rutas.BASE, n_p, n_f, n_l, n_m, n_t)
+    texto = "Listo: carpeta %s · %d de musica guardados · %d fuentes · %d archivos de color · %d datos%s%s" % (
+        rutas.BASE, n_p, n_f, n_l, n_m, n_t,
+        (" · %d de antes pasados a su sitio (%s)" % (n_a, "; ".join(notas))) if n_a or notas else "")
     try:
         import registro                            # main() ya lo preparo: queda en registro.log para revisar
         registro.info("Instalacion: " + texto)

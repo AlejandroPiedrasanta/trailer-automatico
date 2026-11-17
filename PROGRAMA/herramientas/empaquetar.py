@@ -4,7 +4,7 @@ empaquetar.py - Crea "3 INSTALADORES/Mac/Trailer automatico (Mac).zip": el progr
 (o a otra PC), sin el material ni los videos del evento.
 
   - ARMAR TRAILERS.command con permiso de ejecucion (el doble clic funciona al descomprimir en la Mac).
-  - Carpetas vacias 1 MATERIAL/FOTOS|VIDEOS|DRON y 2 VIDEOS TERMINADOS.
+  - Carpetas vacias 1 MATERIAL/FOTOS|VIDEOS|DRON (lo terminado sale en «EVENTO TERMINADO - <evento>»).
   - PROGRAMA completo: codigo, plantillas de Resolve (.drp), musica y SFX, fuentes, DCTL y LUTs.
     Sin PROGRAMA/datos (analisis, respaldos, entorno de Python): se crean solos en la Mac.
 
@@ -47,8 +47,7 @@ def empaquetar(log=print):
                 agregar(p, f, f.endswith(".command"))
                 n += 1
         for sub in ("FOTOS", "VIDEOS", "DRON"):
-            carpeta_vacia("1 MATERIAL/" + sub)
-        carpeta_vacia("2 VIDEOS TERMINADOS")
+            carpeta_vacia("1 MATERIAL/" + sub)          # lo terminado sale en «EVENTO TERMINADO - <evento>» (1.5.7)
         for raiz, dirs, archivos in os.walk(rutas.PROGRAMA):
             dirs[:] = [d for d in dirs if d not in SALTAR]
             for f in archivos:

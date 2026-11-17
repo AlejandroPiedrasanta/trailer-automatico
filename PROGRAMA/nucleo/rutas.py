@@ -4,14 +4,16 @@ rutas.py - Todas las carpetas del programa y las rutas de DaVinci Resolve, en Wi
 
 Desde el codigo (carpeta del proyecto):
   TRAILER XV AUTOMATICO/
-    1 MATERIAL/  FOTOS · VIDEOS · DRON             <- aqui se sube el material del evento
-    2 VIDEOS TERMINADOS/<EVENTO>/                  <- aqui salen los videos listos
-    3 PLANTILLAS EDITABLES/<EVENTO>/               <- la linea de DaVinci de cada version (.drt), para retocar
+    1 MATERIAL/  FOTOS · VIDEOS · DRON · ANTERIORES   <- el material del evento (lo copia el programa al soltar la carpeta)
+    EVENTO TERMINADO - <EVENTO>/                   <- lo que sale: VIDEO TERMINADO/ y PLANTILLAS DE LOS VIDEOS/ (.drp)
     PROGRAMA/                                      <- codigo, recursos y datos (datos/)
 
-Instalado (.exe / .app): el programa vive en su carpeta de instalacion (recursos de solo lectura en
-sys._MEIPASS), los datos en %LOCALAPPDATA%\\TrailerAutomatico (Mac: ~/Library/Application Support/...) y la
-carpeta de trabajo (1 MATERIAL, 2 VIDEOS TERMINADOS) la elige la persona; por defecto la del Escritorio.
+Instalado (.exe / .app), desde la 1.5.7 (la persona, 2026-11-16: «el usuario no debe tener nada a la vista, solo la carpeta
+que se crea cuando termina el video»): el programa vive en su carpeta de instalacion (recursos de solo lectura en
+sys._MEIPASS); los datos Y el trabajo (1 MATERIAL) van POR DENTRO, en %LOCALAPPDATA%\\TrailerAutomatico (Mac:
+~/Library/Application Support/TrailerAutomatico), en «trabajo/». A la vista solo queda, en el Escritorio, una carpeta por
+evento terminado: «EVENTO TERMINADO - <evento>» con «VIDEO TERMINADO» (VIDEO FINAL 1 MIN.mov...) y «PLANTILLAS DE LOS
+VIDEOS» (un proyecto de DaVinci por video, .drp, por si hay que corregir algo). pasar_adentro() mueve lo de antes.
 """
 import os
 import sys
@@ -85,18 +87,24 @@ def guardar_config(d):
 
 
 def _base():
+    """La carpeta de trabajo (1 MATERIAL): instalado, POR DENTRO (datos/trabajo), nada a la vista."""
     if os.environ.get("TRAILER_BASE"):
         return os.path.abspath(os.environ["TRAILER_BASE"])
     if not CONGELADO:
         return os.path.dirname(PROGRAMA)
-    elegida = leer_config().get("carpeta_trabajo")
-    if elegida:
+    return os.path.join(DATOS, "trabajo")
+
+
+def _salida():
+    """Donde quedan los eventos terminados (lo unico a la vista): el Escritorio, o la carpeta elegida en Ajustes."""
+    if os.environ.get("TRAILER_SALIDA"):
+        return os.path.abspath(os.environ["TRAILER_SALIDA"])
+    if os.environ.get("TRAILER_BASE") or not CONGELADO:
+        return BASE
+    elegida = leer_config().get("carpeta_terminados")
+    if elegida and os.path.isdir(elegida):
         return elegida
-    for nombre in ("TRAILER XV AUTOMATICO", "Trailer automatico"):
-        d = os.path.join(_escritorio(), nombre)
-        if os.path.isdir(d):
-            return d
-    return os.path.join(_escritorio(), "Trailer automatico")
+    return _escritorio()
 
 
 BASE = _base()
@@ -104,9 +112,60 @@ MATERIAL = os.path.join(BASE, "1 MATERIAL")
 CARPETAS = {"foto": os.path.join(MATERIAL, "FOTOS"),
             "video": os.path.join(MATERIAL, "VIDEOS"),
             "dron": os.path.join(MATERIAL, "DRON")}
-TERMINADOS = os.path.join(BASE, "2 VIDEOS TERMINADOS")
-EDITABLES = os.path.join(BASE, "3 PLANTILLAS EDITABLES")     # <EVENTO>/<linea>.drt: la linea de cada version, para retocar
+SALIDA = _salida()
+TERMINADOS = SALIDA                                # el disco donde salen los videos (espacio para el render)
+PREFIJO_TERMINADO = "EVENTO TERMINADO - "
+VIDEOS_EVENTO = "VIDEO TERMINADO"
+PLANTILLAS_EVENTO = "PLANTILLAS DE LOS VIDEOS"
 
+
+def limpiar_nombre(texto, otro="evento"):
+    """Un nombre que sirve de carpeta en Windows y en Mac."""
+    import re
+    return re.sub(r'[\\/:*?"<>|]+', " ", str(texto or "")).strip(" .") or otro
+
+
+def carpeta_terminado(evento):
+    """Escritorio/EVENTO TERMINADO - <evento>: lo unico que ve la persona."""
+    return os.path.join(SALIDA, PREFIJO_TERMINADO + limpiar_nombre(evento))
+
+
+def videos_terminados(evento):
+    return os.path.join(carpeta_terminado(evento), VIDEOS_EVENTO)
+
+
+def plantillas_evento(evento):
+    """Un proyecto de DaVinci por video (.drp, solo esa linea), por si hay que corregir algo."""
+    return os.path.join(carpeta_terminado(evento), PLANTILLAS_EVENTO)
+
+
+def etiqueta_de(nombre_linea):
+    """La version de una linea de DaVinci, en corto: «1min» o «VERTICAL 1min». Entiende los dos nombres: el de antes
+    («BODA - 1min», «BODA - VERTICAL 1min») y el de la 1.5.7, igual al del video («BODA - VIDEO FINAL 1 MIN»)."""
+    import re
+    e = str(nombre_linea).split(" - ")[-1].strip()
+    m = re.match(r"VIDEO FINAL (VERTICAL )?(\d+) MIN$", e, re.I)
+    if m:
+        return ("VERTICAL " if m.group(1) else "") + "%smin" % m.group(2)
+    return e
+
+
+def nombre_linea(evento, etiqueta):
+    """(1.5.7) La linea en DaVinci se llama como su video: «BODA 7 NOVIEMBRE - VIDEO FINAL 1 MIN»."""
+    return "%s - %s" % (evento, nombre_video(etiqueta))
+
+
+def nombre_video(nombre_linea):
+    """Como se llama el video (y su plantilla .drp), para reconocerlo rapido (la persona, 2026-11-16):
+    «XV ANA 2026-11-08 - 15min» -> «VIDEO FINAL 15 MIN»; «... - VERTICAL 1min» -> «VIDEO FINAL VERTICAL 1 MIN»."""
+    import re
+    etiqueta = etiqueta_de(nombre_linea)
+    vertical = etiqueta.upper().startswith("VERTICAL")
+    m = re.search(r"(\d+)\s*min", etiqueta, re.I)
+    tiempo = ("%s MIN" % m.group(1)) if m else limpiar_nombre(etiqueta.upper(), "VIDEO")
+    return "VIDEO FINAL %s%s" % ("VERTICAL " if vertical else "", tiempo)
+
+CAPTURAS = os.path.join(BASE, "CAPTURAS")          # fotos de la intro sacadas del video cuando no hay JPG (por dentro)
 ANALISIS = os.path.join(DATOS, "analisis")
 RESPALDOS = os.path.join(DATOS, "respaldos")
 CLASIFICACION = os.path.join(DATOS, "CLASIFICACION_EVENTO.json")
@@ -217,16 +276,132 @@ if os.path.isfile(os.path.join(_ff, "ffmpeg.exe" if ES_WIN else "ffmpeg")):
 SIN_VENTANA = 0x08000000 if ES_WIN else 0          # que ffmpeg no abra ventanas negras en Windows
 
 
+def fuentes():
+    """(1.5.7) Donde esta el material del evento: las carpetas soltadas, DONDE ESTAN (no se copian; sus archivos se
+    renombran en su sitio) y las capturas de la intro. Las carpetas viven en el estado («carpetas»)."""
+    try:
+        with open(ESTADO, encoding="utf-8") as f:
+            carpetas = json.load(f).get("carpetas") or []
+    except Exception:
+        carpetas = []
+    out = [c for c in carpetas if isinstance(c, str) and os.path.isdir(c)]
+    if os.path.isdir(CAPTURAS):
+        out.append(CAPTURAS)
+    return out
+
+
 def crear_carpetas():
-    for d in list(CARPETAS.values()) + [TERMINADOS, EDITABLES, ANALISIS, RESPALDOS]:
+    for d in list(CARPETAS.values()) + [ANALISIS, RESPALDOS]:
         os.makedirs(d, exist_ok=True)
 
 
+def _bases_viejas():
+    """Las carpetas de trabajo A LA VISTA de antes de la 1.5.7: la elegida en Ajustes y la del Escritorio."""
+    out = []
+    for d in [leer_config().get("carpeta_trabajo")] + [os.path.join(_escritorio(), n)
+                                                        for n in ("TRAILER XV AUTOMATICO", "Trailer automatico")]:
+        if d and os.path.isdir(d) and os.path.abspath(d) != os.path.abspath(BASE) and d not in out:
+            out.append(d)
+    return out
+
+
+def _quitar_vacias(d):
+    """Borra las carpetas que quedaron vacias (de abajo arriba); la basura del sistema no cuenta."""
+    if not os.path.isdir(d):
+        return
+    for raiz, carpetas, archivos in os.walk(d, topdown=False):
+        for f in archivos:
+            if f in (".DS_Store", "desktop.ini", "Thumbs.db") or f.startswith("._"):
+                try:
+                    os.remove(os.path.join(raiz, f))
+                except OSError:
+                    pass
+        try:
+            os.rmdir(raiz)
+        except OSError:
+            pass
+
+
+def _mover_dentro(origen, destino):
+    """Mueve el contenido de origen a destino sin pisar nada (mismo nombre -> «x (2).ext»). Devuelve cuantos movio."""
+    if not os.path.isdir(origen):
+        return 0
+    import shutil
+    n = 0
+    os.makedirs(destino, exist_ok=True)
+    for nombre in os.listdir(origen):
+        if nombre in (".DS_Store", "desktop.ini", "Thumbs.db"):
+            continue
+        o, d = os.path.join(origen, nombre), os.path.join(destino, nombre)
+        if os.path.exists(d):
+            if os.path.isdir(o) and os.path.isdir(d):
+                n += _mover_dentro(o, d)
+                continue
+            base, ext = os.path.splitext(nombre)
+            k = 2
+            while os.path.exists(d):
+                d = os.path.join(destino, "%s (%d)%s" % (base, k, ext))
+                k += 1
+        try:
+            shutil.move(o, d)
+            n += 1
+        except OSError:
+            pass
+    _quitar_vacias(origen)
+    return n
+
+
+def pasar_adentro(log=print):
+    """(1.5.7) Instalado: lo que habia A LA VISTA en la carpeta de trabajo de antes pasa a su sitio: el material
+    (1 MATERIAL) adentro del programa; los videos (2 VIDEOS TERMINADOS/<evento>) y las plantillas (3 PLANTILLAS
+    EDITABLES/<evento>) a «EVENTO TERMINADO - <evento>» en el Escritorio. La carpeta vieja se quita si queda vacia. La del
+    proyecto (la que tiene PROGRAMA/, para programar) nunca se toca. Lo llama tareas.instalar. Devuelve cuantos movio."""
+    if not CONGELADO or os.environ.get("TRAILER_BASE"):
+        return 0
+    n = 0
+    for vieja in _bases_viejas():
+        if os.path.isdir(os.path.join(vieja, "PROGRAMA")):
+            log("No toco %s: es la carpeta del proyecto." % vieja)
+            continue
+        n += _mover_dentro(os.path.join(vieja, "1 MATERIAL"), MATERIAL)
+        for sub, destino in (("2 VIDEOS TERMINADOS", videos_terminados), ("3 PLANTILLAS EDITABLES", plantillas_evento)):
+            d = os.path.join(vieja, sub)
+            if not os.path.isdir(d):
+                continue
+            for ev in os.listdir(d):
+                o = os.path.join(d, ev)
+                if os.path.isdir(o):
+                    n += _mover_dentro(o, destino(ev))
+            sueltos = [f for f in os.listdir(d) if os.path.isfile(os.path.join(d, f)) and f not in ("LEEME.txt", "desktop.ini")
+                       and not f.startswith(".")]
+            if sueltos:                          # videos sueltos, sin carpeta de evento
+                tmp = os.path.join(d, "_sueltos")
+                os.makedirs(tmp, exist_ok=True)
+                for f in sueltos:
+                    os.replace(os.path.join(d, f), os.path.join(tmp, f))
+                n += _mover_dentro(tmp, destino("anteriores"))
+            try:
+                os.remove(os.path.join(d, "LEEME.txt"))
+            except OSError:
+                pass
+        try:
+            os.remove(os.path.join(vieja, "LEEME.txt"))
+        except OSError:
+            pass
+        _quitar_vacias(vieja)
+        log("%s: %s" % (vieja, "quitada (todo quedo en su sitio)" if not os.path.isdir(vieja) else "quedan cosas que no son del programa"))
+    c = leer_config()
+    if c.pop("carpeta_trabajo", None) is not None:
+        guardar_config(c)
+    return n
+
+
 def migrar_datos():
-    """Primera vez instalado: trae los analisis ya hechos desde BASE/PROGRAMA/datos (version de codigo), asi no
-    vuelve a analizar todo el material."""
-    viejo = os.path.join(BASE, "PROGRAMA", "datos")
-    if not CONGELADO or not os.path.isdir(viejo) or os.path.exists(os.path.join(ANALISIS, "material.json")):
+    """Primera vez instalado: trae los analisis ya hechos desde <carpeta del proyecto>/PROGRAMA/datos (version de codigo),
+    asi no vuelve a analizar todo el material."""
+    viejo = next((os.path.join(b, "PROGRAMA", "datos") for b in [BASE] + (_bases_viejas() if CONGELADO else [])
+                  if os.path.isdir(os.path.join(b, "PROGRAMA", "datos"))), "")
+    if not CONGELADO or not viejo or os.path.exists(os.path.join(ANALISIS, "material.json")):
         return 0
     import shutil
     n = 0

@@ -148,6 +148,8 @@ def crear_material(carpeta, log=print):
         f.write(b"\x00\x05\x16\x07" + b"\x00" * 300)
     with open(os.path.join(sub["Fotos cámara"], "Thumbs.db"), "wb") as f:
         f.write(b"x" * 200)
+    # (1.5.7) la carpeta se usa donde esta: 27 JPG (con la copia repetida; la PNG no cuenta), 17 videos (con el cortado y el
+    # negro; el vacio no), 3 de dron
     esperado = {"fecha": DIA.isoformat(), "foto": 27, "video": 17, "dron": 3, "ya_estaban": 1,
                 "otros": {".nef": 1, ".txt": 1, "vacíos": 1}, "dañados": ["cortado.mp4"], "negro": "todo_negro.mp4",
                 "vertical": "VID_20261017_193000.mp4"}
@@ -162,6 +164,7 @@ class Guion:
     def __init__(self, ventana, app, carpeta, salida):
         from PySide6.QtCore import QTimer
         self.w, self.app, self.carpeta, self.salida = ventana, app, carpeta, salida
+        self._archivos_antes = sum(len(fs) for _, _, fs in os.walk(carpeta))     # al final: no se borro nada
         os.makedirs(salida, exist_ok=True)
         self.lineas, self.mal = [], 0
         self.etapa, self.t0, self.t_etapa = "inicio", time.time(), time.time()
@@ -276,23 +279,25 @@ class Guion:
             self._pasar("armado")
 
     def _revisar_copia(self, w):
+        """(1.5.7) La carpeta soltada se usa DONDE ESTA: nada se copia a 1 MATERIAL; solo cuentan las fotos JPG."""
+        import analizar_material as am
         e = self.esperado
-        hay = {t: len([f for f in os.listdir(d) if os.path.isfile(os.path.join(d, f))]) if os.path.isdir(d) else 0
-               for t, d in rutas.CARPETAS.items()}
-        if e and all(hay[t] == e[t] for t in ("foto", "video", "dron")):
-            self.ok("ordenado solo: %d en FOTOS, %d en VIDEOS, %d en DRON" % (hay["foto"], hay["video"], hay["dron"]))
+        lista = am.listar(rutas.BASE)
+        hay = {t: sum(1 for x, _ in lista if x == t) for t in ("foto", "video", "dron")}
+        if e and rutas.fuentes() and all(hay[t] == e[t] for t in ("foto", "video", "dron")):
+            self.ok("tomado en su carpeta, sin copiar: %d fotos JPG, %d videos, %d dron" % (hay["foto"], hay["video"], hay["dron"]))
         else:
-            self.falla("ordenado distinto de lo esperado: %s (esperado %s)" % (hay, {t: e.get(t) for t in hay}))
-        todos = [f for d in rutas.CARPETAS.values() if os.path.isdir(d) for f in os.listdir(d)]
-        basura = [f for f in todos if f.startswith("._") or f.lower().endswith((".copiando", ".nef", ".txt", ".db"))
-                  or f == "vacio.mp4"]
-        (self.ok if not basura else self.falla)("no se copio basura ni archivos que no sirven" if not basura
-                                                else "se copio lo que no debia: %s" % basura)
-        if "IMG_1003 copia.JPG" not in todos:
-            self.ok("el archivo repetido (mismo contenido, otro nombre) no se copio dos veces")
+            self.falla("material distinto de lo esperado: %s (esperado %s, carpetas %s)" % (
+                hay, {t: e.get(t) for t in hay}, rutas.fuentes()))
+        copiados = [f for d in rutas.CARPETAS.values() if os.path.isdir(d) for f in os.listdir(d)]
+        (self.ok if not copiados else self.falla)("no se copio nada a 1 MATERIAL" if not copiados
+                                                  else "se copio a 1 MATERIAL: %s" % copiados[:5])
+        nombres = [os.path.basename(r) for _, r in lista]
+        if not any(n.lower().endswith((".png", ".nef")) for n in nombres):
+            self.ok("solo fotos JPG: la PNG y el RAW no se toman en cuenta")
         else:
-            self.falla("se copio el repetido")
-        if any("💃" in f for f in todos) and "toma aerea.mp4" in os.listdir(rutas.CARPETAS["dron"]):
+            self.falla("se tomo en cuenta una foto que no es JPG")
+        if any("💃" in n for n in nombres) and any(t == "dron" and os.path.basename(r) == "toma aerea.mp4" for t, r in lista):
             self.ok("nombres con acentos y emoji, y el dron reconocido por su carpeta")
         else:
             self.falla("falta el video con emoji o el dron de la carpeta «Drone tarde»")
@@ -328,6 +333,30 @@ class Guion:
                          for m in ("MAQUILLAJE", "IGLESIA", "FIESTA"))
         (self.ok if bien else self.falla)("organizado por momentos (%s): %s" % (j.get("fecha"), txt))
         nombres = {i["nombre"]: i for i in items}
+        # (1.5.7) los archivos se renombraron en su carpeta: «VIDEO HORIZONTAL 001 (CEREMONIA).MP4»...
+        renombres = {}
+        try:
+            with open(os.path.join(rutas.ANALISIS, "nombres.json"), encoding="utf-8") as f:
+                for vez in json.load(f):
+                    for a, b in vez["cambios"]:
+                        renombres[os.path.basename(a)] = os.path.basename(b)
+        except Exception:
+            pass
+        for viejo, nuevo in renombres.items():
+            if nuevo in nombres:
+                nombres.setdefault(viejo, nombres[nuevo])
+        import re
+        bien_nombre = [n for n in renombres.values() if re.match(
+            r"^(FOTO|DRON|VIDEO (VERTICAL|HORIZONTAL)) \d{3} \((MAQUILLAJE|CEREMONIA|FIESTA)\)\.\w+$", n)]
+        if renombres and len(bien_nombre) == len(renombres):
+            self.ok("renombrados en su carpeta con tipo y momento: %d (p. ej. «%s»)" % (len(renombres), sorted(bien_nombre)[0]))
+        else:
+            self.falla("renombrado: %d de %d con el nombre esperado" % (len(bien_nombre), len(renombres)))
+        ahora = sum(len(fs) for _, _, fs in os.walk(self.carpeta))
+        if ahora == getattr(self, "_archivos_antes", ahora):
+            self.ok("no se borro ningun archivo de la carpeta del evento (%d)" % ahora)
+        else:
+            self.falla("la carpeta del evento tenia %d archivos y ahora %d" % (self._archivos_antes, ahora))
         avisos = " ".join(j.get("avisos") or [])
         if "cortado.mp4" not in nombres and "cortado.mp4" in avisos:
             self.ok("el video cortado se aparto con aviso")
@@ -345,7 +374,7 @@ class Guion:
         try:
             with open(plan, encoding="utf-8") as f:
                 p = json.load(f)
-            v1 = next(v for v in p["versiones"] if v["timeline"].endswith("1min"))
+            v1 = next(v for v in p["versiones"] if rutas.etiqueta_de(v["timeline"]) == "1min")
             zonas = {n: z["videos"] for n, z in v1["zonas"].items()}
             if all(zonas.get(n, 0) > 0 for n in ("APERTURA", "MAQUILLAJE", "IGLESIA", "FIESTA")) and v1["fotos_intro"] == 8:
                 self.ok("plan de las plantillas (%s): 8 fotos de intro y planos %s" % (
@@ -371,9 +400,9 @@ class Guion:
                     i["horizontal"] = False
             rep = motor.plan_previo(j, lambda m: None, formato="vertical")
             lineas = [v["timeline"] for v in (rep or {}).get("versiones", [])]
-            if lineas and all(" - VERTICAL " in t for t in lineas):
+            if lineas and all(rutas.etiqueta_de(t).startswith("VERTICAL ") for t in lineas):
                 self.ok("formato vertical: con videos verticales planifica %s" % ", ".join(
-                    t.split(" - ")[-1] for t in lineas))
+                    rutas.etiqueta_de(t) for t in lineas))
             else:
                 self.falla("formato vertical: no planifico (%s)" % lineas)
         except Exception as ex:

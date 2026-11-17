@@ -69,6 +69,11 @@ def _dibujar(p, tipo, col, s, grosor=None):
         L((0.12, 0.88), (0.18, 0.64), (0.68, 0.14), (0.86, 0.32), (0.36, 0.82))
         c.closeSubpath()
         L((0.57, 0.25), (0.75, 0.43))
+    elif tipo == "refrescar":                    # (1.6.1) flecha en circulo: proyecto nuevo
+        caja = QRectF(0.16 * s, 0.16 * s, 0.68 * s, 0.68 * s)
+        c.arcMoveTo(caja, 55)
+        c.arcTo(caja, 55, 305)
+        L((0.66, 0.42), (0.84, 0.50), (0.94, 0.33))
     elif tipo == "foto":
         R(0.06, 0.16, 0.88, 0.68, 0.10)
         L((0.14, 0.74), (0.38, 0.48), (0.55, 0.64), (0.66, 0.54), (0.86, 0.74))
@@ -254,7 +259,7 @@ def _dibujar(p, tipo, col, s, grosor=None):
 _MASCARAS = {}                       # (1.6.0) tipo -> QImage de recursos/iconos (Higgsfield) o None
 _ICONOS = {}                         # (tipo, color, lado, grosor) -> QPixmap ya hecho (se piden en cada pintada)
 # los de controles (palomita, x, play...) quedan dibujados: son geometria simple y se ven mejor exactos
-SOLO_DIBUJADOS = {"palomita", "check", "check_lleno", "cancelar", "min", "max", "x", "play", "punto"}
+SOLO_DIBUJADOS = {"palomita", "check", "check_lleno", "cancelar", "min", "max", "x", "play", "punto", "refrescar"}
 
 
 def _mascara(tipo):
@@ -377,6 +382,41 @@ class Chip(QPushButton):
     def reescalar(self):
         if self._ic[0]:
             self.poner_icono(*self._ic)
+
+
+class ChipGiro(Chip):
+    """(1.6.1) Chip cuyo icono da una vuelta al pasar el raton y al pulsarlo (el de refrescar: proyecto nuevo)."""
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self._giro = QVariantAnimation(self, startValue=0.0, endValue=360.0, duration=650,
+                                       easingCurve=QEasingCurve.InOutCubic)
+        self._giro.valueChanged.connect(self._girado)
+        self.clicked.connect(self.girar)
+
+    def girar(self):
+        if self._giro.state() != QVariantAnimation.Running:
+            self._giro.start()
+
+    def enterEvent(self, e):
+        self.girar()
+        super().enterEvent(e)
+
+    def _girado(self, grados):
+        tipo, color, lado = self._ic
+        base = icono(tipo, color, px(lado))
+        pm = QPixmap(base.size())
+        pm.setDevicePixelRatio(base.devicePixelRatio())
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.SmoothPixmapTransform)
+        lado_l = base.width() / base.devicePixelRatio()
+        p.translate(lado_l / 2.0, lado_l / 2.0)
+        p.rotate(float(grados))
+        p.translate(-lado_l / 2.0, -lado_l / 2.0)
+        p.drawPixmap(0, 0, base)
+        p.end()
+        self.setIcon(QIcon(pm))
 
 
 class Segmentado(QFrame):
@@ -732,6 +772,446 @@ class Adorno(QWidget):
                 rayo.setColorAt(1.0, QColor(255, 240, 200, 0))
                 p.setPen(QPen(rayo, max(1.0, px(3))))
                 p.drawLine(QPointF(x - dx * largo, y - dy * largo), QPointF(x + dx * largo, y + dy * largo))
+
+
+class _Emblema(QWidget):
+    """El circulo con aro dorado del popup: aviso (triangulo ambar), pregunta, info o error."""
+    COLOR = {"aviso": AMBAR, "pregunta": ORO, "info": ESMERALDA, "error": ROJO}
+
+    def __init__(self, tipo, parent=None):
+        super().__init__(parent)
+        self.tipo = tipo if tipo in self.COLOR else "info"
+        self.setFixedSize(px(150), px(150))
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        t = time.time()
+        late = 0.5 + 0.5 * math.sin(t * 2.6)                  # vivo: el fondo late y una luz recorre el aro
+        r = QRectF(self.rect()).adjusted(px(9), px(9), -px(9), -px(9))
+        col = QColor(self.COLOR[self.tipo])
+        halo = QRadialGradient(r.center(), r.width() / 2.0)
+        fondo = QColor(col)
+        fondo.setAlpha(34 + int(50 * late))
+        halo.setColorAt(0.0, fondo)
+        halo.setColorAt(1.0, QColor(6, 20, 20, 235))
+        aro = QLinearGradient(r.topLeft(), r.bottomRight())
+        aro.setColorAt(0.0, QColor("#F6E3B4"))
+        aro.setColorAt(0.5, QColor("#C9963A"))
+        aro.setColorAt(1.0, QColor("#F1CB7A"))
+        p.setPen(QPen(aro, max(1.5, px(4))))
+        p.setBrush(halo)
+        p.drawEllipse(r)
+        luz = QColor(255, 244, 214, 235)
+        p.setPen(QPen(luz, max(2.0, px(5)), Qt.SolidLine, Qt.RoundCap))
+        p.setBrush(Qt.NoBrush)
+        p.drawArc(r, int(-(t * 110.0 % 360.0) * 16), 46 * 16)
+        c, s = r.center(), r.width()
+        k = 1.0 + 0.05 * late                                  # el simbolo respira
+        p.translate(c)
+        p.scale(k, k)
+        p.translate(-c)
+        p.setPen(QPen(col, max(2.0, px(7)), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        p.setBrush(Qt.NoBrush)
+        f = QFont(self.font())
+        f.setWeight(QFont.Bold)
+        if self.tipo == "aviso":
+            t = QPainterPath()
+            t.moveTo(c.x(), c.y() - s * 0.24)
+            t.lineTo(c.x() + s * 0.26, c.y() + s * 0.19)
+            t.lineTo(c.x() - s * 0.26, c.y() + s * 0.19)
+            t.closeSubpath()
+            p.drawPath(t)
+            p.drawLine(QPointF(c.x(), c.y() - s * 0.08), QPointF(c.x(), c.y() + s * 0.04))
+            p.drawPoint(QPointF(c.x(), c.y() + s * 0.12))
+        elif self.tipo == "error":
+            d = s * 0.15
+            p.drawLine(QPointF(c.x() - d, c.y() - d), QPointF(c.x() + d, c.y() + d))
+            p.drawLine(QPointF(c.x() + d, c.y() - d), QPointF(c.x() - d, c.y() + d))
+        else:
+            f.setPixelSize(int(s * 0.56))
+            p.setFont(f)
+            p.setPen(col)
+            p.drawText(r, Qt.AlignCenter, "?" if self.tipo == "pregunta" else "i")
+
+
+class _Destello(QWidget):
+    """Un brillo que cruza el boton principal del popup cada 3 s (encima del boton, sin estorbar los clics)."""
+
+    def __init__(self, boton):
+        super().__init__(boton)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setGeometry(boton.rect())
+        self.show()
+
+    def paintEvent(self, _):
+        u = (time.time() % 3.0) / 0.9
+        if u >= 1.0:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        r = QRectF(self.rect())
+        camino = QPainterPath()
+        camino.addRoundedRect(r, r.height() / 2.0, r.height() / 2.0)
+        p.setClipPath(camino)
+        x = r.left() - r.width() * 0.3 + r.width() * 1.6 * u
+        luz = QLinearGradient(QPointF(x - r.width() * 0.2, 0), QPointF(x + r.width() * 0.2, 0))
+        luz.setColorAt(0.0, QColor(255, 255, 255, 0))
+        luz.setColorAt(0.5, QColor(255, 255, 255, 80))
+        luz.setColorAt(1.0, QColor(255, 255, 255, 0))
+        p.fillRect(r, luz)
+
+
+class Popup(QWidget):
+    """(1.6.1, la persona: «las ventanitas se ven muy viejas, hazlas pop up emergentes»; diseño de Higgsfield,
+    docs/capturas/propuesta_popup_1.png) Popup DENTRO de la ventana, en vez de los cuadros del sistema: lo de atras
+    queda borroso y oscuro; al centro, una tarjeta de vidrio con filo dorado, el emblema, el titulo, el texto y los
+    botones en pastilla (verde el principal). Enter = principal, Esc = el de cancelar. Se usa con preguntar()."""
+
+    def __init__(self, ventana, titulo, texto, botones, tipo="info", primario=0, escape=None):
+        super().__init__(ventana)
+        self.elegido = len(botones) - 1 if escape is None else escape
+        self._escape, self._primario = self.elegido, primario
+        self._bucle = None
+        self.setFocusPolicy(Qt.StrongFocus)
+        try:                                        # lo de atras, borroso (achicar y agrandar: barato)
+            foto = ventana.grab()
+            chica = foto.scaled(max(1, foto.width() // 12), max(1, foto.height() // 12), Qt.IgnoreAspectRatio,
+                                Qt.SmoothTransformation)
+            self._fondo = chica.scaled(foto.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+        except Exception:
+            self._fondo = None
+        self.setGeometry(ventana.rect())
+        fuera = QVBoxLayout(self)
+        fuera.addStretch(1)
+        fila = QHBoxLayout()
+        fila.addStretch(1)
+        self.tarjeta = QFrame(objectName="popup")
+        self.tarjeta.setMaximumWidth(px(1180))
+        self.tarjeta.setMinimumWidth(min(px(820), max(280, ventana.width() - 48)))
+        fila.addWidget(self.tarjeta)
+        fila.addStretch(1)
+        fuera.addLayout(fila)
+        fuera.addStretch(1)
+        self.tarjeta.setStyleSheet(
+            "QFrame#popup { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(16,52,48,248), "
+            "stop:0.45 rgba(9,30,32,250), stop:1 rgba(7,22,26,252)); border: %dpx solid #D9B15C; border-radius: %dpx; }"
+            "QLabel { background: transparent; border: none; }"
+            "QLabel#pt { color: #FFFFFF; font-size: %dpx; font-weight: 800; }"
+            "QLabel#px { color: #B9C6C9; font-size: %dpx; }"
+            "QPushButton { border-radius: %dpx; padding: 0 %dpx; min-height: %dpx; font-size: %dpx; font-weight: 600; "
+            "color: #FFFFFF; background: rgba(255,255,255,0.04); border: %dpx solid rgba(217,177,92,0.75); }"
+            "QPushButton:hover { background: rgba(217,177,92,0.16); border-color: #F1CB7A; }"
+            "QPushButton:focus { border-color: #F6E3B4; }"
+            "QPushButton#si { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #2BD08C, stop:1 #118A57); "
+            "border: %dpx solid rgba(255,255,255,0.28); font-weight: 800; }"
+            "QPushButton#si:hover { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #3BE3A0, stop:1 #16A068); }"
+            % (max(1, px(3)), px(64), px(66), px(34), px(46), px(54), px(92), px(34), max(1, px(2)), max(1, px(2))))
+        v = QVBoxLayout(self.tarjeta)
+        v.setContentsMargins(px(70), px(50), px(70), px(58))
+        v.setSpacing(px(20))
+        self.emblema = _Emblema(tipo)
+        v.addWidget(self.emblema, 0, Qt.AlignHCenter)
+        t = QLabel(titulo, objectName="pt")
+        t.setAlignment(Qt.AlignCenter)
+        t.setWordWrap(True)
+        v.addWidget(t)
+        if texto:
+            c = QLabel(texto, objectName="px")
+            c.setWordWrap(True)
+            c.setTextInteractionFlags(Qt.TextSelectableByMouse)        # se puede copiar (el comando de earshot)
+            c.setAlignment((Qt.AlignLeft if "•" in texto else Qt.AlignHCenter) | Qt.AlignVCenter)
+            v.addWidget(c)
+        v.addSpacing(px(22))
+        fb = QHBoxLayout()
+        fb.setSpacing(px(34))
+        fb.addStretch(1)
+        self.botones = []
+        for i, txt in enumerate(botones):
+            b = QPushButton(txt, objectName="si" if i == primario else "no")
+            b.setCursor(Qt.PointingHandCursor)
+            fb.addWidget(b)
+            self.botones.append(b)
+        fb.addStretch(1)
+        v.addLayout(fb)
+        ancho = px(70) * 2 + px(34) * (len(self.botones) - 1)
+        for i, b in enumerate(self.botones):        # cada boton, tan ancho como su texto (el estilo no lo mide bien)
+            b.clicked.connect(lambda _=False, k=i: self._cerrar(k))
+            f = QFont(b.font())
+            f.setPixelSize(px(34))
+            f.setWeight(QFont.ExtraBold)
+            b.setMinimumWidth(max(px(250), int(QFontMetricsF(f).horizontalAdvance(b.text())) + px(54) * 2 + px(16)))
+            ancho += b.minimumWidth()
+        self.tarjeta.setMaximumWidth(max(px(1180), ancho))
+        self._destello = _Destello(self.botones[primario]) if 0 <= primario < len(self.botones) else None
+        # (1.6.1, la persona: «créales las animaciones, no quiero nada estático») entra subiendo y aclarandose, sale
+        # desvaneciendose; abierto, el filo dorado respira, una luz recorre el aro del emblema y el boton verde brilla
+        from PySide6.QtWidgets import QGraphicsOpacityEffect
+        self._a = 0.0                               # 0 = invisible, 1 = del todo a la vista
+        self._saliendo = False
+        self._velo = QGraphicsOpacityEffect(self.tarjeta)
+        self._velo.setOpacity(0.0)
+        self.tarjeta.setGraphicsEffect(self._velo)
+        self._aparece = QVariantAnimation(self, startValue=0.0, endValue=1.0, duration=240,
+                                          easingCurve=QEasingCurve.OutCubic)
+        self._aparece.valueChanged.connect(self._paso)
+        self._aparece.finished.connect(self._fin_anim)
+        self._reloj = QTimer(self, interval=33)
+        self._reloj.timeout.connect(self._tic)
+        self.show()
+        self.raise_()
+        fuera.activate()
+        self._sitio = self.tarjeta.pos()
+        self._paso(0.0)
+        self._aparece.start()
+        self._reloj.start()
+        if 0 <= primario < len(self.botones):
+            self.botones[primario].setFocus()
+
+    def _paso(self, a):
+        self._a = float(a)
+        if self._velo is not None:
+            self._velo.setOpacity(self._a)
+        self.tarjeta.move(self._sitio.x(), self._sitio.y() + int(round((1.0 - self._a) * px(54))))
+        self.update()
+
+    def _fin_anim(self):
+        if self._saliendo:
+            self._reloj.stop()
+            self.hide()
+            if self._bucle is not None:
+                self._bucle.quit()
+        else:                                       # ya entro: sin el efecto (pintar a traves de el cuesta)
+            self.tarjeta.setGraphicsEffect(None)
+            self._velo = None
+            self.tarjeta.move(self._sitio)
+
+    def _tic(self):
+        if self.isVisible() and not self.window().isMinimized():
+            self.emblema.update()
+            self.update(self.tarjeta.geometry().adjusted(-px(70), -px(70), px(70), px(70)))
+            if self._destello is not None and (time.time() % 3.0) < 1.0:
+                self._destello.setGeometry(self._destello.parentWidget().rect())
+                self._destello.update()
+
+    def _cerrar(self, k):
+        if self._saliendo:
+            return
+        self.elegido = k
+        self._saliendo = True
+        from PySide6.QtWidgets import QGraphicsOpacityEffect
+        self._velo = QGraphicsOpacityEffect(self.tarjeta)
+        self.tarjeta.setGraphicsEffect(self._velo)
+        self._aparece.stop()
+        self._aparece.setDuration(140)
+        self._aparece.setStartValue(self._a)
+        self._aparece.setEndValue(0.0)
+        self._aparece.start()
+
+    def esperar(self):
+        """Espera la respuesta sin congelar la ventana; devuelve el numero del boton elegido."""
+        from PySide6.QtCore import QEventLoop
+        self._bucle = QEventLoop(self)
+        if self.isVisible():
+            self._bucle.exec()
+        self._bucle = None
+        self.setParent(None)
+        self.deleteLater()
+        return self.elegido
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key_Escape:
+            self._cerrar(self._escape)
+        elif e.key() in (Qt.Key_Return, Qt.Key_Enter):
+            foco = [i for i, b in enumerate(self.botones) if b.hasFocus()]
+            self._cerrar(foco[0] if foco else self._primario)
+        else:
+            super().keyPressEvent(e)
+
+    def mousePressEvent(self, e):
+        e.accept()                                  # lo de atras no recibe clics
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        a = self._a
+        if self._fondo is not None:
+            p.setOpacity(a)
+            p.drawPixmap(self.rect(), self._fondo)
+            p.setOpacity(1.0)
+        p.fillRect(self.rect(), QColor(2, 10, 12, int(165 * a)))
+        g = QRectF(self.tarjeta.geometry())         # el resplandor dorado alrededor de la tarjeta, que respira
+        t = time.time()
+        late = 0.5 + 0.5 * math.sin(t * 2.0)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setBrush(Qt.NoBrush)
+        for k in range(6):
+            c = QColor(226, 176, 79, int((18 + 16 * late - (3 + 2 * late) * k) * a))
+            p.setPen(QPen(c, px(6) + k * px(7)))
+            p.drawRoundedRect(g, px(64), px(64))
+
+
+def preguntar(ventana, titulo, texto="", botones=("Entendido",), tipo="info", primario=0, escape=None):
+    """Popup moderno dentro de la ventana (Popup). Devuelve el numero del boton elegido (Esc = el ultimo o `escape`)."""
+    pop = Popup(ventana, titulo, texto, list(botones), tipo, primario, escape)
+    ventana.popup_abierto = pop                     # las pruebas lo encuentran aqui (pop.botones[i].click())
+    try:
+        return pop.esperar()
+    finally:
+        ventana.popup_abierto = None
+
+
+class Sala(QWidget):
+    """(1.6.1, la persona: «que queden flotando las carpetas que arrastre y que salga el botón Empezar») La sala de
+    espera del Inicio: una tarjeta de vidrio por cada carpeta soltada, flotando despacio, y el botón «Empezar».
+    Solo pinta mientras se ve. Señal empezar al pulsar el botón."""
+    empezar = Signal()
+    MAX = 4                                    # tarjetas a la vista; las demas se cuentan en «+N»
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.carpetas = []
+        self._cajas = []                       # [(x, ancho, texto)] de cada tarjeta, sin el vaiven
+        self._boton = QRectF()
+        self._encima = self._apretado = False
+        self._t0 = time.time()
+        self.setMouseTracking(True)
+        self.reescalar()
+        self._reloj = QTimer(self, interval=33)
+        self._reloj.timeout.connect(self._tic)
+
+    def reescalar(self):
+        self.setFixedHeight(px(132))
+        self._medir()
+
+    def poner(self, carpetas):
+        """Las carpetas (rutas) en espera; vacio la esconde."""
+        nombres = [os.path.basename(str(c).rstrip("\\/")) or str(c) for c in carpetas]
+        if nombres != self.carpetas:
+            self.carpetas = nombres
+            self._medir()
+        self.setVisible(bool(nombres))
+        if nombres and not self._reloj.isActive():
+            self._reloj.start()
+        elif not nombres:
+            self._reloj.stop()
+
+    def _fuente(self, negrita=False):
+        f = QFont(self.font())
+        f.setPixelSize(px(30))
+        f.setWeight(QFont.DemiBold if negrita else QFont.Medium)
+        return f
+
+    def _medir(self):
+        fm = QFontMetricsF(self._fuente())
+        vistos = self.carpetas[:self.MAX]
+        resto = len(self.carpetas) - len(vistos)
+        textos = [fm.elidedText(n, Qt.ElideMiddle, px(330)) for n in vistos] + (["+%d más" % resto] if resto > 0 else [])
+        anchos = [fm.horizontalAdvance(t) + (px(118) if i < len(vistos) else px(56)) for i, t in enumerate(textos)]
+        ancho_b = QFontMetricsF(self._fuente(True)).horizontalAdvance("Empezar") + px(150)
+        hueco = px(22)
+        total = sum(anchos) + hueco * len(anchos) + px(20) + ancho_b
+        x = max(px(8), (self.width() - total) / 2.0)
+        self._cajas = []
+        for a, t in zip(anchos, textos):
+            self._cajas.append((x, a, t))
+            x += a + hueco
+        alto_b = px(92)
+        self._boton = QRectF(x + px(20), (self.height() - alto_b) / 2.0, ancho_b, alto_b)
+        self.update()
+
+    def resizeEvent(self, e):
+        self._medir()
+
+    def _tic(self):
+        if self.isVisible() and not self.window().isMinimized():
+            self.update()
+
+    def mouseMoveEvent(self, e):
+        encima = self._boton.contains(e.position())
+        if encima != self._encima:
+            self._encima = encima
+            self.setCursor(Qt.PointingHandCursor if encima else Qt.ArrowCursor)
+            self.update()
+
+    def leaveEvent(self, e):
+        self._encima = self._apretado = False
+        self.unsetCursor()
+        self.update()
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.LeftButton and self._boton.contains(e.position()):
+            self._apretado = True
+            self.update()
+
+    def mouseReleaseEvent(self, e):
+        if self._apretado and self._boton.contains(e.position()):
+            self._apretado = False
+            self.update()
+            self.empezar.emit()
+        self._apretado = False
+
+    def paintEvent(self, _):
+        if not self.carpetas:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        t = time.time() - self._t0
+        alto = px(84)
+        p.setFont(self._fuente())
+        vistos = min(len(self.carpetas), self.MAX)
+        for i, (x, ancho, texto) in enumerate(self._cajas):
+            dy = math.sin(t * 1.5 + i * 1.1) * px(8)                    # cada tarjeta flota a su ritmo
+            r = QRectF(x, (self.height() - alto) / 2.0 + dy, ancho, alto)
+            sombra = QRadialGradient(QPointF(r.center().x(), r.bottom() + px(14) - dy * 0.6), ancho * 0.5)
+            sombra.setColorAt(0.0, QColor(0, 0, 0, 70))
+            sombra.setColorAt(1.0, QColor(0, 0, 0, 0))
+            p.setPen(Qt.NoPen)
+            p.setBrush(sombra)
+            p.drawEllipse(QPointF(r.center().x(), r.bottom() + px(12) - dy * 0.6), ancho * 0.5, px(12))
+            vidrio = QLinearGradient(r.topLeft(), r.bottomLeft())
+            vidrio.setColorAt(0.0, QColor(40, 62, 66, 235))
+            vidrio.setColorAt(1.0, QColor(18, 34, 38, 235))
+            p.setBrush(vidrio)
+            borde = QColor(ORO)
+            borde.setAlpha(150 + int(60 * math.sin(t * 1.5 + i * 1.1)))
+            p.setPen(QPen(borde, max(1.0, px(2))))
+            p.drawRoundedRect(r, px(22), px(22))
+            p.setPen(QColor(TEXTO))
+            if i < vistos:
+                lado = px(40)
+                p.drawPixmap(QPointF(r.left() + px(26), r.center().y() - lado / 2.0), icono("carpeta", ORO, lado))
+                p.drawText(r.adjusted(px(84), 0, -px(22), 0), Qt.AlignVCenter | Qt.AlignLeft, texto)
+            else:
+                p.drawText(r, Qt.AlignCenter, texto)
+        # el boton Empezar: verde, con un halo que respira
+        b = QRectF(self._boton)
+        if self._apretado:
+            b.adjust(px(2), px(2), -px(2), -px(2))
+        pulso = 0.5 + 0.5 * math.sin(t * 2.4)
+        halo = QColor(ESMERALDA)
+        halo.setAlpha(int((70 if self._encima else 36) + 40 * pulso))
+        p.setPen(QPen(halo, px(10)))
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(b.adjusted(-px(3), -px(3), px(3), px(3)), b.height() / 2.0 + px(3), b.height() / 2.0 + px(3))
+        g = _degradado_verde(b)
+        if self._encima:
+            g.setColorAt(0.0, QColor("#3BE3A0"))
+        p.setPen(QPen(QColor(255, 255, 255, 70), max(1.0, px(2))))
+        p.setBrush(g)
+        p.drawRoundedRect(b, b.height() / 2.0, b.height() / 2.0)
+        lado = px(34)
+        tri = QPainterPath()                                             # el triangulo, dibujado (sin simbolos de fuente)
+        cx, cy = b.left() + px(52), b.center().y()
+        tri.moveTo(cx - lado * 0.36, cy - lado * 0.48)
+        tri.lineTo(cx + lado * 0.50, cy)
+        tri.lineTo(cx - lado * 0.36, cy + lado * 0.48)
+        tri.closeSubpath()
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor("#FFFFFF"))
+        p.drawPath(tri)
+        p.setPen(QColor("#FFFFFF"))
+        p.setFont(self._fuente(True))
+        p.drawText(b.adjusted(px(84), 0, -px(30), 0), Qt.AlignVCenter | Qt.AlignLeft, "Empezar")
 
 
 class Astrolabio(QWidget):

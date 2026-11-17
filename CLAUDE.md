@@ -58,6 +58,8 @@
   - Los cambios de clips solo funcionan en la timeline activa y ya asentada.
 - **Plantillas:** `TRAILER XV - *` no se tocan; cada evento es un duplicado.
 - **Editable:** al terminar, la línea del evento queda abierta en Edición y un `.drp` por video (solo esa línea) en `EVENTO TERMINADO - <evento>/PLANTILLAS DE LOS VIDEOS`. ▶ rearma y reemplaza las líneas: sobre un evento ya armado se pregunta antes; lo retocado a mano se saca con «Renderizar lo editado».
+- **Sala de espera:** soltar una carpeta NO arma: queda flotando en el Inicio (`piezas.Sala`) y espera; se pueden soltar más y solo empieza cuando la persona pulsa «Empezar» (la persona, 17-nov).
+- **Popups:** nunca `QMessageBox` ni cuadros del sistema: avisos y preguntas con `self._popup(...)` / `self._si(...)` (`piezas.Popup`, dentro de la ventana, animado). Nada estático: toda pieza nueva lleva su animación (la persona, 17-nov).
 - **Soltar:** la carpeta soltada se usa DONDE ESTÁ (no se copia; `estado.carpetas`, `rutas.fuentes()`). Al armar, sus archivos se renombran en su sitio: `VIDEO HORIZONTAL 001 (CEREMONIA).MP4`, `VIDEO VERTICAL 004 (FIESTA).MOV`, `DRON 001 (FIESTA).MP4`, `FOTO 003 (MAQUILLAJE).JPG` (nombres viejos en `datos/analisis/nombres.json`). NUNCA se borra ningún archivo. Otra carpeta soltada se une al mismo evento sin preguntar; solo si el evento ya está terminado (con sus videos) empieza uno nuevo.
 - **Material:** solo fotos JPG (RAW, DNG, PNG, HEIC no cuentan ni se tocan). Sin fotos JPG para la intro, se sacan capturas del video (`motor.capturas_intro`, por dentro en `CAPTURAS`). Si hay videos verticales, se arma solo también el VERTICAL 1 min.
 - **Montaje:**

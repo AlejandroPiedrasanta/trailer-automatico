@@ -391,7 +391,8 @@ def app():
     QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
     QAbstractScrollArea::corner { background: transparent; border: none; }
     QToolTip { background: #0E1E26; color: %(t)s; border: 1px solid rgba(255,255,255,0.12); padding: 6px 8px; }
-    QFrame#hoja { background: rgba(12, 26, 34, 0.97); border: 1px solid rgba(34,196,126,0.55); border-radius: 22px; }
+    QFrame#hoja { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(16,52,48,248), stop:0.45 rgba(9,30,32,250),
+                  stop:1 rgba(7,22,26,252)); border: 2px solid #D9B15C; border-radius: 30px; }
     QFrame#hoja[modo="soltar"] { border: 2px dashed rgba(34,196,126,0.95); background: rgba(8, 32, 27, 0.94); }
     QLabel#hoja_titulo { font-size: 24px; font-weight: 800; }
     QLabel#hoja_texto { color: #B8C7CB; font-size: 15px; }
@@ -924,10 +925,17 @@ def app():
             self.resize(1240, 860)
             self.trabajo = self.copia = self.cheq = None
             self.flujo = None                    # soltar una carpeta: None | mirando | pregunta | copiando | datos | cuenta
+            # (1.6.0, la persona: «primero pongo las carpetas y después, cuando yo decido, empieza») sala de espera:
+            # soltar solo agrega la carpeta a la lista; arma al pulsar el boton. Lo soltado mientras mira otra, a la cola.
+            self._cola_soltar = []
+            self._falta_datos = False            # evento nuevo sin nombres: se piden al pulsar el boton
             self._ultimo_fallo = None
             self.resultado = None
             self.material = {"ok": False, "cuenta": {"foto": 0, "video": 0, "dron": 0}, "faltan": []}
             self.est = motor.leer_estado()
+            self._carpetas = [c for c in (self.est.get("carpetas") or []) if isinstance(c, str)]
+            # en espera: hay carpetas puestas y aun no se ha pulsado el boton (ni el evento esta ya terminado)
+            self._en_espera = bool(self._carpetas) and (self.est.get("terminado") or "") != self.est.get("evento", "-")
 
             fondo = QVBoxLayout(self)
             fondo.setContentsMargins(0, 0, 0, 0)
@@ -1114,6 +1122,11 @@ def app():
             self.reserva = QWidget()                 # (1.6.0) ya no se usa: los pasos van en self.panel_trabajo
             self.reserva.setFixedHeight(0)
             v.addWidget(self.reserva)
+            # (1.6.1) la sala de espera: las carpetas soltadas flotando y el boton «Empezar» (piezas.Sala)
+            self.sala = piezas.Sala()
+            self.sala.empezar.connect(lambda: self._play())
+            self.sala.hide()
+            v.addWidget(self.sala)
             v.addSpacing(4)
             # chips de lo ya hecho: abrir videos, editar en DaVinci, renderizar lo editado, cancelar la copia
             fila_c = QHBoxLayout()
@@ -1164,12 +1177,19 @@ def app():
                 f1.addWidget(ch)
                 self.chips_mat[tipo] = ch
             f1.addWidget(piezas.separador_v(84))
-            f1.addSpacing(px(20))
-            self.chip_evento = piezas.Chip("", "lapiz", "#EEF3F4", lado=46)
+            self.chip_evento =piezas.Chip("", "lapiz", "#EEF3F4", lado=46)
             self.chip_evento.setProperty("tipo", "oro")
             self.chip_evento.setToolTip("Escribir los nombres y los textos del video")
             self.chip_evento.clicked.connect(lambda: self._ir("Textos"))
             f1.addWidget(self.chip_evento, 1)
+            # (1.6.1, la persona: «un botón para refrescar para un nuevo proyecto») deja el programa en blanco para otro
+            # evento: quita las carpetas de la lista y los textos. No borra nada
+            self.chip_nuevo = piezas.ChipGiro("", "refrescar", "#EEF3F4", lado=46)
+            self.chip_nuevo.setToolTip("Proyecto nuevo: empezar otro evento desde cero\n"
+                                       "(no borra nada: las carpetas y los videos terminados se quedan donde están)")
+            self.chip_nuevo.setFixedWidth(px(84))
+            self.chip_nuevo.clicked.connect(self._proyecto_nuevo)
+            f1.addWidget(self.chip_nuevo)
             dv.addLayout(f1)
             dv.addWidget(piezas.separador_h())
             f2 = QHBoxLayout()
@@ -1870,7 +1890,7 @@ def app():
             oculto.hide()
             self.ch_auto = piezas.Interruptor("")
             self.ch_auto.setParent(oculto)
-            self.ch_auto.setChecked(self.est.get("auto_armar", True))
+            self.ch_auto.setChecked(self.est.get("armar_al_soltar", False))      # (1.6.0) apagado: sala de espera
             self.l_ruido_dv = QLabel("", oculto)
             self.b_ruido_dv = QPushButton("", oculto)
             self.b_ruido_quitar = QPushButton("", oculto)
@@ -1963,10 +1983,10 @@ def app():
                 QDesktopServices.openUrl(QUrl(vision_ia.DESCARGA_OLLAMA))
                 self.l_ia.setText("Instala Ollama (se abrió su página), abre el programa otra vez y pulsa «Instalar el modelo».")
                 return
-            r = QMessageBox.question(self, TITULO_APP, "¿Bajar el modelo de IA local %s (unos 6 GB)?\n\nCon él el programa ve "
-                                     "cada toma (iglesia, fiesta, preparativos, los momentos clave) y arma mejor. Se baja "
-                                     "una sola vez; luego todo es local, sin internet." % vision_ia.MODELO_RECOMENDADO)
-            if r != QMessageBox.Yes:
+            if not self._si("¿Bajar el modelo de IA local %s (unos 6 GB)?\n\nCon él el programa ve "
+                            "cada toma (iglesia, fiesta, preparativos, los momentos clave) y arma mejor. Se baja "
+                            "una sola vez; luego todo es local, sin internet." % vision_ia.MODELO_RECOMENDADO,
+                            "Bajar", "Ahora no"):
                 return
             self.b_ia.setEnabled(False)
             self.l_ia.setText("Bajando el modelo… (puede tardar varios minutos)")
@@ -1993,10 +2013,10 @@ def app():
         def _instalar_oido(self):
             import oido
             QApplication.clipboard().setText(oido.INSTALAR)
-            QMessageBox.information(self, TITULO_APP, "El oído es earshot (%s): libre y local, sin internet.\n\n"
-                                    "Para instalarlo, en una terminal con uv:\n\n%s\n\n(El comando ya quedó copiado.) "
-                                    "La primera vez baja su modelo de sonidos (1 GB). Luego abre el programa otra vez."
-                                    % (oido.PAGINA, oido.INSTALAR))
+            self._popup("El oído es earshot (%s): libre y local, sin internet.\n\n"
+                        "Para instalarlo, en una terminal con uv:\n\n%s\n\n(El comando ya quedó copiado.) "
+                        "La primera vez baja su modelo de sonidos (1 GB). Luego abre el programa otra vez."
+                        % (oido.PAGINA, oido.INSTALAR), titulo="Instalar el oído")
 
         # ============================================================== actualizaciones
         def _buscar_actualizacion(self, manual=False):
@@ -2098,18 +2118,16 @@ def app():
                 c = rutas.leer_config()
                 c["carpeta_terminados"] = d
                 rutas.guardar_config(c)
-                QMessageBox.information(self, TITULO_APP, "Listo. Cierra y vuelve a abrir el programa para usar:\n%s" % d)
+                self._popup("Cierra y vuelve a abrir el programa para usar:\n%s" % d, titulo="Listo")
 
         def _restaurar_nombres(self):
             """(1.5.7) Deshace el renombrado del material del evento (vuelven los nombres que traian los archivos)."""
             if self.trabajo is not None or self.copia is not None:
                 self._avisar("Espera a que termine lo que está haciendo.", "warn")
                 return
-            r = QMessageBox.question(self, TITULO_APP,
-                                     "¿Devolver a los archivos del evento los nombres que traían?\n\n"
-                                     "No se borra ni se mueve nada; DaVinci los vuelve a encontrar. Mientras sea este "
-                                     "evento, el programa ya no los renombrará.")
-            if r != QMessageBox.Yes:
+            if not self._si("¿Devolver a los archivos del evento los nombres que traían?\n\n"
+                            "No se borra ni se mueve nada; DaVinci los vuelve a encontrar. Mientras sea este "
+                            "evento, el programa ya no los renombrará.", "Devolver nombres", "Cancelar"):
                 return
             qt_kit.correr_en_hilo(self, lambda: motor.restaurar_nombres(registro.info),
                                   lambda n, error: self._avisar(
@@ -2158,7 +2176,7 @@ def app():
                 msg = ("Se borra lo que el programa vuelve a hacer solo si hace falta:\n\n%s\n\nSe liberan: %s\n\n"
                        "No se borra tu material, los videos terminados, las plantillas de DaVinci, las capturas de "
                        "la intro ni los nombres originales." % ("\n".join(lineas), limpieza.texto_tam(total)))
-                if QMessageBox.question(self, TITULO_APP, msg) != QMessageBox.Yes:
+                if not self._si(msg, "Borrar caché", "Cancelar", titulo="¿Borrar la caché?"):
                     return
                 qt_kit.correr_en_hilo(self, lambda: limpieza.borrar(registro.info, davinci_abierto=abierto), fin)
             qt_kit.correr_en_hilo(self, lambda: (limpieza.que_hay(), motor.resolve_abierto()), listo)
@@ -2240,7 +2258,7 @@ def app():
             tipo = self.c_tipo.currentText() if hasattr(self, "c_tipo") else \
                 dict(TIPOS).get(self.est.get("tipo_evento", "xv"), "XV años")
             nombre = self.e_nombre.text().strip() if hasattr(self, "e_nombre") else self.est.get("nombre_xv", "")
-            self.chip_evento.setText(("   %s%s" % (tipo, (" · " + nombre) if nombre else " · escribe los nombres"))
+            self.chip_evento.setText(("   %s%s" % (tipo, (" · " + nombre) if nombre else " · pon los nombres"))
                                      .replace("&", "&&"))
             if self.chip_evento.icon().isNull():                      # el lapiz, dibujado («✎» no esta en la fuente)
                 self.chip_evento.setIconSize(QSize(14, 14))
@@ -2296,9 +2314,17 @@ def app():
             if hasattr(self, "l_eta"):
                 s = self._estimar() if self.trabajo is None else None
                 self.l_eta.setText("Listo a las %s" % time.strftime("%H:%M", time.localtime(time.time() + s)) if s else "")
+            # (1.6.1) la sala de espera: las carpetas flotando y «Empezar», mientras no este trabajando ni mirando otra
+            espera = self._en_espera and self.trabajo is None and self.copia is None
+            if hasattr(self, "sala"):
+                self.sala.poner(self._carpetas if espera else [])
             if self.trabajo is not None or self.flujo is not None:
                 return
-            if m["ok"]:
+            n = len(self._carpetas)
+            if m["ok"] and n and self._en_espera:
+                self._sub("%s  ·  suelta otra o pulsa Empezar" % (
+                    "1 carpeta lista" if n == 1 else "%d carpetas listas" % n), "ok")
+            elif m["ok"]:
                 self._sub("")
             else:
                 self._sub("Falta material: %s  ·  pulsa el botón y te digo qué agregar" % ", ".join(
@@ -2409,11 +2435,12 @@ def app():
 
         # ---- soltar una carpeta: se mira, se pregunta lo justo, se copia ordenada y se arma el trailer solo
         def dragEnterEvent(self, e):
-            if e.mimeData().hasUrls() and self.trabajo is None and self.flujo is None and self.copia is None:
+            # (1.6.0) tambien mientras mira o toma otra carpeta: lo soltado espera su turno (_cola_soltar)
+            if e.mimeData().hasUrls() and self.trabajo is None and self.flujo in (None, "mirando", "copiando"):
                 e.acceptProposedAction()
                 self.hoja.mostrar("soltar", "Suelta aquí la carpeta del evento",
-                                  "La ordeno en fotos, videos y dron, la organizo por momentos\ny armo el tráiler.",
-                                  icono="↓")
+                                  "La agrego a la lista y la ordeno en fotos, videos y dron.\n"
+                                  "Puedes soltar más: empiezo cuando tú lo digas.", icono="↓")
 
         def dragLeaveEvent(self, e):
             self.hoja.ocultar("soltar")
@@ -2427,8 +2454,12 @@ def app():
 
         def _recibir(self, archivos, tipo=None):
             """Lo soltado (o elegido con «Agregar…», con su tipo): primero se mira sin copiar nada."""
-            if self.trabajo is not None or self.copia is not None or self.flujo is not None:
+            if self.trabajo is not None or self.flujo in ("datos", "cuenta", "pregunta"):
                 self._avisar("Espera a que termine lo que está haciendo y vuelve a soltar el material.", "warn")
+                return
+            if self.copia is not None or self.flujo is not None:      # (1.6.0) mirando otra: esta espera su turno
+                self._cola_soltar.append((archivos, tipo))
+                self._avisar("La agrego en cuanto termine con la anterior.")
                 return
             self.flujo = "mirando"
             self._soltado = (archivos, tipo)
@@ -2513,13 +2544,20 @@ def app():
             if self._evento_nuevo and self._tipo_copia is None:      # los textos del evento anterior no valen
                 for w in (self.e_nombre, self.e_frase, self.e_fecha):
                     w.setText("")
+            try:                                         # (1.6.0) la lista de la sala de espera
+                self._carpetas = [c for c in (motor.leer_estado().get("carpetas") or []) if isinstance(c, str)]
+            except Exception:
+                pass
+            self._en_espera = True
+            self._falta_datos = self._tipo_copia is None and (self._evento_nuevo or not self.e_nombre.text().strip())
             self._revisar_material()
             self.l_copia.setText(resumen.split("\n")[0])
             if not self.material["ok"]:
                 self._fin_flujo(resumen.split("\n")[0] + "  ·  todavía falta: " + ", ".join(
                     "%d %s" % (n, motor.NOMBRE_CARPETA[t].lower()) for t, n in self.material["faltan"]), "warn")
-            elif self._tipo_copia is not None or not self.ch_auto.isChecked():
-                self._fin_flujo(resumen.split("\n")[0] + "  ·  pulsa ▶ para armar.")
+            elif self._tipo_copia is not None or not self.ch_auto.isChecked() or self._cola_soltar:
+                # (1.6.0) sala de espera: no arma solo; se pueden soltar mas carpetas y empieza al pulsar el boton
+                self._fin_flujo(resumen.split("\n")[0] + "  ·  suelta otra carpeta o pulsa Empezar.")
             elif self._evento_nuevo or not self.e_nombre.text().strip():
                 self._pedir_datos(resumen)
             else:
@@ -2554,7 +2592,7 @@ def app():
             self._form = (c, e)
             self.hoja.mostrar("datos", "¿De quién es el evento?", resumen,
                               [("Armar el tráiler", armar, True),
-                               ("Solo ordenar", lambda: self._fin_flujo("Material ordenado. Pulsa ▶ cuando quieras armar."),
+                               ("Ahora no", lambda: self._fin_flujo("Material ordenado. Pulsa ▶ cuando quieras armar."),
                                 False)], contenido=w, icono="✓")
             e.setFocus()
 
@@ -2593,6 +2631,59 @@ def app():
             self.titulo.setText(TITULO_INICIO)
             self._avisar(texto, tipo)
             self._sub_material()
+            if self._cola_soltar and self.trabajo is None:           # (1.6.0) la siguiente carpeta que esperaba turno
+                archivos, tipo_c = self._cola_soltar.pop(0)
+                QTimer.singleShot(0, lambda: self._recibir(archivos, tipo_c))
+
+        def _popup(self, texto, botones=("Entendido",), tipo="info", titulo=None, primario=0):
+            """(1.6.1) Las preguntas y avisos van en un popup dentro de la ventana (piezas.Popup, diseño de Higgsfield),
+            no en cuadros del sistema. Devuelve el numero del boton elegido (Esc = el ultimo). Sin titulo, usa el primer
+            parrafo del texto si es corto."""
+            if titulo is None:
+                primero, _, resto = texto.partition("\n\n")
+                if resto and len(primero) <= 70 and "\n" not in primero:
+                    titulo, texto = primero, resto
+                else:
+                    titulo = {"aviso": "Atención", "pregunta": "Confirma", "error": "Algo falló"}.get(tipo, "Aviso")
+            return piezas.preguntar(self, titulo, texto, botones, tipo, primario)
+
+        def _si(self, texto, si="Sí", no="No", tipo="pregunta", titulo=None):
+            return self._popup(texto, (si, no), tipo, titulo) == 0
+
+        # ---- (1.6.1) proyecto nuevo: el boton de refrescar del Inicio
+        def _proyecto_nuevo(self):
+            if self.trabajo is not None or self.copia is not None or self.flujo is not None:
+                self._avisar("Espera a que termine lo que está haciendo para empezar un proyecto nuevo.", "warn")
+                return
+            if self._si("El programa queda en blanco para otro evento: se quitan de la lista las carpetas puestas y se "
+                        "borran los nombres y textos.\n\nNo se borra ningún archivo: las carpetas siguen donde están y "
+                        "los videos terminados no se tocan.", "Proyecto nuevo", "Cancelar",
+                        titulo="¿Empezar un proyecto nuevo?"):
+                self._hacer_proyecto_nuevo()
+
+        def _hacer_proyecto_nuevo(self):
+            self.flujo = "nuevo"
+            self._sub("Dejando todo en blanco para un proyecto nuevo…")
+
+            def limpiar():
+                nombre = motor.evento_actual()[0] or motor.evento_terminado()
+                return motor.archivar_material(nombre)        # lo de dentro pasa a ANTERIORES; el estado, en blanco
+
+            def listo(res, error):
+                self._cola_soltar = []
+                if error is not None:
+                    self._fin_flujo("No pude empezar el proyecto nuevo: %s" % error, "error")
+                    return
+                self.est = motor.leer_estado()
+                self._carpetas, self._en_espera, self._falta_datos = [], False, False
+                for w in (self.e_nombre, self.e_frase, self.e_fecha):
+                    w.setText("")
+                self.l_copia.setText("")
+                self.chip_videos.hide()
+                self._chips_editable(False)
+                self._revisar_material()
+                self._fin_flujo("Proyecto nuevo: suelta la carpeta del evento.")
+            qt_kit.correr_en_hilo(self, limpiar, listo)
 
         # ============================================================== play
         def _guardar(self):
@@ -2604,7 +2695,7 @@ def app():
                       "frase": self.e_frase.text().strip(), "fecha_lugar": self.e_fecha.text().strip(),
                       "versiones": versiones, "versiones_vertical": verticales, "ruido": self.s_ruido.value(),
                       "igualar": self.ch_igualar.isChecked(), "renderizar": self.ch_render.isChecked(),
-                      "auto_armar": self.ch_auto.isChecked(),
+                      "armar_al_soltar": self.ch_auto.isChecked(),
                       "voz": {k: ch.isChecked() for k, ch in self.ch_voz.items()},
                       "usar_verticales": self.ch_vert.isChecked()})
             motor.guardar_estado(d)
@@ -2616,23 +2707,16 @@ def app():
 
         def _pedir_material(self):
             faltan = self.material["faltan"]
-            texto = "Para armar el video falta:\n\n" + "\n".join(
-                "•  %s: %s" % (motor.NOMBRE_CARPETA[t], "al menos %d fotos (faltan %d)" % (motor.MINIMOS[t], n)
-                               if t == "foto" else "al menos %d video" % motor.MINIMOS[t]) for t, n in faltan) + \
-                "\n\n¿Lo agregas ahora? También puedes arrastrar los archivos a la ventana."
-            caja = QMessageBox(self)
-            caja.setWindowTitle(TITULO_APP)
-            caja.setIcon(QMessageBox.Warning)
-            caja.setText(texto)
-            b_ag = caja.addButton("Agregar…", QMessageBox.AcceptRole)
-            b_ab = caja.addButton("Abrir carpeta", QMessageBox.ActionRole)
-            caja.addButton("Ahora no", QMessageBox.RejectRole)
-            caja.exec()
+            texto = "Para armar el video falta " + " y ".join(
+                ("al menos %d fotos (faltan %d)" % (motor.MINIMOS[t], n) if t == "foto"
+                 else "al menos %d video" % motor.MINIMOS[t]) for t, n in faltan) + \
+                ".\n¿Lo agregas ahora? También puedes arrastrar los archivos a la ventana."
+            r = self._popup(texto, ("Agregar", "Abrir carpeta", "Ahora no"), "aviso", titulo="Falta material")
             tipo = faltan[0][0]
             self._ir("Material")
-            if caja.clickedButton() is b_ag:
+            if r == 0:
                 self._agregar(tipo)
-            elif caja.clickedButton() is b_ab:
+            elif r == 1:
                 rutas.abrir(rutas.CARPETAS[tipo])
 
         def _chips_editable(self, ver=None):
@@ -2656,19 +2740,13 @@ def app():
         def _preguntar_ya_armado(self, evento):
             """▶ vuelve a armar desde cero y reemplaza las lineas: si la persona las retoco a mano, lo perderia.
             Devuelve "editado", "armar" o None (cancelar)."""
-            caja = QMessageBox(self)
-            caja.setWindowTitle(TITULO_APP)
-            caja.setIcon(QMessageBox.Question)
-            caja.setText("«%s» ya está armado en DaVinci.\n\n"
-                         "•  Renderizar lo editado: saca los videos con lo que hayas cambiado a mano en DaVinci.\n"
-                         "•  Volver a armar: lo arma de nuevo desde cero y reemplaza esas líneas "
-                         "(se pierden los cambios hechos a mano)." % evento)
-            b_ed = caja.addButton("Renderizar lo editado", QMessageBox.AcceptRole)
-            b_ar = caja.addButton("Volver a armar", QMessageBox.DestructiveRole)
-            caja.addButton("Cancelar", QMessageBox.RejectRole)
-            caja.setDefaultButton(b_ed)
-            caja.exec()
-            return "editado" if caja.clickedButton() is b_ed else "armar" if caja.clickedButton() is b_ar else None
+            r = self._popup("«%s» ya está armado en DaVinci.\n\n"
+                            "•  Renderizar lo editado: saca los videos con lo que hayas cambiado a mano en DaVinci.\n\n"
+                            "•  Volver a armar: lo arma de nuevo desde cero y reemplaza esas líneas "
+                            "(se pierden los cambios hechos a mano)." % evento,
+                            ("Renderizar lo editado", "Volver a armar", "Cancelar"), "pregunta",
+                            titulo="Este evento ya está armado")
+            return "editado" if r == 0 else "armar" if r == 1 else None
 
         def _editar_en_davinci(self):
             if self.trabajo is not None:
@@ -2712,6 +2790,15 @@ def app():
                 self._avisar("Falta material: suelta la carpeta del evento y vuelve a pulsar ▶.", "warn")
                 self._pedir_material()
                 return
+            if self.flujo is not None and not auto:       # (1.6.0) aun mira lo ultimo que se solto
+                self._avisar("Espera un momento: termino de mirar la carpeta que soltaste.", "warn")
+                return
+            if not auto and self._falta_datos and not self.e_nombre.text().strip():
+                self._falta_datos = False                 # (1.6.0) evento nuevo: de quien es, y a armar
+                self._pedir_datos(self.l_copia.text() or "Material listo.")
+                return
+            self._falta_datos = False
+            self._cola_soltar = []
             if not auto:                                  # ya armado con este material: ¿lo editado o desde cero?
                 armado = self._ya_armado()
                 if armado:
@@ -2728,15 +2815,10 @@ def app():
                 except Exception:
                     libre, necesita = 1e9, 0.0
                 if libre < necesita:
-                    caja = QMessageBox(self)
-                    caja.setWindowTitle(TITULO_APP)
-                    caja.setIcon(QMessageBox.Warning)
-                    caja.setText("Quedan %.1f GB libres en el disco donde quedan los videos y el render necesita unos "
-                                 "%.1f GB.\n\nLibera espacio, o arma solo en DaVinci y renderiza después." % (libre, necesita))
-                    b_sin = caja.addButton("Armar sin renderizar", QMessageBox.AcceptRole)
-                    caja.addButton("Cancelar", QMessageBox.RejectRole)
-                    caja.exec()
-                    if caja.clickedButton() is not b_sin:
+                    if not self._si("Quedan %.1f GB libres en el disco donde quedan los videos y el render necesita unos "
+                                    "%.1f GB.\n\nLibera espacio, o arma solo en DaVinci y renderiza después."
+                                    % (libre, necesita), "Armar sin renderizar", "Cancelar", "aviso",
+                                    titulo="Falta espacio en el disco"):
                         self._avisar("Sin espacio para renderizar: libera espacio y vuelve a pulsar ▶.", "warn")
                         return
                     op["render"] = False
@@ -2747,6 +2829,8 @@ def app():
         def _arrancar(self, op, con_render, texto, funcion=None):
             """Pone la ventana a trabajar y lanza el hilo: armar todo (funcion=None) o renderizar lo editado."""
             self.registro.clear()
+            self._en_espera = False                      # (1.6.0) ya dio la orden: se acaba la sala de espera
+            self.sala.poner([])
             self.chip_videos.hide()
             self._chips_editable(False)
             self._con_render = con_render
@@ -2930,9 +3014,9 @@ def app():
             detiene en DaVinci)."""
             if self.trabajo is None:
                 return
-            r = QMessageBox.question(self, TITULO_APP, "¿Cancelar el trabajo?\n\nLo que ya quedó armado en DaVinci se "
-                                     "queda ahí; lo demás se detiene en el paso que va.")
-            if r != QMessageBox.Yes or self.trabajo is None:
+            si = self._si("¿Cancelar el trabajo?\n\nLo que ya quedó armado en DaVinci se "
+                          "queda ahí; lo demás se detiene en el paso que va.", "Cancelar el trabajo", "Seguir", "aviso")
+            if not si or self.trabajo is None:
                 return
             rutas.PARAR.set()
             self.versiones.b_cancelar.setEnabled(False)
@@ -3180,7 +3264,7 @@ def app():
             if os.path.exists(rutas.CLASIFICACION):
                 rutas.abrir(rutas.CLASIFICACION)
             else:
-                QMessageBox.information(self, TITULO_APP, "La clasificación se crea sola la primera vez que pulsas ▶.")
+                self._popup("Se crea sola la primera vez que armas un evento.", titulo="Todavía no hay clasificación")
 
         # ============================================================== ventana sin marco
         BORDE = 7
@@ -3203,6 +3287,20 @@ def app():
 
         def eventFilter(self, obj, ev):
             t = ev.type()
+            if t == QEvent.ContextMenu and isinstance(obj, QLineEdit) and obj.window() is self:
+                # (1.6.1) el menu del clic derecho de los cuadros de texto, en español (Qt lo trae en ingles y las
+                # traducciones de Qt no van en el programa): Deshacer, Cortar, Copiar, Pegar…
+                menu = obj.createStandardContextMenu()
+                nombres = {"Undo": "Deshacer", "Redo": "Rehacer", "Cut": "Cortar", "Copy": "Copiar", "Paste": "Pegar",
+                           "Delete": "Borrar", "Select All": "Seleccionar todo"}
+                for a in menu.actions():
+                    base, _, atajo = a.text().partition("\t")
+                    es = nombres.get(base.replace("&", ""))
+                    if es:
+                        a.setText(es + ("\t" + atajo if atajo else ""))
+                menu.setAttribute(Qt.WA_DeleteOnClose)
+                menu.popup(ev.globalPos())
+                return True
             if t == QEvent.Resize and (obj is getattr(self, "boton", None) or obj is getattr(self, "hueco_boton", None)):
                 if obj is self.hueco_boton:
                     QTimer.singleShot(0, self._acomodar)
@@ -3238,8 +3336,9 @@ def app():
                 self._maximizar()
 
         def closeEvent(self, e):
-            if self.trabajo is not None and QMessageBox.question(
-                    self, TITULO_APP, "Todavía está trabajando. ¿Cerrar de todos modos?") != QMessageBox.Yes:
+            if self.trabajo is not None and not self._si(
+                    "Si cierras ahora, el armado se detiene donde va.", "Cerrar", "Seguir trabajando", "aviso",
+                    titulo="Todavía está trabajando"):
                 e.ignore()
                 return
             try:

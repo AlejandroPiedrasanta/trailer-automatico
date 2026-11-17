@@ -68,8 +68,13 @@ def indice():
     return out
 
 
+_INDICE = []
+
+
 def _buscar(nombre):
-    idx = indice()
+    if not _INDICE:                 # una sola vez: «generar» busca 400 simbolos y rehacerlo cada vez tardaba 3 min
+        _INDICE.extend(indice())
+    idx = _INDICE
     n = _norm(nombre)
     exactos = [s for s in idx if _norm(s[0]) == n or _norm(s[0]).endswith("." + n)]
     return exactos or [s for s in idx if n in _norm(s[0])]

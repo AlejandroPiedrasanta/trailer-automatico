@@ -273,8 +273,19 @@ class Guion:
                 self.foto("4_cuenta_atras")
                 self.ok("cuenta atras para armar solo")
                 w.hoja.botones[0].click()
+            elif not getattr(self, "_en_sala", False):
+                # (1.6.0) sala de espera: no arma solo; muestra la carpeta puesta y espera la orden (el boton)
+                self._en_sala = True
+                self.foto("4_sala_de_espera")
+                if w.trabajo is None and "carpeta" in w.sub.text():
+                    self.ok("sala de espera: no arma solo («%s»)" % w.sub.text()[:70])
+                else:
+                    self.falla("al soltar no quedo en espera: sub=«%s»" % w.sub.text())
+                    return self._terminar()
+                w._play()                                # la orden de la persona
+                return
             else:
-                self.falla("despues de copiar no ofrecio armar: %s" % w.aviso_t.text())
+                self.falla("despues de la orden no pidio los datos ni armo: %s" % w.aviso_t.text())
                 return self._terminar()
             self._pasar("armado")
 

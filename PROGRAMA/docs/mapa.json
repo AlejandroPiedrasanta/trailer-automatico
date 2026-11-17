@@ -222,7 +222,7 @@
  },
  {
   "id": "arranque",
-  "resumen": "Abrir sin tiempo de carga y con fluidez: portada nativa, fuentes (una familia, sin simbolos de reserva, hilo por ctypes), numpy/Pillow al primer uso, linea del dia y cielo guardados, tiempos con TRAILER_TIEMPOS",
+  "resumen": "Abrir sin tiempo de carga y con fluidez: sin portada (la persona no la quiere), fuentes (una familia, sin simbolos de reserva, hilo por ctypes), numpy/Pillow al primer uso, linea del dia y cielo guardados, tiempos con TRAILER_TIEMPOS",
   "claves": [
    "arranque",
    "arrancar",
@@ -272,7 +272,8 @@
    "widget.setVisible(True) sin ventana crea una ventanita suelta (0,15 s): nacer ocultos, mostrar al final de __init__. Medir texto (sizeHint) tambien al final.",
    "Fluidez: LineaDia y Cielo pintan una vez en una imagen (_imagen, _fondo); la ventana lee material_ventana.json (resumen de 100 KB, no los 6 MB); revisar_material va en otro hilo.",
    "numpy y Pillow: _AlUsar los carga al primer uso; _para_el_empaquetador mantiene el import escrito para PyInstaller. recursos/icono.ico lo hace hacer_portada.py.",
-   "No se toca: escena_go/estilos_inicio/orbe_mecanica (CineCaptions). Lo que queda al abrir es pulir los widgets (0,16 s) y el primer cuadro de la escena (0,14 s)."
+   "No se toca: escena_go/estilos_inicio/orbe_mecanica (CineCaptions). Lo que queda al abrir es pulir los widgets (0,16 s) y el primer cuadro de la escena (0,14 s).",
+   "(17-nov, 1.6.0) La persona: «no me gusta el cuadro que aparece al inicio... elimina eso». Sin portada nativa (Windows) ni QSplashScreen (Mac): trailer_xv.PORTADA = False; el codigo queda por si se vuelve a pedir. La ventana sale sola en ~1,7 s (desde el codigo)."
   ]
  },
  {

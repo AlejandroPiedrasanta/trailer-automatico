@@ -115,6 +115,9 @@ def _tiempo(que):
         registro.info("arranque %-22s %.2f s" % (que, time.perf_counter() - _T_ARRANQUE))
 
 
+PORTADA = False         # (1.6.0) el cuadro de arranque (nativo en Windows, de Qt en la Mac): quitado a pedido
+
+
 def _portada_nativa():
     """Windows: la portada (recursos/portada.bmp) en una ventanita del sistema, ANTES de cargar Qt. Qt tarda mas de
     un segundo en poder mostrar su primera ventana (arma la lista de fuentes de la PC); esto se ve a las decimas del
@@ -207,8 +210,9 @@ def _quitar_portada(v):
 
 def app():
     _tiempo("app()")
-    nativa = None if os.environ.get("TRAILER_PRUEBA_ARRASTRE") else _portada_nativa()
-    _tiempo("portada nativa")
+    # (1.6.0) sin portada: la persona no quiere el cuadro de arranque («elimina eso», 17-nov); la ventana sale sola
+    nativa = None
+    _tiempo("sin portada")
     from PySide6.QtCore import (Qt, QThread, Signal, QTimer, QPointF, QRectF, QSize, QFileSystemWatcher, QVariantAnimation,
                                 QEasingCurve, QEvent, QLockFile)
     from PySide6.QtGui import (QColor, QIcon, QPainter, QPixmap, QPolygonF, QPen, QBrush, QFont, QPainterPath,
@@ -3275,12 +3279,12 @@ def app():
     except Exception:
         pass
     _tiempo("modulos de la escena")
-    # Portada de Qt donde no hay nativa (Mac): mientras se construye la ventana completa (estilos, escena de Inicio).
-    # En Windows ya esta puesta la nativa (_portada_nativa), que sale mucho antes: Qt tarda ~1 s en su primera ventana.
+    # (1.6.0) Sin portada de Qt tampoco (ni en Windows ni en la Mac): la persona no quiere ningun cuadro al arrancar.
+    # Lo de abajo queda por si se vuelve a pedir (PORTADA = True).
     portada = None
     try:
-        if nativa:
-            raise RuntimeError("ya hay portada nativa")
+        if nativa or not PORTADA:
+            raise RuntimeError("sin portada")
         from PySide6.QtWidgets import QSplashScreen
         import icono_app as ic
         ancho, alto = 440, 250

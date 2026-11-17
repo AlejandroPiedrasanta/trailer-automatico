@@ -209,6 +209,9 @@ def _correr(trabajo, recibir, log, nombre):
             threading.Thread(target=vigia, daemon=True).start()
             for linea in p.stdout:
                 ultimo[0] = time.time()
+                if rutas.PARAR.is_set():              # (1.6.0) «Cancelar»: el oido se corta tambien
+                    p.kill()
+                    break
                 try:
                     m = json.loads(linea)
                 except ValueError:

@@ -3,7 +3,7 @@
 orbe_mecanica, boton_go): fuentes en pixeles, trabajo en un hilo e iconos de linea."""
 import threading
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, Slot
 from PySide6.QtGui import QFont, QFontDatabase, QIcon
 
 _FAMILIA = [None]
@@ -32,7 +32,24 @@ def fuente(tam=13, negrita=False, italica=False, subrayada=False, familia=None, 
 
 
 class _Mensajero(QObject):
+    """(1.6.0) Entrega el resultado EN EL HILO DE LA VENTANA: el receptor es este QObject (nace en ese hilo), asi la
+    señal emitida desde el hilo de trabajo va en cola. Conectada a una funcion suelta, PySide la llamaba en el hilo de
+    trabajo: crear un QPixmap ahi tumbaba el programa (las miniaturas de Material, 17-nov)."""
     listo = Signal(object, object)
+
+    def __init__(self, al_terminar=None):
+        super().__init__()
+        self._al_terminar = al_terminar
+        self.listo.connect(self._entregar)
+
+    @Slot(object, object)
+    def _entregar(self, r, e):
+        _VIVOS.discard(self)
+        if self._al_terminar is not None:
+            try:
+                self._al_terminar(r, e)
+            except Exception:
+                pass
 
 
 _VIVOS = set()
@@ -40,16 +57,8 @@ _VIVOS = set()
 
 def correr_en_hilo(contexto, trabajo, al_terminar, baja=False):
     """Corre trabajo() en un hilo y llama al_terminar(resultado, error) en el hilo de la ventana."""
-    m = _Mensajero()
+    m = _Mensajero(al_terminar)
     _VIVOS.add(m)
-
-    def entregar(r, e):
-        _VIVOS.discard(m)
-        try:
-            al_terminar(r, e)
-        except Exception:
-            pass
-    m.listo.connect(entregar)
 
     def correr():
         try:

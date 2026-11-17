@@ -1474,6 +1474,7 @@ def renderizar_editado(log, avance=None, evento=None):
                 resolve.GetProjectManager().SaveProject()
         if not etiquetas:
             raise RuntimeError("DaVinci no aceptó ningún trabajo de render.")
+        rutas.revisar_parada()               # (1.6.0) «Cancelar»
         paso(45, "Renderizando")
         import renderizar
         videos = renderizar.renderizar(log, evento, lambda pct, texto: paso(45 + int(pct * 0.5), texto), etiquetas)
@@ -1634,6 +1635,7 @@ def armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, **
         paso(3, "Revisando el material")
         evento, etiquetas, pedidas, avisos = None, [], [], []
         for n, (formato, solo) in enumerate(pases):
+            rutas.revisar_parada()               # (1.6.0) «Cancelar»
             if formato == "vertical":
                 log("== Formato vertical (9:16): solo videos verticales ==")
                 if n:
@@ -1677,6 +1679,7 @@ def armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, **
         if libre < necesita:
             raise RuntimeError("No hay espacio para renderizar: quedan %.1f GB libres y hacen falta unos %.1f GB. "
                                "Las timelines ya quedaron armadas en DaVinci." % (libre, necesita))
+        rutas.revisar_parada()               # (1.6.0) «Cancelar»
         paso(45, "Renderizando")
         import renderizar
         salida["videos"] = renderizar.renderizar(

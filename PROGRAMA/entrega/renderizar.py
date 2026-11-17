@@ -39,6 +39,10 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
             return []
         ultimo = ""
         while p.IsRenderingInProgress():
+            if motor.rutas.PARAR.is_set():       # (1.6.0) «Cancelar»: se detiene el render en DaVinci
+                p.StopRendering()
+                log("Render detenido: lo pidió la persona.")
+                raise motor.rutas.Detenido()
             estado, total = [], 0.0
             for j in jobs:
                 s = p.GetRenderJobStatus(j["JobId"]) or {}

@@ -97,6 +97,7 @@ def que_hay():
     # su modelo (hf) no se toca: bajarlo otra vez es 1 GB
     home = os.environ.get("EARSHOT_HOME") or os.path.join(os.path.expanduser("~"), ".cache", "earshot")
     agregar("earshot", "Audio decodificado de earshot (el oído)", [os.path.join(home, "decoded")])
+    agregar("miniaturas", "Miniaturas de la ventana", [os.path.join(rutas.DATOS, "miniaturas")])   # (1.6.0)
     return items
 
 

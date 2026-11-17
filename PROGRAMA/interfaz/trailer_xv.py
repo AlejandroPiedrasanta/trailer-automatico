@@ -38,6 +38,23 @@ VERSION_TEXTO = {"1min": "1 min", "3min": "3 min", "15min": "15 min", "30min": "
 PASOS_GO = [("timeline", "Revisar material"), ("voz", "Abrir DaVinci"), ("ia", "Plan y ritmo"),
             ("diseno", "Armar versiones"), ("sfx", "Renderizar"), ("resolve", "Audio final")]
 PESO_GO = [("timeline", 0.04), ("voz", 0.08), ("ia", 0.05), ("diseno", 0.27), ("sfx", 0.51), ("resolve", 0.05)]
+# (1.6.0, el diseño de Higgsfield) los pasos que ve la persona mientras trabaja, en una fila
+PASOS_VISTA = [("analizar", "Analizar"), ("ia", "IA y oído"), ("armar", "Armar"), ("render", "Renderizar"),
+               ("master", "Masterizar"), ("revisar", "Revisar")]
+# texto del registro (o del avance) -> paso de la fila que empieza
+ETAPAS_VISTA = [("Analizando", "analizar"), ("Revisando el material", "analizar"), ("Viendo cada toma con la IA", "ia"),
+                ("La IA local revisa", "ia"), ("El oído (earshot) escucha", "ia"), ("Conectando con DaVinci", "armar"),
+                ("Armando timelines", "armar"), ("Renderizando", "render"), ("Masterizando", "master"),
+                ("Audio masterizado", "master"), ("Escuchando el audio", "revisar"), ("Revisando con IA", "revisar"),
+                ("Proxies y plantillas", "revisar")]
+TITULO_INICIO = "Un clic y <span style='color:#D9A441;'>listo</span>"
+CANCELADO = "Cancelado"
+
+
+def _cuantos(n, tipo):
+    """«1 video», «442 fotos», «9 dron»."""
+    nombre = {"foto": ("foto", "fotos"), "video": ("video", "videos"), "dron": ("dron", "dron")}.get(tipo, (tipo, tipo))
+    return "%d %s" % (n, nombre[0] if n == 1 else nombre[1])
 
 
 def _fecha_bonita(iso):
@@ -195,12 +212,13 @@ def app():
     from PySide6.QtCore import (Qt, QThread, Signal, QTimer, QPointF, QRectF, QSize, QFileSystemWatcher, QVariantAnimation,
                                 QEasingCurve, QEvent, QLockFile)
     from PySide6.QtGui import (QColor, QIcon, QPainter, QPixmap, QPolygonF, QPen, QBrush, QFont, QPainterPath,
-                               QRadialGradient, QLinearGradient, QConicalGradient)
+                               QRadialGradient, QLinearGradient, QConicalGradient, QImageReader)
     from PySide6.QtWidgets import (QAbstractButton, QApplication, QCheckBox, QComboBox, QFileDialog, QFrame,
                                    QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
                                    QPushButton, QSizeGrip, QSlider, QStackedWidget, QVBoxLayout, QWidget, QScrollArea, QSizePolicy,
                                    QButtonGroup)
     import qt_kit
+    import piezas                                  # (1.6.0) las piezas del diseño nuevo (Higgsfield, 17-nov)
     _tiempo("PySide6 importado")
 
     ORO, ORO_CLARO, ORO_OSCURO = QColor("#C9A267"), QColor("#EBCB8F"), QColor("#6E4C24")
@@ -322,7 +340,7 @@ def app():
     QLabel#sub[tipo="ok"] { color: #7CF2C0; }
     QLabel#sub[tipo="error"] { color: #F07A6A; }
     QPushButton#pill { background: rgba(14, 30, 38, 0.80); border: 1px solid rgba(255,255,255,0.14);
-                       border-radius: 16px; padding: 9px 20px; font-weight: 700; color: %(m)s; }
+                       border-radius: 12px; padding: 8px 16px; font-weight: 700; color: %(m)s; }
     QPushButton#pill:hover { color: %(t)s; border-color: #22C47E; }
     QPushButton#pill:checked { background: rgba(34,196,126,0.30); color: #B9FFE0; border-color: #22C47E; }
     QPushButton#pill:disabled { color: rgba(143,163,168,0.5); }
@@ -380,10 +398,151 @@ def app():
                                                    border-radius: 10px; padding: 8px 16px; font-weight: 600; min-width: 84px; }
     QMessageBox QPushButton:hover, QDialog QPushButton:hover { background: rgba(255,255,255,0.13); }
     QMessageBox QPushButton:default, QDialog QPushButton:default { background: #22C47E; color: #04150D; border-color: #22C47E; }
+    QLabel#marca { font-size: 16px; font-weight: 800; letter-spacing: 1.5px; color: #FFFFFF; }
+    QPushButton#estado { background: rgba(14, 30, 38, 0.82); border: 1px solid rgba(34,196,126,0.40); border-radius: 15px;
+                         padding: 6px 14px 6px 10px; font-weight: 600; font-size: 13px; }
+    QPushButton#estado:hover, QPushButton#estado:checked { background: rgba(34,196,126,0.16); }
+    QPushButton#estado[tipo="warn"] { border-color: rgba(242,184,75,0.6); }
+    QPushButton#estado[tipo="error"] { border-color: rgba(240,122,106,0.65); }
+    QPushButton#estado[tipo="oro"] { border-color: rgba(217,164,65,0.6); }
+    QFrame#dock { background: rgba(12, 26, 34, 0.86); border: 1px solid rgba(201,162,103,0.30); border-radius: 22px; }
+    QPushButton#chip2 { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.13); border-radius: 12px;
+                        padding: 8px 16px; font-weight: 600; }
+    QPushButton#chip2:hover { border-color: rgba(34,196,126,0.6); }
+    QPushButton#chip2[tipo="falta"] { border-color: rgba(242,184,75,0.75); color: #F2B84B; }
+    QPushButton#chip2[tipo="oro"] { color: #EBCB8F; border-color: rgba(201,162,103,0.45); text-align: left; }
+    QPushButton#chip2[tipo="ok"] { border-color: rgba(34,196,126,0.45); }
+    QFrame#seg { background: rgba(4, 14, 20, 0.72); border: 1px solid rgba(255,255,255,0.10); border-radius: 12px; }
+    QPushButton#segb, QPushButton#segchico { background: transparent; border: 1px solid transparent; border-radius: 9px;
+                                             padding: 7px 16px; color: %(m)s; font-weight: 600; }
+    QPushButton#segchico { padding: 6px 10px; font-size: 12px; }
+    QPushButton#segb:hover, QPushButton#segchico:hover { color: %(t)s; }
+    QPushButton#segb:checked, QPushButton#segchico:checked { background: rgba(34,196,126,0.28); color: #B9FFE0;
+                                                             border-color: rgba(34,196,126,0.75); }
+    QPushButton#segb:disabled:checked { background: rgba(34,196,126,0.18); color: #8FD9B8; }
+    QFrame#tarjeta { background: rgba(12, 26, 34, 0.84); border: 1px solid rgba(201,162,103,0.22); border-radius: 18px; }
+    QLabel#tarjeta_t { font-size: 18px; font-weight: 700; }
+    QFrame#stat { background: rgba(12, 26, 34, 0.84); border: 1px solid rgba(255,255,255,0.10); border-radius: 18px; }
+    QFrame#stat[estado="falta"] { border-color: rgba(242,184,75,0.65); }
+    QLabel#stat_n { font-size: 38px; font-weight: 800; }
+    QLabel#titulo_pag { font-size: 28px; font-weight: 800; }
+    QLabel#etq_campo { color: %(t)s; font-weight: 700; font-size: 14px; }
+    QPushButton#link { background: transparent; border: none; color: #8FD9B8; font-weight: 600; padding: 4px 6px; }
+    QPushButton#link:hover { color: #B9FFE0; }
     """          # se completa al aplicarlo: %(t)s %(m)s y las familias %(f)s %(mono)s (ver estilo_completo)
 
-    def estilo_completo():
-        return QSS % {"t": TEXTO, "m": TENUE, "f": primera_que_hay(FAMILIAS_UI), "mono": primera_que_hay(FAMILIAS_MONO)}
+    def estilo_completo(s=None):
+        if s is not None:
+            piezas.ESCALA = s
+        return QSS % {"t": TEXTO, "m": TENUE, "f": primera_que_hay(FAMILIAS_UI),
+                      "mono": primera_que_hay(FAMILIAS_MONO)} + qss_diseno()
+
+    def qss_diseno():
+        """(1.6.0) El estilo de las maquetas de Higgsfield, con sus medidas (piezas.px: px de la maqueta de 2048 de
+        ancho por la escala de la ventana). Va despues del estilo de siempre: lo que repite, manda."""
+        p = piezas.px
+        verde = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2BD08C, stop:1 #118A57)"
+        return """
+    QLabel#marca {{ font-size: {a}px; font-weight: 600; letter-spacing: 1px; color: #FFFFFF; }}
+    QFrame#nav {{ background: rgba(10, 22, 28, 0.80); border: 1px solid rgba(150, 195, 195, 0.32);
+                 border-radius: {nav_r}px; }}
+    QPushButton#tab {{ font-size: {b}px; font-weight: 500; color: #DCE6E8; padding: {tab_v}px {tab_h}px;
+                      border-radius: {tab_r}px; border: 1px solid transparent; }}
+    QPushButton#tab:hover {{ background: rgba(255,255,255,0.06); color: #FFFFFF; }}
+    QPushButton#tab:checked {{ background: {verde}; color: #FFFFFF; border: 1px solid rgba(120, 245, 180, 0.75);
+                              font-weight: 600; }}
+    QPushButton#estado {{ font-size: {c}px; font-weight: 500; padding: {e_v}px {e_h}px; border-radius: {e_r}px;
+                         background: rgba(8, 20, 26, 0.78); border: 1px solid rgba(34, 196, 126, 0.75); }}
+    QPushButton#estado[tipo="oro"] {{ border-color: rgba(226, 176, 79, 0.85); }}
+    QFrame#ventanita {{ background: transparent; border: none; }}
+    QPushButton#ctrl, QPushButton#cerrar {{ background: transparent; border: none; border-radius: {ctl_r}px; }}
+    QPushButton#ctrl:hover {{ background: rgba(255,255,255,0.08); }}
+    QPushButton#cerrar:hover {{ background: #C42B1C; }}
+    QPushButton#logo {{ background: transparent; border: none; padding: 0; }}
+    QLabel#sub {{ font-size: {d}px; }}
+    QFrame#dock {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(24, 56, 60, 0.90),
+                  stop:1 rgba(10, 28, 34, 0.90)); border: 1px solid rgba(140, 215, 200, 0.38);
+                  border-radius: {dock_r}px; }}
+    QPushButton#chip2 {{ font-size: {g}px; font-weight: 400; color: #F1F5F6; padding: {ch_v}px {ch_h}px;
+                        border-radius: {ch_r}px; background: rgba(255,255,255,0.035);
+                        border: 1px solid rgba(255,255,255,0.20); }}
+    QPushButton#chip2:hover {{ border-color: rgba(120, 230, 180, 0.6); }}
+    QPushButton#chip2[tipo="falta"] {{ border-color: rgba(242,184,75,0.85); color: #F2B84B; }}
+    QPushButton#chip2[tipo="oro"] {{ text-align: left; padding-left: {ch_e}px; color: #F1F5F6;
+                                    border-color: rgba(255,255,255,0.20); }}
+    QFrame#seg {{ background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.20);
+                 border-radius: {seg_r}px; }}
+    QPushButton#segb {{ font-size: {g}px; font-weight: 400; color: #E3EBED; padding: {sb_v}px {sb_h}px;
+                       border-radius: {sb_r}px; border: 1px solid transparent; background: transparent; }}
+    QPushButton#segb:checked {{ background: {verde}; color: #FFFFFF; border: 1px solid rgba(120, 245, 180, 0.7); }}
+    QPushButton#segb:disabled:checked {{ background: {verde}; color: #FFFFFF; }}
+    QPushButton#pill {{ font-size: {g}px; font-weight: 400; color: #E3EBED; padding: {pl_v}px {pl_h}px;
+                       border-radius: {pl_r}px; background: rgba(255,255,255,0.035);
+                       border: 1px solid rgba(255,255,255,0.20); }}
+    QPushButton#pill:hover {{ border-color: rgba(120, 230, 180, 0.7); color: #FFFFFF; }}
+    QPushButton#pill:checked {{ background: {verde}; color: #FFFFFF; border: 1px solid #44D894; }}
+    QLabel#eta {{ font-size: {g}px; font-weight: 400; color: #F1F5F6; }}
+    QLabel#titulo_pag {{ font-size: {h1}px; font-weight: 700; }}
+    QPushButton#boton_verde {{ font-size: {g}px; font-weight: 500; color: #FFFFFF; padding: {bv_v}px {bv_h}px;
+                              border-radius: {bv_r}px; background: {verde}; border: 1px solid #44D894; }}
+    QPushButton#boton_verde:hover {{ background: #2BD08C; }}
+    QFrame#stat {{ background: rgba(14, 32, 40, 0.80); border: 1px solid rgba(160, 205, 210, 0.22);
+                  border-radius: {st_r}px; }}
+    QFrame#stat[estado="falta"] {{ border-color: rgba(242,184,75,0.75); }}
+    QLabel#stat_t {{ font-size: {st_t}px; font-weight: 500; }}
+    QLabel#stat_n {{ font-size: {st_n}px; font-weight: 700; }}
+    QPushButton#chip_ok {{ font-size: {ok_f}px; font-weight: 400; color: #FFFFFF; padding: {ok_v}px {ok_h}px;
+                          border-radius: {ok_r}px; background: rgba(16, 70, 48, 0.55); border: 1px solid #2FC27F;
+                          text-align: left; }}
+    QPushButton#chip_ok[tipo="falta"] {{ border-color: #F2B84B; color: #F2B84B; background: rgba(70, 52, 16, 0.5); }}
+    QFrame#vidrio {{ background: rgba(14, 32, 40, 0.74); border: 1px solid rgba(160, 210, 210, 0.22);
+                    border-radius: {vd_r}px; }}
+    QLabel#titulo_card {{ font-size: {tc}px; font-weight: 700; }}
+    QLabel#ayuda_t {{ font-size: {ay}px; color: #AFC0C4; }}
+    QLabel#etq_campo {{ font-size: {ec}px; font-weight: 700; color: #FFFFFF; }}
+    QLineEdit {{ font-size: {le}px; font-weight: 400; padding: {le_v}px {le_h}px; border-radius: {le_r}px;
+                background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.20); }}
+    QLineEdit:focus {{ border-color: #2FC27F; }}
+    QPushButton#pill_tipo {{ font-size: {pt}px; font-weight: 400; color: #E3EBED; padding: {pt_v}px {pt_h}px;
+                            border-radius: {pt_r}px; background: rgba(255,255,255,0.03);
+                            border: 1px solid rgba(255,255,255,0.20); }}
+    QPushButton#pill_tipo:checked {{ background: {verde}; color: #FFFFFF; border: 1px solid #44D894;
+                                    font-weight: 600; }}
+    QPushButton#pill_vista {{ font-size: {pv}px; font-weight: 500; color: #E3EBED; padding: {pv_v}px {pv_h}px;
+                             border-radius: {pv_r}px; background: rgba(255,255,255,0.03);
+                             border: 1px solid rgba(255,255,255,0.20); }}
+    QPushButton#pill_vista:checked {{ background: {verde}; color: #FFFFFF; border: 1px solid #44D894;
+                                     font-weight: 600; }}
+    QLabel#nota_t {{ font-size: {nt}px; color: #9DB0B6; }}
+    QFrame#tarjeta {{ background: rgba(16, 36, 44, 0.76); border: 1px solid rgba(160, 210, 210, 0.24);
+                     border-radius: {tj_r}px; }}
+    QLabel#tarjeta_t {{ font-size: {tj_t}px; font-weight: 700; }}
+    QLabel#fila_aj {{ font-size: {fa}px; }}
+    QLabel#sub_aj {{ font-size: {sa}px; }}
+    QFrame#caja_estado {{ background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.14);
+                         border-radius: {ce_r}px; }}
+    QPushButton#borde {{ font-size: {fa}px; font-weight: 400; padding: {bo_v}px {bo_h}px; border-radius: {bo_r}px;
+                        background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.26); }}
+    QPushButton#borde:hover {{ background: rgba(255,255,255,0.08); }}
+    QPushButton#cancelar {{ font-size: {cn}px; font-weight: 500; color: #FFFFFF; padding: {cn_v}px {cn_h}px;
+                           border-radius: {cn_r}px; background: rgba(255,255,255,0.03);
+                           border: 1px solid rgba(255,255,255,0.40); }}
+    QPushButton#cancelar:hover {{ background: rgba(255,255,255,0.08); }}
+    QLabel#eta_t {{ font-size: {g}px; color: #F1F5F6; }}
+    QSlider::groove:horizontal {{ height: {sl_g}px; background: rgba(140, 160, 170, 0.35); border-radius: {sl_gr}px; }}
+    QSlider::sub-page:horizontal {{ background: #22C47E; border-radius: {sl_gr}px; }}
+    QSlider::handle:horizontal {{ background: #FFFFFF; border: {sl_b}px solid #22C47E; width: {sl_h}px;
+                                 margin: -{sl_m}px 0; border-radius: {sl_hr}px; }}
+    """.format(
+            verde=verde, a=p(32), b=p(30), c=p(28), d=p(30), g=p(36), h1=p(56),
+            nav_r=p(34), tab_v=p(12), tab_h=p(40), tab_r=p(30), e_v=p(12), e_h=p(26), e_r=p(28), ctl_r=p(10),
+            dock_r=p(40), ch_v=p(22), ch_h=p(30), ch_r=p(16), ch_e=p(36), seg_r=p(16), sb_v=p(16), sb_h=p(26),
+            sb_r=p(12), pl_v=p(16), pl_h=p(22), pl_r=p(14), bv_v=p(18), bv_h=p(46), bv_r=p(14), st_r=p(28),
+            st_t=p(36), st_n=p(80), ok_f=p(34), ok_v=p(10), ok_h=p(30), ok_r=p(28), vd_r=p(30), tc=p(50), ay=p(28),
+            ec=p(34), le=p(36), le_v=p(20), le_h=p(30), le_r=p(14), pt=p(25), pt_v=p(16), pt_h=p(18), pt_r=p(16),
+            pv=p(28), pv_v=p(16), pv_h=p(50), pv_r=p(18), nt=p(26), tj_r=p(28), tj_t=p(44), fa=p(32), sa=p(36),
+            ce_r=p(14), bo_v=p(16), bo_h=p(30), bo_r=p(14), cn=p(34), cn_v=p(14), cn_h=p(46), cn_r=p(16),
+            sl_g=p(10), sl_gr=p(5), sl_b=p(4), sl_h=p(36), sl_m=p(13), sl_hr=p(18))
 
     # ------------------------------------------------------------------ trabajos en segundo plano
     class Trabajo(QThread):
@@ -398,10 +557,21 @@ def app():
             self.funcion = funcion                     # None = armar todo; o motor.renderizar_editado
 
         def run(self):
+            import threading
+            hilo = threading.current_thread()
+
+            def log(m):
+                # (1.6.0) «Cancelar»: el trabajo se corta en el siguiente mensaje de ESTE hilo (los demas hilos miran
+                # rutas.PARAR al empezar cada archivo)
+                if rutas.PARAR.is_set() and threading.current_thread() is hilo:
+                    raise rutas.Detenido()
+                self.linea.emit(str(m))
             try:
-                res = (self.funcion or motor.armar_todo)(lambda m: self.linea.emit(str(m)),
-                                                         lambda p, t: self.avance.emit(int(p), str(t)), **self.op)
+                res = (self.funcion or motor.armar_todo)(log, lambda p, t: self.avance.emit(int(p), str(t)), **self.op)
                 self.fin.emit(res)
+            except rutas.Detenido:
+                self.linea.emit("Cancelado por la persona.")
+                self.fallo.emit(CANCELADO)
             except Exception as ex:
                 registro.error("Armado: %s" % traceback.format_exc())      # la traza, al registro (no a la persona)
                 self.linea.emit("No se pudo terminar: %s" % ex)
@@ -618,14 +788,46 @@ def app():
                                    [(0.80, 0.18), (0.86, 0.12), (0.93, 0.22)]]
             self.t = 0.0
             self._fondo = None                  # (ancho, alto, escala, QPixmap): degradados y constelaciones, ya pintados
+            self._peli = self._cuadro = None    # (1.6.0) el cielo que se mueve (recursos/animaciones/cielo.mp4)
+            self._t_tam = QTimer(self, singleShot=True, interval=450)
+            self._t_tam.timeout.connect(self._video)
             reloj = QTimer(self)
             reloj.timeout.connect(self._tic)
             reloj.start(70)
 
         def _tic(self):
             self.t += 0.07
-            if self.isVisible() and not self.window().isMinimized():      # minimizada no se pinta nada
+            ver = self.isVisible() and not self.window().isMinimized()      # minimizada no se pinta nada
+            if self._peli is not None:
+                self._peli.pausar(not ver)
+                self._peli.lento(not self.window().isActiveWindow())
+            if ver and self._cuadro is None:    # con el video, cada cuadro pide su pintada
                 self.update()
+
+        def showEvent(self, e):
+            super().showEvent(e)
+            if self._peli is None:              # un rato despues de abrir (regla de arranque)
+                QTimer.singleShot(1500, self._video)
+
+        def _video(self):
+            """(1.6.0) El cielo de Higgsfield en movimiento (nebulosas que fluyen), a 1/3 de su velocidad (8 cuadros
+            por segundo: calma y poca CPU) y del tamaño de la ventana: ffmpeg lo escala en su proceso y aqui solo se
+            copia cada cuadro."""
+            import animacion
+            ruta = animacion.ruta("cielo.mp4")
+            if not ruta:
+                return
+            if self._peli is None:
+                self._peli = animacion.Pelicula(self._al_cuadro, None, self)
+            esc = self.devicePixelRatioF()
+            w, h = int(self.width() * esc) // 2 * 2, int(self.height() * esc) // 2 * 2
+            if self._peli.ruta and self._peli.tam == (w, h):
+                return
+            self._peli.reproducir(ruta, w, h, fps=8, bucle=True)
+
+        def _al_cuadro(self, img, datos):
+            self._cuadro = (img, datos)
+            self.update()
 
         def pausar(self, si):                   # bajo la escena de Inicio no hace falta animarlo
             r = self.findChild(QTimer)
@@ -636,6 +838,8 @@ def app():
             super().resizeEvent(e)
             if getattr(self, "al_cambiar", None):
                 self.al_cambiar()
+            if self._peli is not None:
+                self._t_tam.start()
 
         def _pintar_fondo(self, w, h, escala):
             """Lo que no cambia (dos degradados a toda la ventana y las constelaciones), pintado una sola vez por
@@ -644,24 +848,24 @@ def app():
             pm.setDevicePixelRatio(escala)
             p = QPainter(pm)
             p.setRenderHint(QPainter.Antialiasing)
+            p.setRenderHint(QPainter.SmoothPixmapTransform)
             todo = QRectF(0, 0, w, h)
-            g = QRadialGradient(QPointF(w * 0.5, h * 0.45), max(w, h) * 0.75)
-            g.setColorAt(0.0, QColor("#12303A"))
-            g.setColorAt(0.45, QColor("#0B1C26"))
-            g.setColorAt(1.0, QColor("#050C13"))
-            p.fillRect(todo, g)
-            neb = QRadialGradient(QPointF(w * 0.82, h * 0.30), w * 0.35)
-            neb.setColorAt(0.0, QColor(40, 90, 110, 40))
-            neb.setColorAt(1.0, QColor(40, 90, 110, 0))
-            p.fillRect(todo, neb)
-            p.setPen(QPen(QColor(150, 190, 200, 45), 1))
-            for linea in self.constelaciones:
-                pts = [QPointF(x * w, y * h) for x, y in linea]
-                for a, b in zip(pts, pts[1:]):
-                    p.drawLine(a, b)
-                p.setBrush(QColor(200, 230, 235, 150))
-                for q in pts:
-                    p.drawEllipse(q, 1.8, 1.8)
+            # (1.6.0) el cielo de la maqueta: la imagen de Higgsfield (estrellas y nebulosas verdes), sin constelaciones
+            img = getattr(self, "_img_cielo", None)
+            if img is None:
+                from PySide6.QtGui import QImage
+                ruta = os.path.join(rutas.RECURSOS, "cielo.jpg")
+                self._img_cielo = img = QImage(ruta) if os.path.isfile(ruta) else QImage()
+            if not img.isNull():
+                esc = max(w / img.width(), h / img.height())
+                tw, th = img.width() * esc, img.height() * esc
+                p.drawImage(QRectF((w - tw) / 2, (h - th) / 2, tw, th), img)
+            else:
+                g = QRadialGradient(QPointF(w * 0.5, h * 0.45), max(w, h) * 0.75)
+                g.setColorAt(0.0, QColor("#12303A"))
+                g.setColorAt(0.45, QColor("#0B1C26"))
+                g.setColorAt(1.0, QColor("#050C13"))
+                p.fillRect(todo, g)
             p.end()
             return pm
 
@@ -670,13 +874,20 @@ def app():
             if self._fondo is None or self._fondo[:3] != (w, h, escala):
                 self._fondo = (w, h, escala, self._pintar_fondo(w, h, escala))
             p = QPainter(self)
-            p.drawPixmap(0, 0, self._fondo[3])
+            if self._cuadro is not None:        # el cuadro del video (si aun es de otro tamaño, estirado)
+                img = self._cuadro[0]
+                if abs(img.width() - w * escala) < 3 and abs(img.height() - h * escala) < 3:
+                    p.drawImage(QRectF(0, 0, img.width() / escala, img.height() / escala), img)
+                else:
+                    p.drawImage(QRectF(0, 0, w, h), img)
+            else:
+                p.drawPixmap(0, 0, self._fondo[3])
             p.setRenderHint(QPainter.Antialiasing)
             p.setPen(Qt.NoPen)
-            for x, y, r, fase, vel in self.estrellas:
-                a = 70 + 110 * (0.5 + 0.5 * math.sin(self.t * vel + fase))
+            for x, y, r, fase, vel in self.estrellas[:70]:          # (1.6.0) unas pocas titilan sobre la imagen
+                a = 20 + 90 * (0.5 + 0.5 * math.sin(self.t * vel + fase))
                 p.setBrush(QColor(220, 240, 245, int(a)))
-                p.drawEllipse(QPointF(x * w, y * h), r * 0.6, r * 0.6)
+                p.drawEllipse(QPointF(x * w, y * h), r * 0.5, r * 0.5)
 
     def icono_app():
         """El icono del programa (icono_app.py) en varios tamanos: la barra de tareas elige el que le toca."""
@@ -723,11 +934,17 @@ def app():
             raiz.setContentsMargins(22, 18, 22, 14)
             raiz.setSpacing(12)
 
-            # --- barra superior
+            # --- barra superior (1.6.0: el icono, el nombre y una pastilla de estado en vez de la franja de avisos)
             barra = QHBoxLayout()
-            marca = QLabel("<span style='font-size:26px; font-weight:900; letter-spacing:1px; color:#FFFFFF;'>"
-                           "CINEMA</span><span style='font-size:15px; font-weight:800; color:#EAF2F0;'>"
-                           " PRODUCTIONS</span>")
+            barra.setSpacing(piezas.px(26))
+            self.b_logo = QPushButton(objectName="logo")      # un clic: el menu con lo que no esta en el diseño
+            self.b_logo.setIcon(icono_app())
+            self.b_logo.setIconSize(QSize(piezas.px(72), piezas.px(72)))
+            self.b_logo.setCursor(Qt.PointingHandCursor)
+            self.b_logo.setToolTip("Más: carpetas, DaVinci, nombres originales…")
+            self.b_logo.clicked.connect(self._menu_mas)
+            barra.addWidget(self.b_logo)
+            marca = QLabel("CINEMA PRODUCTIONS", objectName="marca")
             barra.addWidget(marca)
             barra.addStretch(1)
             nav = QFrame(objectName="nav")
@@ -747,20 +964,23 @@ def app():
             self.punto.setStyleSheet("color:%s; font-size:16px; padding: 0 10px;" % TENUE)
             self.punto.setToolTip("DaVinci Resolve")
             hn.addWidget(self.punto)
+            self.punto.hide()                        # (1.6.0) DaVinci va en la pastilla de estado
             barra.addWidget(nav)
             barra.addStretch(1)
-            self.b_log = QPushButton("≡", objectName="icono", checkable=True)       # ≡ si esta en la fuente; ☰ no
-            self.b_log.setFixedSize(44, 44)
+            # la pastilla de estado: «Todo listo» / «Trabajando» / avisos; un clic muestra lo que va haciendo
+            self.b_log = QPushButton("Revisando…", objectName="estado", checkable=True)
+            self.b_log.setCursor(Qt.PointingHandCursor)
+            self.b_log.setIconSize(QSize(piezas.px(24), piezas.px(24)))
+            self.b_log.setIcon(piezas.qicono("punto", TENUE, piezas.px(24)))
             self.b_log.setToolTip("Ver lo que va haciendo")
             barra.addWidget(self.b_log)
-            barra.addSpacing(10)
+            barra.addSpacing(6)
             ctrls = QFrame(objectName="ventanita")
             hc = QHBoxLayout(ctrls)
             hc.setContentsMargins(6, 4, 6, 4)
-            for txt, nombre, acc in (("—", "ctrl", self.showMinimized), ("□", "ctrl", self._maximizar),
-                                     ("×", "cerrar", self.close)):          # × si esta en la fuente; ✕ no
-                b = QPushButton(txt, objectName=nombre)
-                b.setFixedSize(38, 30)
+            for tipo, ayuda, acc in (("min", "Minimizar", self.showMinimized), ("max", "Maximizar", self._maximizar),
+                                     ("x", "Cerrar", self.close)):         # (1.6.0) dibujados y sin caja (maqueta)
+                b = piezas.BotonIcono(tipo, ayuda, rojo=tipo == "x")
                 b.clicked.connect(acc)
                 hc.addWidget(b)
             barra.addWidget(ctrls)
@@ -785,6 +1005,7 @@ def app():
             ha.addWidget(self.b_actualizar)
             ha.addWidget(self.aviso_h)
             raiz.addWidget(self.aviso)
+            self.aviso.hide()                        # (1.6.0) solo aparece un rato con cada aviso (ver _avisar)
             self.actualizacion = None            # {"version", "ruta"} cuando ya se bajo una version nueva
             self._instalando = False
 
@@ -809,12 +1030,14 @@ def app():
                 sa.setWidget(pag)
                 pag.setAutoFillBackground(False)        # setWidget lo enciende: el cielo debe verse detras
                 self.paginas.addWidget(sa)
-            self.grupo_tabs.idClicked.connect(self.paginas.setCurrentIndex)
+            self.grupo_tabs.idClicked.connect(self._cambiar_pagina)
+            import animacion
+            self.fundido = animacion.Fundido(self.paginas)      # (1.6.0) la pagina de antes se desvanece
             _tiempo("  demas paginas")
             import escena_go                         # la escena de Inicio de CineCaptions (esfera de particulas)
             self.escena = escena_go.EscenaGo(self.cielo)
             self.escena.lower()
-            self.escena.poner_pasos(PASOS_GO)
+            self.escena.poner_pasos([])              # (1.6.0) los pasos van en self.pasos (fila de pasos del diseño)
             self.escena.proveedor = self._geo_escena
             self.escena.datos_barra = self._datos_barra
             self.escena.etiquetas_ocultas.connect(self._quitar_reserva)
@@ -826,6 +1049,7 @@ def app():
             self.b_log.toggled.connect(self._ancho_registro)
             self.paginas.currentChanged.connect(self._ancho_registro)
             self.hoja = Hoja(self.cielo)             # «suelta aqui», preguntas y cuenta atras, sobre toda la ventana
+            QTimer.singleShot(0, self._brillos)
             _tiempo("  escena")
 
             pie = QHBoxLayout()
@@ -845,6 +1069,9 @@ def app():
             for b in self.tabs.values():                           # que no se corte el texto en una ventana angosta
                 b.setMinimumWidth(b.sizeHint().width())            # (al final: mide texto, y las fuentes ya cargaron)
             self._chips_editable(bool(self.est.get("evento") and self.est.get("timelines")))
+            self.t_eta = QTimer(self)                # «Listo a las 17:40» sigue al reloj
+            self.t_eta.timeout.connect(self._sub_material)
+            self.t_eta.start(60000)
             _tiempo("  final")
             QTimer.singleShot(300, self._arranque)
 
@@ -853,44 +1080,41 @@ def app():
             w = QWidget()
             v = QVBoxLayout(w)
             v.setContentsMargins(0, 0, 0, 0)
-            v.setSpacing(6)
-            import boton_go
+            v.setSpacing(0)
             # el astrolabio va en un hueco que toma el espacio libre y NO esta en el layout: asi su tamano fijo no impide
-            # achicar la ventana (en una laptop de 768 px de alto no cabia); _centrar_boton lo pone en medio
+            # achicar la ventana (en una laptop de 768 px de alto no cabia); _centrar_boton lo pone en medio.
+            # (1.6.0) Es la imagen del astrolabio de la maqueta (Higgsfield); trabajando, el de la ventana verde con el
+            # avance real encima. Misma API que boton_go.BotonGo.
             self.hueco_boton = QWidget()
             self.hueco_boton.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            self.hueco_boton.setMinimumHeight(200)
-            self.boton = boton_go.BotonGo(lado=380)
+            self.hueco_boton.setMinimumHeight(160)
+            self.boton = piezas.Astrolabio(os.path.join(rutas.RECURSOS, "astrolabio_inicio.png"),
+                                           os.path.join(rutas.RECURSOS, "astrolabio_trabajo.png"))
             self.boton.setParent(self.hueco_boton)
             self.boton.clicked.connect(lambda *_: self._play())
             v.addWidget(self.hueco_boton, 1)
-            self.titulo = QLabel("Un clic y listo", objectName="titulo")
-            self.titulo.setAlignment(Qt.AlignCenter)
-            v.addWidget(self.titulo)
-            linea = QFrame()
-            linea.setFixedSize(120, 2)
-            linea.setStyleSheet("background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 transparent, "
-                                "stop:0.5 #22C47E, stop:1 transparent);")
-            fila_l = QHBoxLayout()
-            fila_l.addStretch(1)
-            fila_l.addWidget(linea)
-            fila_l.addStretch(1)
-            v.addLayout(fila_l)
+            # (1.6.0) el titulo entre dos adornos dorados, como en el diseño
+            fila_t = QHBoxLayout()
+            fila_t.setSpacing(piezas.px(56))
+            fila_t.addStretch(1)
+            self.adornos = (piezas.Adorno("izq"), piezas.Adorno("der"))
+            fila_t.addWidget(self.adornos[0], 0, Qt.AlignVCenter)
+            self.titulo = piezas.Titulo(TITULO_INICIO, tam=100)    # blanco y «listo» en oro, como la maqueta
+            fila_t.addWidget(self.titulo)
+            fila_t.addWidget(self.adornos[1], 0, Qt.AlignVCenter)
+            fila_t.addStretch(1)
+            v.addLayout(fila_t)
             self.sub = QLabel("", objectName="sub")
             self.sub.setAlignment(Qt.AlignCenter)
             self.sub.setWordWrap(True)
             v.addWidget(self.sub)
-            self.reserva = QWidget()                 # aqui la escena dibuja la lista de pasos mientras trabaja
+            self.reserva = QWidget()                 # (1.6.0) ya no se usa: los pasos van en self.panel_trabajo
             self.reserva.setFixedHeight(0)
             v.addWidget(self.reserva)
-            v.addSpacing(8)
-            # chip del evento + abrir videos
+            v.addSpacing(4)
+            # chips de lo ya hecho: abrir videos, editar en DaVinci, renderizar lo editado, cancelar la copia
             fila_c = QHBoxLayout()
             fila_c.addStretch(1)
-            self.chip_evento = QPushButton("", objectName="chip")
-            self.chip_evento.setCursor(Qt.PointingHandCursor)
-            self.chip_evento.clicked.connect(lambda: self._ir("Textos"))
-            fila_c.addWidget(self.chip_evento)
             self.chip_videos = QPushButton("Abrir videos terminados", objectName="chip")
             self.chip_videos.setCursor(Qt.PointingHandCursor)
             self.chip_videos.clicked.connect(self._abrir_videos)
@@ -918,146 +1142,288 @@ def app():
             fila_c.addWidget(self.chip_cancelar)
             fila_c.addStretch(1)
             v.addLayout(fila_c)
-            v.addSpacing(6)
-            # formatos: que versiones se arman en horizontal (16:9) y cuales en vertical (9:16, solo videos verticales)
+            v.addSpacing(4)
+            # (1.6.0) el panel de abajo (el «dock» del diseño): lo que hay, el evento, el formato, las duraciones y la
+            # hora en que estara listo. Los dos formatos guardan sus duraciones; el selector muestra las de uno
+            px = piezas.px
+            self.dock = QFrame(objectName="dock")
+            dv = QVBoxLayout(self.dock)
+            dv.setContentsMargins(px(46), px(40), px(46), px(44))
+            dv.setSpacing(px(34))
+            f1 = QHBoxLayout()
+            f1.setSpacing(px(32))
+            self.chips_mat = {}
+            for tipo in ("foto", "video", "dron"):
+                ch = piezas.Chip("", tipo, "#EEF3F4", lado=50)
+                ch.setMinimumWidth(px({"foto": 295, "video": 302, "dron": 270}[tipo]))
+                ch.setToolTip("Ver el material")
+                ch.clicked.connect(lambda *_: self._ir("Material"))
+                f1.addWidget(ch)
+                self.chips_mat[tipo] = ch
+            f1.addWidget(piezas.separador_v(84))
+            f1.addSpacing(px(20))
+            self.chip_evento = piezas.Chip("", "lapiz", "#EEF3F4", lado=46)
+            self.chip_evento.setProperty("tipo", "oro")
+            self.chip_evento.setToolTip("Escribir los nombres y los textos del video")
+            self.chip_evento.clicked.connect(lambda: self._ir("Textos"))
+            f1.addWidget(self.chip_evento, 1)
+            dv.addLayout(f1)
+            dv.addWidget(piezas.separador_h())
+            f2 = QHBoxLayout()
+            f2.setSpacing(px(18))
+            self.seg_formato = piezas.Segmentado(["Horizontal", "Vertical"], 0)
+            self.seg_formato.setToolTip("Horizontal 16:9: usa los videos horizontales y también los verticales.\n"
+                                        "Vertical 9:16 para celular: solo los videos grabados en vertical.")
+            self.seg_formato.cambio.connect(self._ver_formato)
+            f2.addWidget(self.seg_formato)
+            f2.addSpacing(px(26))
+            f2.addWidget(piezas.separador_v(76))
+            f2.addSpacing(px(26))
             eleg_h, eleg_v = versiones_guardadas(self.est)
-            self._palomita = icono_trazo("palomita", "#B9FFE0", 13)       # dibujada: «✓» no esta en la fuente
+            self._palomita = piezas.qicono("palomita", "#FFFFFF", px(30))   # dibujada: «✓» no esta en la fuente
             self.pills, self.pills_v, self.etqs_formato, self.bs_todas = {}, {}, [], []
-            for etq, ayuda, pills, elegidas in (
-                    ("HORIZONTAL", "16:9 · usa los videos horizontales y también los verticales", self.pills, eleg_h),
-                    ("VERTICAL", "9:16 para celular · solo usa los videos grabados en vertical", self.pills_v, eleg_v)):
-                fila_p = QHBoxLayout()
-                fila_p.addStretch(1)
-                l = QLabel(etq, objectName="etq")
-                l.setFixedWidth(104)
-                l.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                l.setToolTip(ayuda)
-                fila_p.addWidget(l)
-                fila_p.addSpacing(6)
+            for ayuda, pills, elegidas in (
+                    ("16:9 · usa los videos horizontales y también los verticales", self.pills, eleg_h),
+                    ("9:16 para celular · solo usa los videos grabados en vertical", self.pills_v, eleg_v)):
                 for ver in motor.VERSIONES:
                     b = QPushButton((" " if ver in elegidas else "") + VERSION_TEXTO[ver], objectName="pill", checkable=True)
-                    b.setIconSize(QSize(13, 13))
+                    b.setIconSize(QSize(px(30), px(30)))
                     b.setIcon(self._palomita if ver in elegidas else QIcon())
                     b.setCursor(Qt.PointingHandCursor)
-                    b.setMinimumWidth(106)        # con o sin ✓ miden igual: las dos filas quedan alineadas
                     b.setChecked(ver in elegidas)
                     b.setToolTip(ayuda)
                     b.toggled.connect(self._cambio_plantillas)
                     pills[ver] = b
-                    fila_p.addWidget(b)
-                todas = QPushButton("Todas", objectName="pill")
-                todas.setCursor(Qt.PointingHandCursor)
-                todas.setToolTip(ayuda)
-                todas.clicked.connect(lambda _=False, ps=pills: [x.setChecked(True) for x in ps.values()])
-                fila_p.addWidget(todas)
-                fila_p.addStretch(1)
-                v.addLayout(fila_p)
-                v.addSpacing(5)
-                self.etqs_formato.append(l)
-                self.bs_todas.append(todas)
-            v.addSpacing(3)
+                    f2.addWidget(b)
+            f2.addStretch(1)
+            f2.addWidget(piezas.separador_v(76))
+            f2.addSpacing(px(40))
+            reloj = QLabel()
+            reloj.setPixmap(piezas.icono("reloj", "#EEF3F4", px(48)))
+            f2.addWidget(reloj)
+            f2.addSpacing(px(10))
+            self.l_eta = QLabel("", objectName="eta")
+            f2.addWidget(self.l_eta)
+            dv.addLayout(f2)
+            fila_d = QHBoxLayout()
+            fila_d.setContentsMargins(px(90), 0, px(90), 0)
+            fila_d.addWidget(self.dock, 1)
+            v.addLayout(fila_d)
+            # mientras trabaja, en vez del panel: los pasos y el avance de cada version (con «Cancelar»)
+            self.panel_trabajo = QWidget()
+            self.panel_trabajo.setMaximumWidth(px(1760))
+            pt = QVBoxLayout(self.panel_trabajo)
+            pt.setContentsMargins(0, 0, 0, 0)
+            pt.setSpacing(px(40))
+            self.pasos = piezas.Pasos(PASOS_VISTA)
+            pt.addWidget(self.pasos)
+            self.versiones = piezas.Versiones()
+            self.versiones.cancelar.connect(self._cancelar)
+            pt.addWidget(self.versiones)
+            fila_p = QHBoxLayout()
+            fila_p.addStretch(1)
+            fila_p.addWidget(self.panel_trabajo, 10)
+            fila_p.addStretch(1)
+            v.addLayout(fila_p)
+            self.panel_trabajo.hide()
+            v.addSpacing(8)
+            self._ver_formato(0)
             self._pintar_evento()
             return w
 
+        def _ver_formato(self, i):
+            """El selector Horizontal | Vertical muestra las duraciones de ese formato (las dos se guardan)."""
+            for b in self.pills.values():
+                b.setVisible(i == 0)
+            for b in self.pills_v.values():
+                b.setVisible(i == 1)
+
         def _tarjeta_carpeta(self, tipo, titulo, ayuda):
-            t = QFrame(objectName="carpeta")
-            t.setToolTip(ayuda)
-            g = QGridLayout(t)
-            g.setContentsMargins(20, 14, 16, 14)
-            g.setHorizontalSpacing(12)
-            g.setVerticalSpacing(2)
-            g.addWidget(QLabel(titulo, objectName="etq"), 0, 0)
-            n = QLabel("0", objectName="grande")
-            g.addWidget(n, 1, 0)
-            e = QLabel("", objectName="estado_c")
-            g.addWidget(e, 2, 0)
+            """(1.6.0) Tarjeta de Fotos / Videos / Dron: el numero grande y tres miniaturas encimadas. Un clic agrega."""
+            px = piezas.px
+            t = QFrame(objectName="stat")
+            t.setToolTip(ayuda + "\n\nClic: agregar " + titulo.lower())
+            t.setCursor(Qt.PointingHandCursor)
+            g = QHBoxLayout(t)
+            g.setContentsMargins(px(44), px(24), px(26), px(22))
+            g.setSpacing(px(10))
             col = QVBoxLayout()
-            col.setSpacing(6)
-            b1 = QPushButton("Agregar…", objectName="boton")
-            b1.clicked.connect(lambda: self._agregar(tipo))
-            b2 = QPushButton("Abrir", objectName="borde")
-            b2.clicked.connect(lambda: rutas.abrir(rutas.CARPETAS[tipo]))
-            for b in (b1, b2):
-                b.setCursor(Qt.PointingHandCursor)
-                col.addWidget(b)
-            g.addLayout(col, 0, 1, 3, 1, Qt.AlignRight | Qt.AlignVCenter)
-            g.setColumnStretch(0, 1)
+            col.setSpacing(0)
+            cab = QHBoxLayout()
+            cab.setSpacing(px(22))
+            ic = QLabel()
+            ic.setPixmap(piezas.icono("pelicula" if tipo == "video" else tipo, piezas.ORO, px(52)))   # dorados
+            cab.addWidget(ic)
+            et = QLabel(titulo, objectName="stat_t")
+            cab.addWidget(et)
+            cab.addStretch(1)
+            col.addLayout(cab)
+            n = QLabel("0", objectName="stat_n")
+            col.addWidget(n)
+            e = QLabel("", objectName="estado_c")
+            col.addWidget(e)
+            col.addStretch(1)
+            g.addLayout(col, 1)
+            pila = piezas.Pila()
+            g.addWidget(pila, 0, Qt.AlignVCenter)
+            t.mousePressEvent = lambda ev, tp=tipo: self._agregar(tp) if ev.button() == Qt.LeftButton else None
             self.tarjetas[tipo] = (t, n, e)
+            self.pilas[tipo] = pila
             return t
+
+        def _agregar_carpeta(self):
+            """(1.6.0) «Agregar carpeta»: como soltarla en la ventana (se usa donde está, sin copiarla)."""
+            d = QFileDialog.getExistingDirectory(self, "Agregar la carpeta del evento", os.path.expanduser("~"))
+            if d:
+                self._recibir([d])
+
+        def _traer_minis(self, pedidos):
+            """Miniaturas de la Línea del día, en un hilo (miniaturas.py); se pintan a medida que llegan."""
+            import miniaturas
+
+            def listo(res, error):
+                if error is None and res:
+                    self.linea.poner_minis({r: QPixmap(j) for r, j in res.items()})
+            qt_kit.correr_en_hilo(self, lambda: miniaturas.varias(pedidos), listo, baja=True)
+
+        def _minis_pila(self, tipo, items):
+            import miniaturas
+            pedidos = [(i["ruta"], i["tipo"], None) for i in items]
+
+            def listo(res, error):
+                if error is None and res:
+                    self.pilas[tipo].poner([QPixmap(res[r]) for r, _, _ in pedidos if r in res])
+            qt_kit.correr_en_hilo(self, lambda: miniaturas.varias(pedidos), listo, baja=True)
+
+        def _foto_vista(self, items):
+            """La mejor foto de la persona festejada (o la mas nitida) de fondo en la vista previa de Textos."""
+            fotos = [i for i in items if i["tipo"] == "foto" and i.get("ruta") and not i.get("descartar")]
+            if not fotos:
+                return
+
+            def puntaje(i):
+                ia = i.get("ia") or {}
+                et = set(ia.get("etiquetas") or [])
+                return (2 if et & {"festejada", "novia", "novios"} else 0) + (1 if i.get("prota") else 0) + \
+                    (0 if ia.get("util") is False else 1), -abs(hash(i["nombre"])) % 7
+            ruta = max(fotos, key=puntaje)["ruta"]
+
+            def leer():
+                r = QImageReader(ruta)
+                r.setAutoTransform(True)                 # la orientacion EXIF del celular
+                tam = r.size()
+                if tam.isValid() and tam.width() > 1600:
+                    r.setScaledSize(tam.scaled(1600, 1600, Qt.KeepAspectRatio))
+                return r.read()
+
+            def listo(img, error):
+                if error is None and img is not None and not img.isNull():
+                    self.vista.poner_fondo(QPixmap.fromImage(img))
+            qt_kit.correr_en_hilo(self, leer, listo, baja=True)
 
         def _pagina_material(self):
             import linea_dia
             w = QWidget()
             v = QVBoxLayout(w)
-            v.setContentsMargins(26, 14, 26, 6)
-            v.setSpacing(12)
+            v.setContentsMargins(piezas.px(18), piezas.px(14), piezas.px(18), piezas.px(10))
+            v.setSpacing(piezas.px(30))
             cab = QHBoxLayout()
-            tit = QLabel("Material del evento", objectName="titulo")
-            tit.setStyleSheet("font-size: 30px;")
+            cab.setSpacing(piezas.px(12))
+            px = piezas.px
+            raya = QFrame()
+            raya.setFixedSize(px(8), px(58))
+            raya.setStyleSheet("background: #E2B04F; border-radius: 2px;")
+            cab.addWidget(raya)
+            cab.addSpacing(px(14))
+            tit = QLabel("Material del evento", objectName="titulo_pag")
             cab.addWidget(tit)
             cab.addStretch(1)
-            self.l_copia = QLabel("↓  Arrastra fotos, videos o carpetas a la ventana: se ordenan solos")
+            self.l_copia = QLabel("")
             self.l_copia.setWordWrap(True)
             self.l_copia.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.l_copia.setStyleSheet("color:%s;" % TENUE)
             cab.addWidget(self.l_copia)
+            self.b_agregar = QPushButton("Agregar carpeta", objectName="boton_verde")
+            self.b_agregar.setIcon(piezas.qicono("carpeta", "#FFFFFF", px(46)))
+            self.b_agregar.setIconSize(QSize(px(46), px(46)))
+            self.b_agregar.setCursor(Qt.PointingHandCursor)
+            self.b_agregar.setToolTip("Elige la carpeta del evento: se usa donde está (no se copia). "
+                                      "También puedes arrastrarla a la ventana.")
+            self.b_agregar.clicked.connect(self._agregar_carpeta)
+            cab.addWidget(self.b_agregar)
             v.addLayout(cab)
             fila = QHBoxLayout()
-            fila.setSpacing(14)
-            self.tarjetas = {}
-            fila.addWidget(self._tarjeta_carpeta("foto", "FOTOS", "Se usan 8 para los destellos de la intro: "
+            fila.setSpacing(piezas.px(30))
+            self.tarjetas, self.pilas = {}, {}
+            fila.addWidget(self._tarjeta_carpeta("foto", "Fotos", "Se usan 8 para los destellos de la intro: "
                                                  "pon al menos 8 (mejor muchas: el programa elige las más nítidas "
                                                  "y no repite fotos de una ráfaga)."))
-            fila.addWidget(self._tarjeta_carpeta("video", "VIDEOS", "Videos de cámara y celular de todo el evento: "
+            fila.addWidget(self._tarjeta_carpeta("video", "Videos", "Videos de cámara y celular de todo el evento: "
                                                  "maquillaje, iglesia y fiesta."))
-            fila.addWidget(self._tarjeta_carpeta("dron", "DRON", "Tomas aéreas (opcional). Abren el tráiler "
+            fila.addWidget(self._tarjeta_carpeta("dron", "Dron", "Tomas aéreas (opcional). Abren el tráiler "
                                                  "y las versiones largas."))
             v.addLayout(fila)
-            # --- como quedo organizado (el analisis)
+            # lo que ya se hizo con el material: medido, visto por la IA, escuchado por el oido
+            fila_e = QHBoxLayout()
+            fila_e.setSpacing(8)
+            self.chips_estado = {}
+            fila_e.setSpacing(px(24))
+            for clave in ("medido", "ia", "oido"):
+                ch = piezas.Chip("", "check_lleno", "#22C47E", nombre="chip_ok", lado=36)
+                ch.setCursor(Qt.ArrowCursor)
+                ch.setProperty("tipo", "ok")
+                ch.hide()
+                fila_e.addWidget(ch)
+                self.chips_estado[clave] = ch
+            fila_e.addStretch(1)
+            self.b_analizar = QPushButton("Analizar ahora", objectName="borde")
+            self.b_analizar.setCursor(Qt.PointingHandCursor)
+            self.b_analizar.setToolTip("Revisa hora, nitidez, luz, color y audio de cada archivo y los ordena por "
+                                       "momento. Lo ya analizado no se repite: después el botón de Inicio va directo.")
+            self.b_analizar.clicked.connect(self._analizar_ahora)
+            fila_e.addWidget(self.b_analizar)
+            v.addLayout(fila_e)
+            # --- la linea del dia (el analisis)
             org = QFrame(objectName="vidrio")
             go = QVBoxLayout(org)
-            go.setContentsMargins(22, 16, 22, 14)
-            go.setSpacing(10)
+            go.setContentsMargins(px(24), px(26), px(24), px(26))
+            go.setSpacing(px(14))
             fila_t = QHBoxLayout()
-            t2 = QLabel("Cómo quedó organizado")
-            t2.setStyleSheet("font-size: 18px; font-weight: 800;")
+            fila_t.setContentsMargins(px(14), 0, px(14), 0)
+            fila_t.setSpacing(px(26))
+            ic = QLabel()
+            ic.setPixmap(piezas.icono("pelicula", piezas.ORO, px(54)))
+            fila_t.addWidget(ic)
+            t2 = QLabel("Línea del día", objectName="titulo_card")
             fila_t.addWidget(t2)
             self.l_org = QLabel("")
             self.l_org.setStyleSheet("color:%s;" % TENUE)
+            self.l_org.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             fila_t.addWidget(self.l_org, 1)
-            self.b_analizar = QPushButton("Analizar ahora", objectName="boton")
-            self.b_analizar.setCursor(Qt.PointingHandCursor)
-            self.b_analizar.setToolTip("Revisa hora, nitidez, luz, color y audio de cada archivo y los ordena por "
-                                       "momento. Lo ya analizado no se repite: después ▶ va directo.")
-            self.b_analizar.clicked.connect(self._analizar_ahora)
-            fila_t.addWidget(self.b_analizar)
             go.addLayout(fila_t)
             self.linea = linea_dia.LineaDia()
             self.linea.limites_cambiados.connect(self._limites_cambiados)
             self.linea.cuentas_vivas.connect(self._pintar_cuentas)
+            self.linea.pide_minis.connect(self._traer_minis)
+            self.linea.toma_movida.connect(self._toma_movida)
             go.addWidget(self.linea, 1)
-            fila_m = QHBoxLayout()
-            fila_m.setSpacing(10)
             self.l_momentos = {}
-            for mom in linea_dia.MOMENTOS:
-                l = QLabel("")
-                l.setStyleSheet("background: rgba(4,14,20,0.6); border: 1px solid %s; border-radius: 10px; "
-                                "padding: 8px 12px;" % linea_dia.COLOR[mom].name())
-                l.setTextFormat(Qt.RichText)
-                fila_m.addWidget(l, 1)
-                self.l_momentos[mom] = l
-            go.addLayout(fila_m)
             self.l_avisos = QLabel("")
             self.l_avisos.setWordWrap(True)
             self.l_avisos.setTextFormat(Qt.RichText)
-            self.l_avisos.setStyleSheet("color:%s;" % AMBAR)
+            self.l_avisos.setStyleSheet("color:%s; font-size: 12px;" % AMBAR)
             go.addWidget(self.l_avisos)
-            ayuda = QLabel("¿Algo cayó en el momento equivocado? Arrastra las etiquetas <b>Iglesia</b> y <b>Fiesta</b> "
-                           "a la hora en que empezó cada una. Lo hueco se ordenó por lo que se ve (su cámara no tenía "
-                           "buena hora).")
-            ayuda.setWordWrap(True)
-            ayuda.setStyleSheet("color:%s; font-size: 12px;" % TENUE)
-            go.addWidget(ayuda)
+            fila_a = QHBoxLayout()
+            fila_a.setContentsMargins(px(14), 0, px(14), 0)
+            fila_a.setSpacing(px(20))
+            ic2 = QLabel()
+            ic2.setPixmap(piezas.icono("info", "#AFC0C4", px(40)))
+            fila_a.addWidget(ic2)
+            ayuda = QLabel("Arrastra una toma para cambiarla de momento", objectName="ayuda_t")
+            ayuda.setToolTip("También puedes arrastrar el rombo dorado del eje para cambiar a qué hora empieza "
+                             "Iglesia o Fiesta.")
+            fila_a.addWidget(ayuda, 1)
+            go.addLayout(fila_a)
             v.addWidget(org, 1)
             self.analisis = None
             return w
@@ -1083,12 +1449,32 @@ def app():
                     len(raros), "s" if len(raros) > 1 else "", "n" if len(raros) > 1 else "",
                     ", ".join("%s/%s" % c for c in raros[:3]) + ("…" if len(raros) > 3 else ""))
             if not items:
-                self.l_org.setText("  ·  todavía sin analizar: pulsa «Analizar ahora» o ►")
+                self.l_org.setText("todavía sin analizar")
                 self.b_analizar.setText("Analizar ahora")
-                for l in self.l_momentos.values():
-                    l.setText("")
-                self.l_avisos.setText("⚠  " + nota_raros if nota_raros else "")
+                self.b_analizar.show()
+                for ch in self.chips_estado.values():
+                    ch.hide()
+                self.l_avisos.setText(nota_raros)
                 return
+            # (1.6.0) los chips de lo hecho, las miniaturas de las tarjetas y la foto de la vista previa
+            videos = [i for i in items if i["tipo"] != "foto"]
+            con_ia = sum(1 for i in videos if (i.get("ia") or {}).get("escena") or (i.get("ia") or {}).get("instantes"))
+            con_audio = [i for i in videos if i.get("audio_pista", True) is not False]
+            con_oido = sum(1 for i in con_audio if (i.get("oido") or {}).get("paso"))
+            chs = self.chips_estado
+            chs["medido"].setText("Medido" if al_dia else "Hay material nuevo")
+            repulir(chs["medido"], tipo="ok" if al_dia else "falta")
+            chs["ia"].setText("IA %d/%d" % (con_ia, len(videos)))
+            chs["oido"].setText("Oído %d/%d" % (con_oido, len(con_audio)))
+            for clave, ch in chs.items():
+                ch.setVisible(clave != "oido" or con_oido > 0)
+            self.b_analizar.setVisible(not al_dia)
+            for tipo in ("foto", "video", "dron"):
+                cand = [i for i in items if i["tipo"] == tipo and i.get("ruta")]
+                if cand:
+                    self._minis_pila(tipo, [cand[int(len(cand) * f)] for f in (0.15, 0.5, 0.85)] if len(cand) > 3
+                                     else cand)
+            self._foto_vista(items)
             try:
                 import datetime as _dt
                 f = _dt.date.fromisoformat(res["fecha"])
@@ -1099,10 +1485,10 @@ def app():
             except Exception:
                 fecha = res.get("fecha") or ""
             camaras = res.get("camaras") or []
-            self.l_org.setText("  ·  %s  ·  %d archivos  ·  %d cámara%s%s" % (
-                fecha, len(items), len(camaras), "" if len(camaras) == 1 else "s",
-                "" if al_dia else "  ·  hay material nuevo: pulsa «Analizar ahora»"))
-            self.b_analizar.setText("Analizar ahora" if not al_dia else "Volver a analizar")
+            self.l_org.setText("%s  ·  %d archivos  ·  %d cámara%s" % (
+                fecha, len(items), len(camaras), "" if len(camaras) == 1 else "s"))
+            self.b_analizar.setText("Analizar lo nuevo")
+            self._fecha_material = res.get("fecha")
             self._pintar_cuentas(self.linea.cuentas())
             av = list(res.get("avisos") or [])
             if nota_raros:
@@ -1123,7 +1509,7 @@ def app():
                 if not any(i["tipo"] != "foto" and i.get("momento") == mom and not i.get("descartar") for i in items):
                     av.append("%s no tiene videos: esa parte se llena con material de todo el evento." %
                               linea_dia.NOMBRE[mom])
-            self.l_avisos.setText("<br>".join("⚠  " + a.replace("&", "&amp;").replace("<", "&lt;") for a in av[:6]))
+            self.l_avisos.setText("<br>".join(a.replace("&", "&amp;").replace("<", "&lt;") for a in av[:6]))
 
         def _pintar_cuentas(self, cuentas):
             import linea_dia
@@ -1174,6 +1560,26 @@ def app():
             self._avisar("Material analizado y ordenado por momento.")
             self._cargar_organizacion()
 
+        def _toma_movida(self, nombre, momento):
+            """(1.6.0) En la Linea del dia se arrastro una toma a otro carril: queda como excepcion a mano
+            (CLASIFICACION «archivos») y se reordena (rapido: no se vuelve a medir)."""
+            import analizar_material as am
+            import linea_dia
+            self.linea.editable = False
+
+            def correr():
+                am.guardar_excepcion(nombre, momento)
+                return am.reclasificar(rutas.BASE, log=registro.info)
+
+            def listo(res, error):
+                if error is not None:
+                    self._avisar("No pude mover la toma: %s" % error, "error")
+                else:
+                    self._avisar("Listo: «%s» va ahora en %s. Se usa en el próximo armado." % (
+                        nombre, linea_dia.NOMBRE.get(momento, momento)))
+                self._cargar_organizacion()
+            qt_kit.correr_en_hilo(self, correr, listo)
+
         def _limites_cambiados(self, limites):
             import analizar_material as am
             self.linea.editable = False
@@ -1192,56 +1598,118 @@ def app():
             qt_kit.correr_en_hilo(self, correr, listo)
 
         def _pagina_textos(self):
+            # (1.6.0, el diseño de Higgsfield) a la izquierda el formulario; a la derecha la vista previa en vivo
+            px = piezas.px
             w = QWidget()
             v = QVBoxLayout(w)
-            v.setContentsMargins(26, 20, 26, 10)
-            tit = QLabel("Textos del video", objectName="titulo")
-            tit.setStyleSheet("font-size: 30px;")
-            v.addWidget(tit)
+            v.setContentsMargins(px(0), px(40), px(4), px(20))
+            cuerpo = QHBoxLayout()
+            cuerpo.setSpacing(px(24))
             caja = QFrame(objectName="vidrio")
-            g = QGridLayout(caja)
-            g.setContentsMargins(26, 24, 26, 24)
-            g.setHorizontalSpacing(16)
-            g.setVerticalSpacing(14)
-            self.c_tipo = QComboBox()
+            g = QVBoxLayout(caja)
+            g.setContentsMargins(px(26), px(62), px(36), px(40))
+            g.setSpacing(px(22))
+            self.c_tipo = QComboBox(caja)            # el valor (lo leen motor y el estado); se elige con self.seg_tipo
             for clave, texto in TIPOS:
                 self.c_tipo.addItem(texto, clave)
-            self.c_tipo.setCurrentIndex(next((k for k, (c, _) in enumerate(TIPOS)
-                                              if c == self.est.get("tipo_evento", "xv")), 0))
+            actual = next((k for k, (c, _) in enumerate(TIPOS) if c == self.est.get("tipo_evento", "xv")), 0)
+            self.c_tipo.setCurrentIndex(actual)
+            self.c_tipo.hide()
+            l_tipo = QLabel("Tipo de evento", objectName="etq_campo")
+            l_tipo.setContentsMargins(px(26), 0, 0, 0)
+            l_tipo.setToolTip("Los capítulos, frases y el «gracias» cambian solos según el tipo de evento.")
+            g.addWidget(l_tipo)
+            self.seg_tipo = piezas.Pastillas([t for _, t in TIPOS], actual, nombre="pill_tipo", espacio=10)
+            self.seg_tipo.cambio.connect(self.c_tipo.setCurrentIndex)
+            g.addWidget(self.seg_tipo)
+            g.addSpacing(px(70))
             self.e_nombre = QLineEdit(self.est.get("nombre_xv", ""))
-            self.e_nombre.setPlaceholderText("Ej.: Valeria  ·  K & R")
+            self.e_nombre.setPlaceholderText("Valeria  ·  K & R")
             self.e_frase = QLineEdit(self.est.get("frase", ""))
-            self.e_frase.setPlaceholderText("Vacío = la del tipo de evento (ej. «Nuestra historia de amor»)")
+            self.e_frase.setPlaceholderText("Vacío = la del tipo de evento")
             self.e_fecha = QLineEdit(self.est.get("fecha_lugar", ""))
-            self.e_fecha.setPlaceholderText("Vacío = la fecha del material (ej. «07 · 11 · 2026»)")
-            for i, (etq, wid) in enumerate((("Tipo de evento", self.c_tipo), ("Nombres", self.e_nombre),
-                                            ("Frase bajo el nombre", self.e_frase),
-                                            ("Tarjeta final", self.e_fecha))):
-                l = QLabel(etq)
-                l.setStyleSheet("color:%s; font-weight:600;" % TENUE)
-                g.addWidget(l, i, 0)
-                g.addWidget(wid, i, 1)
-            g.setColumnStretch(1, 1)
-            v.addWidget(caja)
-            nota = QLabel("Los capítulos, frases y el «gracias» cambian solos según el tipo de evento.")
-            nota.setStyleSheet("color:%s;" % TENUE)
-            v.addWidget(nota)
+            self.e_fecha.setPlaceholderText("Vacío = la fecha del material")
+            for etq, wid in (("Nombres", self.e_nombre), ("Frase bajo el nombre", self.e_frase),
+                             ("Tarjeta final", self.e_fecha)):
+                l = QLabel(etq, objectName="etq_campo")
+                l.setContentsMargins(px(22), 0, 0, 0)
+                g.addWidget(l)
+                wid.setContentsMargins(px(14), 0, 0, 0)
+                g.addWidget(wid)
+                g.addSpacing(px(50))
+            g.addStretch(1)
+            cuerpo.addWidget(caja, 33)
+            caja2 = QFrame(objectName="vidrio")
+            g2 = QVBoxLayout(caja2)
+            g2.setContentsMargins(px(10), px(20), px(10), px(30))
+            g2.setSpacing(px(36))
+            self.vista = piezas.VistaTitulo(rutas.FUENTES)
+            fondo = os.path.join(rutas.RECURSOS, "fondo_titulo.jpg")      # (Higgsfield) hasta que haya fotos del evento
+            if os.path.isfile(fondo):
+                self.vista.poner_fondo(QPixmap(fondo))
+            g2.addWidget(self.vista)
+            self.seg_vista = piezas.Pastillas(["Título", "Capítulo", "Gracias", "Tarjeta final"], 0,
+                                              nombre="pill_vista", espacio=16, estirar=True)
+            self.seg_vista.cambio.connect(self._pintar_vista)
+            fila_s = QHBoxLayout()
+            fila_s.setContentsMargins(px(105), 0, px(105), 0)
+            fila_s.addWidget(self.seg_vista, 1)
+            g2.addLayout(fila_s)
+            pie = QLabel("Vista previa en vivo", objectName="nota_t")
+            pie.setAlignment(Qt.AlignCenter)
+            g2.addWidget(pie)
+            g2.addStretch(1)
+            cuerpo.addWidget(caja2, 67)
+            v.addLayout(cuerpo)
             v.addStretch(1)
             for wid in (self.e_nombre, self.e_frase, self.e_fecha):
                 wid.textChanged.connect(self._pintar_evento)
+                wid.textChanged.connect(self._pintar_vista)
             self.c_tipo.currentIndexChanged.connect(self._pintar_evento)
+            self.c_tipo.currentIndexChanged.connect(self._pintar_vista)
+            self.c_tipo.currentIndexChanged.connect(self.seg_tipo.poner)   # si otro lado cambia el tipo
+            self._pintar_vista()
             return w
+
+        def _pintar_vista(self, *_):
+            """La vista previa del titulo con lo escrito (o lo que el tipo de evento pone solo)."""
+            if not hasattr(self, "vista"):
+                return
+            if not hasattr(self, "_perfiles"):
+                try:
+                    self._perfiles = motor.cargar_perfiles()
+                except Exception:
+                    self._perfiles = {}
+            perfil = self._perfiles.get(self.c_tipo.currentData() or "xv") or {}
+            caps = perfil.get("capitulos") or {}          # {MOMENTO: ["Los preparativos", "Capítulo I"], ...}
+            primero = next(iter(caps.values()), []) if isinstance(caps, dict) else caps
+            if isinstance(primero, (list, tuple)):
+                cap, cap_n = (list(primero) + ["", ""])[:2]
+            else:
+                cap, cap_n = str(primero or ""), ""
+            cap, cap_n = str(cap or "Los preparativos"), str(cap_n or "Capítulo I")
+            fecha = self.e_fecha.text().strip()
+            if not fecha and getattr(self, "_fecha_material", None):
+                f = str(self._fecha_material)
+                fecha = "%s · %s · %s" % (f[8:10], f[5:7], f[:4]) if len(f) >= 10 else f
+            self.vista.poner(["titulo", "capitulo", "gracias", "final"][max(0, self.seg_vista.actual())],
+                             nombre=self.e_nombre.text().strip() or "Valeria",
+                             frase=self.e_frase.text().strip() or perfil.get("titulo") or "",
+                             capitulo=cap, capitulo_n=cap_n,
+                             gracias=perfil.get("gracias") or "", fecha=fecha)
 
         def _pintar_ruido_dv(self, info=None):
             info = info if info is not None else motor.estado_ruido_davinci()
             if info.get("hay"):
                 vio = ", ".join(info.get("de_ruido") or [])
-                self.l_ruido_dv.setText("Guardado el %s del clip «%s»%s. Se aplica a todas las tomas al armar." % (
+                self.l_ruido_dv.setText("Ruido de DaVinci: el del clip «%s»" % info.get("clip", "?"))
+                self.l_ruido_dv.setToolTip("Guardado el %s del clip «%s»%s. Se aplica a todas las tomas al armar." % (
                     info.get("fecha", "?"), info.get("clip", "?"),
                     " (%s)" % vio if vio else " (ojo: en ese clip no vi reducción de ruido)"))
             else:
-                self.l_ruido_dv.setText("Sin guardar: las tomas usan el filtro del programa. Para usar el de DaVinci, "
-                                        "déjalo a tu gusto en un clip (página Color) y guárdalo aquí.")
+                self.l_ruido_dv.setText("Ruido de DaVinci: el del programa")
+                self.l_ruido_dv.setToolTip("Sin guardar: las tomas usan el filtro del programa. Para usar el de "
+                                           "DaVinci, déjalo a tu gusto en un clip (página Color) y guárdalo aquí.")
             self.b_ruido_quitar.setVisible(bool(info.get("hay")))
 
         def _guardar_ruido_dv(self):
@@ -1271,169 +1739,199 @@ def app():
             self._avisar("Ruido de DaVinci quitado: las tomas vuelven a usar el filtro del programa al armar.", "info")
 
         def _pagina_ajustes(self):
-            w = QWidget()
-            v = QVBoxLayout(w)
-            v.setContentsMargins(26, 20, 26, 10)
-            tit = QLabel("Ajustes", objectName="titulo")
-            tit.setStyleSheet("font-size: 30px;")
-            v.addWidget(tit)
-            caja = QFrame(objectName="vidrio")
-            g = QGridLayout(caja)
-            g.setContentsMargins(26, 24, 26, 24)
-            g.setVerticalSpacing(16)
-            self.ch_render = Interruptor("Renderizar al terminar (si no, solo arma las timelines en DaVinci)")
+            """(1.6.0) IGUAL a la maqueta (docs/capturas/propuesta_4_ajustes.png): el bodegon de fondo
+            (recursos/ajustes_bodegon.png, recortado y vivo sobre el cielo) y las tarjetas Video, Sonido, Inteligencia, Disco
+            y Programa. Lo que no esta en la maqueta (armar solo al soltar, ruido de DaVinci, carpetas, nombres
+            originales) va en el menu del logo (_menu_mas)."""
+            px = piezas.px
+            w = piezas.FondoPagina(os.path.join(rutas.RECURSOS, "ajustes_bodegon.png"))
+            v = QHBoxLayout(w)
+            v.setContentsMargins(0, px(40), px(30), px(20))
+            v.setSpacing(0)
+            v.addStretch(21)
+            der = QVBoxLayout()
+            der.setSpacing(px(40))
+            fila1 = QHBoxLayout()
+            fila1.setSpacing(px(40))
+            fila2 = QHBoxLayout()
+            fila2.setSpacing(px(30))
+            # --- Video
+            tv, lv = piezas.tarjeta("Video", "video")
+            self.ch_render = piezas.Interruptor("")
             self.ch_render.setChecked(self.est.get("renderizar", True))
-            self.ch_igualar = Interruptor("Igualar luz y balance de blancos de cada toma")
+            self.ch_render.setToolTip("Apagado, solo arma las timelines en DaVinci (sin sacar los videos).")
+            self.ch_igualar = piezas.Interruptor("")
             self.ch_igualar.setChecked(self.est.get("igualar", True))
-            self.ch_auto = Interruptor("Al soltar una carpeta, ordenarla y armar el tráiler solo")
-            self.ch_auto.setChecked(self.est.get("auto_armar", True))
-            g.addWidget(self.ch_render, 0, 0, 1, 3)
-            g.addWidget(self.ch_igualar, 1, 0, 1, 3)
-            g.addWidget(self.ch_auto, 4, 0, 1, 3)
-            l = QLabel("Quitar ruido")
-            l.setStyleSheet("color:%s; font-weight:600;" % TENUE)
-            self.s_ruido = QSlider(Qt.Horizontal)
-            self.s_ruido.setRange(0, 100)
-            self.s_ruido.setValue(int(self.est.get("ruido") if self.est.get("ruido") is not None else 60))
-            self.l_ruido = QLabel(str(self.s_ruido.value()))
-            self.s_ruido.valueChanged.connect(lambda x: self.l_ruido.setText(str(x)))
-            g.addWidget(l, 2, 0)
-            g.addWidget(self.s_ruido, 2, 1)
-            g.addWidget(self.l_ruido, 2, 2)
-            # el ruido propio de DaVinci: la persona lo deja a su gusto en un clip y aqui se guarda para todas las tomas
-            l_dv = QLabel("Ruido de DaVinci")
-            l_dv.setStyleSheet("color:%s; font-weight:600;" % TENUE)
-            self.l_ruido_dv = QLabel("")
-            self.l_ruido_dv.setWordWrap(True)
-            self.l_ruido_dv.setStyleSheet("color:%s;" % TENUE)
-            self.b_ruido_dv = QPushButton("Guardar el del clip actual", objectName="borde")
-            self.b_ruido_dv.setToolTip("En DaVinci, página Color: deja la reducción de ruido a tu gusto en un clip, "
-                                       "deja el cursor sobre él y pulsa aquí. Al armar se aplica a todas las tomas.")
-            self.b_ruido_dv.setCursor(Qt.PointingHandCursor)
-            self.b_ruido_dv.clicked.connect(self._guardar_ruido_dv)
-            self.b_ruido_quitar = QPushButton("Quitar", objectName="borde")
-            self.b_ruido_quitar.setCursor(Qt.PointingHandCursor)
-            self.b_ruido_quitar.clicked.connect(self._quitar_ruido_dv)
-            fila_dv = QHBoxLayout()
-            fila_dv.setSpacing(10)
-            fila_dv.addWidget(self.l_ruido_dv, 1)
-            fila_dv.addWidget(self.b_ruido_dv)
-            fila_dv.addWidget(self.b_ruido_quitar)
-            g.addWidget(l_dv, 3, 0)
-            g.addLayout(fila_dv, 3, 1, 1, 2)
-            self._pintar_ruido_dv()
-            # la voz original (la palabra del pastor, brindis, discursos) sobre la musica: en que versiones va
-            l_voz = QLabel("Voz original")
-            l_voz.setStyleSheet("color:%s; font-weight:600;" % TENUE)
-            l_voz.setToolTip("Lo que se dice en el evento (la palabra del pastor, el brindis, los discursos) suena sobre "
-                             "la música. Solo entra cuando alguien habla de corrido: nada de ruidos ni voces sueltas.")
-            guardada = self.est.get("voz") if isinstance(self.est.get("voz"), dict) else {}
-            self.ch_voz = {}
-            fila_voz = QHBoxLayout()
-            fila_voz.setSpacing(18)
-            for clave, texto in (("1min", "1 min"), ("3min", "3 min"), ("15min", "15 min")):
-                ch = Interruptor(texto)
-                ch.setChecked(bool(guardada.get(clave, motor.VOZ_DEFECTO[clave])))
-                self.ch_voz[clave] = ch
-                fila_voz.addWidget(ch)
-            nota_voz = QLabel("En el de 30 min va siempre")
-            nota_voz.setStyleSheet("color:%s;" % TENUE)
-            fila_voz.addWidget(nota_voz)
-            fila_voz.addStretch(1)
-            g.addWidget(l_voz, 5, 0)
-            g.addLayout(fila_voz, 5, 1, 1, 2)
-            self.ch_vert = Interruptor("En el formato horizontal, usar también los videos verticales (de celular)")
+            self.ch_igualar.setToolTip("Igualar luz y balance de blancos de cada toma.")
+            self.ch_vert = piezas.Interruptor("")
             self.ch_vert.setChecked(bool(self.est.get("usar_verticales", True)))
             self.ch_vert.setToolTip("Encendido (lo normal), el video horizontal acepta videos horizontales y verticales: "
                                     "los verticales entran recortados para llenar la pantalla y DaVinci reencuadra "
                                     "siguiendo a la persona. Apagado, quedan fuera del horizontal (siguen en el media "
                                     "pool). El formato vertical de Inicio usa siempre solo los verticales.")
-            g.addWidget(self.ch_vert, 6, 0, 1, 3)
-            g.setColumnStretch(1, 1)
-            v.addWidget(caja)
-            fila = QHBoxLayout()
-            for txt, acc in (("Clasificación del evento", self._clasificacion),
-                             ("Abrir DaVinci Resolve", rutas.abrir_resolve),
-                             ("Videos terminados", self._abrir_terminado),
-                             ("Nombres originales", self._restaurar_nombres),
-                             ("Borrar caché", self._borrar_cache),
-                             ("Carpeta del programa", lambda: rutas.abrir(rutas.PROGRAMA))):
-                b = QPushButton(txt, objectName="borde")
-                b.clicked.connect(acc)
-                fila.addWidget(b)
-            fila.addStretch(1)
-            v.addLayout(fila)
-            caja2 = QFrame(objectName="vidrio")
-            g2 = QGridLayout(caja2)
-            g2.setContentsMargins(26, 18, 26, 18)
-            l2 = QLabel("Eventos terminados")             # (1.5.7) el trabajo va por dentro; a la vista, solo esto
-            l2.setStyleSheet("color:%s; font-weight:600;" % TENUE)
-            self.l_base = QLabel(rutas.SALIDA)
-            self.l_base.setWordWrap(True)
-            g2.addWidget(l2, 0, 0)
-            g2.addWidget(self.l_base, 0, 1)
-            if rutas.CONGELADO:
-                b_base = QPushButton("Cambiar…", objectName="borde")
-                b_base.clicked.connect(self._cambiar_base)
-                g2.addWidget(b_base, 0, 2)
-            g2.setColumnStretch(1, 1)
-            v.addWidget(caja2)
-            caja3 = QFrame(objectName="vidrio")                 # actualizaciones (como CineCaptions)
-            g3 = QHBoxLayout(caja3)
-            g3.setContentsMargins(26, 14, 26, 14)
-            l3 = QLabel("Versión %s" % rutas.version())
-            l3.setStyleSheet("font-weight:700;")
-            g3.addWidget(l3)
-            self.l_act = QLabel("Se actualiza sola: busca versiones nuevas al abrir y cada %d horas, aunque esté cerrado."
-                                % 4)
-            self.l_act.setStyleSheet("color:%s;" % TENUE)
+            lv.setSpacing(px(16))
+            for txt, ch in (("Renderizar al terminar", self.ch_render), ("Igualar luz y color", self.ch_igualar),
+                            ("Usar videos verticales", self.ch_vert)):
+                fila = QHBoxLayout()
+                l = QLabel(txt, objectName="fila_aj")
+                l.setToolTip(ch.toolTip())
+                fila.addWidget(l, 1)
+                fila.addWidget(ch)
+                lv.addLayout(fila)
+            lv.addWidget(piezas.separador_h())
+            fila_r = QHBoxLayout()
+            fila_r.setSpacing(px(70))
+            fila_r.addWidget(QLabel("Quitar ruido", objectName="fila_aj"))
+            self.s_ruido = QSlider(Qt.Horizontal)
+            self.s_ruido.setRange(0, 100)
+            self.s_ruido.setValue(int(self.est.get("ruido") if self.est.get("ruido") is not None else 60))
+            self.l_ruido = QLabel(str(self.s_ruido.value()), objectName="fila_aj")
+            self.l_ruido.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.s_ruido.valueChanged.connect(lambda x: self.l_ruido.setText(str(x)))
+            fila_r.addWidget(self.s_ruido, 1)
+            fila_r.addWidget(self.l_ruido)
+            lv.addLayout(fila_r)
+            fila1.addWidget(tv, 775)
+            # --- Sonido: en que versiones va la voz original (la palabra del pastor, brindis, discursos)
+            ts, ls = piezas.tarjeta("Sonido", "onda")
+            ls.addSpacing(px(20))
+            l_voz = QLabel("Voz original", objectName="sub_aj")
+            l_voz.setToolTip("Lo que se dice en el evento (la palabra del pastor, el brindis, los discursos) suena sobre "
+                             "la música. Solo entra cuando alguien habla de corrido: nada de ruidos ni voces sueltas.")
+            ls.addWidget(l_voz)
+            guardada = self.est.get("voz") if isinstance(self.est.get("voz"), dict) else {}
+            self.seg_voz = piezas.Segmentado(["1 min", "3 min", "15 min", "30 min"], None, exclusivo=False)
+            self.ch_voz = {}
+            for clave, b in zip(("1min", "3min", "15min", "30min"), self.seg_voz.botones):
+                if clave == "30min":
+                    b.setChecked(True)
+                    b.setEnabled(False)
+                    b.setToolTip("En el de 30 min va siempre")
+                else:
+                    b.setChecked(bool(guardada.get(clave, motor.VOZ_DEFECTO[clave])))
+                    b.setToolTip("Solo cuando alguien habla de corrido: pastor, brindis, discursos.")
+                    self.ch_voz[clave] = b
+            ls.addWidget(self.seg_voz)
+            ls.addStretch(1)
+            fila1.addWidget(ts, 756)
+            # --- Inteligencia: la IA local que ve y el oido que escucha
+            ti, li = piezas.tarjeta("Inteligencia", "chip")
+            li.addSpacing(px(10))
+            self.p_ia, self.l_ia, self.b_ia = self._fila_estado(li, "IA local")
+            self.b_ia.clicked.connect(self._instalar_ia)
+            self.p_oido, self.l_oido, self.b_oido = self._fila_estado(li, "Oído")
+            self.b_oido.clicked.connect(self._instalar_oido)
+            li.addStretch(1)
+            fila2.addWidget(ti, 490)
+            QTimer.singleShot(1500, self._revisar_ia)
+            QTimer.singleShot(1600, self._revisar_oido)
+            # --- Disco: lo que ocupa la cache y «Borrar caché»
+            td, ld = piezas.tarjeta("Disco", "disco")
+            ld.addSpacing(px(10))
+            self.l_cache = QLabel("Midiendo la caché…", objectName="fila_aj")
+            ld.addWidget(self.l_cache)
+            self.barra_cache = piezas.BarraUso()
+            ld.addWidget(self.barra_cache)
+            b = QPushButton("Borrar caché", objectName="borde")
+            b.setIcon(piezas.qicono("papelera", TEXTO, px(44)))
+            b.setIconSize(QSize(px(44), px(44)))
+            b.setCursor(Qt.PointingHandCursor)
+            b.clicked.connect(self._borrar_cache)
+            ld.addWidget(b)
+            ld.addStretch(1)
+            fila2.addWidget(td, 514)
+            # --- Programa: version y actualizaciones (como CineCaptions)
+            tp, lp = piezas.tarjeta("Programa", "engrane")
+            lp.addSpacing(px(16))
+            self.l_version = QLabel("Versión %s · Al día" % rutas.version(), objectName="fila_aj")
+            lp.addWidget(self.l_version)
+            self.l_act = QLabel("", objectName="nota_t")       # lo que dicen las actualizaciones (si hay algo)
             self.l_act.setWordWrap(True)
-            g3.addWidget(self.l_act, 1)
+            self.l_act.hide()
+            lp.addWidget(self.l_act)
+            lp.addSpacing(px(16))
             self.b_buscar = QPushButton("Buscar actualizaciones", objectName="borde")
+            self.b_buscar.setIcon(piezas.qicono("refrescar", TEXTO, px(48)))
+            self.b_buscar.setIconSize(QSize(px(48), px(48)))
             self.b_buscar.setCursor(Qt.PointingHandCursor)
             self.b_buscar.clicked.connect(lambda: self._buscar_actualizacion(manual=True))
-            g3.addWidget(self.b_buscar)
-            v.addWidget(caja3)
-            caja4 = QFrame(objectName="vidrio")                 # (1.5.7) la IA local que ve cada toma
-            g4 = QHBoxLayout(caja4)
-            g4.setContentsMargins(26, 14, 26, 14)
-            l4 = QLabel("IA local")
-            l4.setStyleSheet("font-weight:700;")
-            g4.addWidget(l4)
-            self.l_ia = QLabel("Revisando…")
-            self.l_ia.setStyleSheet("color:%s;" % TENUE)
-            self.l_ia.setWordWrap(True)
-            g4.addWidget(self.l_ia, 1)
-            self.b_ia = QPushButton("Instalar", objectName="borde")
-            self.b_ia.setCursor(Qt.PointingHandCursor)
-            self.b_ia.hide()
-            self.b_ia.clicked.connect(self._instalar_ia)
-            g4.addWidget(self.b_ia)
-            v.addWidget(caja4)
-            QTimer.singleShot(1500, self._revisar_ia)
-            caja5 = QFrame(objectName="vidrio")                 # (1.5.9) el oido (earshot) que escucha cada toma
-            g5 = QHBoxLayout(caja5)
-            g5.setContentsMargins(26, 14, 26, 14)
-            l5 = QLabel("Oído")
-            l5.setStyleSheet("font-weight:700;")
-            g5.addWidget(l5)
-            self.l_oido = QLabel("Revisando…")
-            self.l_oido.setStyleSheet("color:%s;" % TENUE)
-            self.l_oido.setWordWrap(True)
-            g5.addWidget(self.l_oido, 1)
-            self.b_oido = QPushButton("Cómo instalarlo", objectName="borde")
-            self.b_oido.setCursor(Qt.PointingHandCursor)
-            self.b_oido.hide()
-            self.b_oido.clicked.connect(self._instalar_oido)
-            g5.addWidget(self.b_oido)
-            v.addWidget(caja5)
-            QTimer.singleShot(1600, self._revisar_oido)
-            pie = QLabel("Versión %s  ·  registro: %s" % (rutas.version(), rutas.REGISTRO))
-            pie.setStyleSheet("color:%s; font-size:12px;" % TENUE)
-            pie.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            v.addWidget(pie)
-            v.addStretch(1)
+            lp.addWidget(self.b_buscar)
+            lp.addStretch(1)
+            fila2.addWidget(tp, 510)
+            der.addLayout(fila1, 458)
+            der.addLayout(fila2, 370)
+            der.addStretch(330)
+            v.addLayout(der, 79)
+            # lo que no esta en la maqueta: vive en el menu del logo (los objetos siguen, sin verse)
+            oculto = QWidget(w)
+            oculto.hide()
+            self.ch_auto = piezas.Interruptor("")
+            self.ch_auto.setParent(oculto)
+            self.ch_auto.setChecked(self.est.get("auto_armar", True))
+            self.l_ruido_dv = QLabel("", oculto)
+            self.b_ruido_dv = QPushButton("", oculto)
+            self.b_ruido_quitar = QPushButton("", oculto)
+            self.l_base = QLabel(rutas.SALIDA, oculto)
+            self._pintar_ruido_dv()
+            QTimer.singleShot(2500, self._medir_cache)
             return w
+
+        def _menu_mas(self):
+            """(1.6.0) El menu del logo: lo que la maqueta no muestra pero se usa."""
+            from PySide6.QtWidgets import QMenu
+            m = QMenu(self)
+            m.addAction("Clasificación del evento", self._clasificacion)
+            m.addAction("Abrir DaVinci Resolve", rutas.abrir_resolve)
+            m.addAction("Videos terminados", self._abrir_terminado)
+            m.addAction("Nombres originales", self._restaurar_nombres)
+            m.addAction("Carpeta del programa", lambda: rutas.abrir(rutas.PROGRAMA))
+            if rutas.CONGELADO:
+                m.addAction("Cambiar la carpeta de eventos terminados…", self._cambiar_base)
+            m.addSeparator()
+            auto = m.addAction("Armar solo al soltar una carpeta")
+            auto.setCheckable(True)
+            auto.setChecked(self.ch_auto.isChecked())
+            auto.toggled.connect(self.ch_auto.setChecked)
+            dv = self.l_ruido_dv.text()
+            m.addAction("Ruido de DaVinci: usar el del clip actual", self._guardar_ruido_dv).setToolTip(dv)
+            if self.b_ruido_quitar.isVisible() or "clip" in dv:
+                m.addAction("Ruido de DaVinci: volver al del programa", self._quitar_ruido_dv)
+            m.addSeparator()
+            m.addAction("Ver lo que va haciendo", lambda: self.b_log.setChecked(not self.b_log.isChecked()))
+            m.exec(self.b_logo.mapToGlobal(self.b_logo.rect().bottomLeft()))
+
+        def _fila_estado(self, lay, nombre):
+            """Una fila de Inteligencia (en su cajita, como la maqueta): punto de color y «IA local · Lista»; si falta
+            algo, el enlace para instalarlo."""
+            px = piezas.px
+            caja = QFrame(objectName="caja_estado")
+            fila = QHBoxLayout(caja)
+            fila.setContentsMargins(px(26), px(14), px(20), px(14))
+            fila.setSpacing(px(20))
+            p = QLabel()
+            p.setPixmap(piezas.icono("punto", TENUE, px(26)))
+            fila.addWidget(p)
+            l = QLabel(nombre + " · revisando…", objectName="fila_aj")
+            fila.addWidget(l, 1)
+            b = QPushButton("Instalar", objectName="link")
+            b.setCursor(Qt.PointingHandCursor)
+            b.hide()
+            fila.addWidget(b)
+            lay.addWidget(caja)
+            return p, l, b
+
+        def _medir_cache(self):
+            """Cuanto ocupa lo que «Borrar caché» puede liberar (en un hilo: recorrer la cache de DaVinci tarda)."""
+            import limpieza
+
+            def listo(items, error):
+                if error is not None or items is None:
+                    self.l_cache.setText("No se pudo medir la caché")
+                    return
+                total = sum(i["bytes"] for i in items)
+                self.l_cache.setText("%s de caché" % limpieza.texto_tam(total))
+                self.barra_cache.poner(total / 30e9)
+            qt_kit.correr_en_hilo(self, limpieza.que_hay, listo, baja=True)
 
         # ============================================================== IA local (1.5.7)
         def _revisar_ia(self):
@@ -1446,7 +1944,9 @@ def app():
                 self.l_ia.setText("No se pudo revisar la IA local.")
                 return
             texto, accion = r
-            self.l_ia.setText(texto)
+            self.l_ia.setText("IA local · %s" % ("Lista" if accion is None else "falta instalarla"))
+            self.l_ia.setToolTip(texto)
+            self.p_ia.setPixmap(piezas.icono("punto", ESMERALDA.name() if accion is None else AMBAR, 10))
             self.b_ia.setVisible(accion is not None)
             self.b_ia.setEnabled(True)
             self.b_ia.setText({"modelo": "Instalar el modelo", "ollama": "Descargar Ollama"}.get(accion, "Instalar"))
@@ -1481,7 +1981,10 @@ def app():
                 self.l_oido.setText("No se pudo revisar el oído.")
                 return
             texto, listo = r
-            self.l_oido.setText(texto)
+            self.l_oido.setText("Oído · %s" % ("Listo" if listo else "no instalado (opcional)"))
+            self.l_oido.setToolTip(texto)
+            self.p_oido.setPixmap(piezas.icono("punto", ESMERALDA.name() if listo else TENUE, 10))
+            self.b_oido.setText("Cómo instalarlo")
             self.b_oido.setVisible(not listo)
 
         def _instalar_oido(self):
@@ -1631,6 +2134,7 @@ def app():
                 if fallas:
                     texto += " %d archivos en uso quedaron." % fallas
                 self._avisar(texto, "ok")
+                self._medir_cache()                      # (1.6.0) la barra de la tarjeta Disco
 
             def listo(r, error):
                 if error is not None or not r:
@@ -1665,24 +2169,75 @@ def app():
         # ============================================================== estado
         def _ir(self, nombre):
             self.tabs[nombre].setChecked(True)
-            self.paginas.setCurrentIndex(list(self.tabs).index(nombre))
+            self._cambiar_pagina(list(self.tabs).index(nombre))
+
+        def _cambiar_pagina(self, i):
+            """(1.6.0) Cambio de pestaña con fundido: la foto de la pagina de antes se desvanece sobre la nueva."""
+            if i == self.paginas.currentIndex():
+                return
+            foto = self.paginas.currentWidget().grab() if self.isVisible() and not self.isMinimized() else None
+            self.paginas.setCurrentIndex(i)
+            if foto is not None:
+                self.fundido.empezar(foto)
 
         def _avisar(self, texto, tipo="info"):
+            """(1.6.0) La franja de avisos ya no queda fija: aparece con cada aviso y se va sola (7 s; 20 s si es un
+            problema). Con una actualizacion lista para instalar se queda."""
             self.aviso_t.setText(texto)
-            self.aviso_h.setText(time.strftime("%H:%M:%S"))
+            self.aviso_h.setText(time.strftime("%H:%M"))
             repulir(self.aviso, tipo=tipo)
             repulir(self.aviso_i, tipo=tipo)
-            self.aviso_i.setText("i" if tipo == "info" else "!")
+            self.aviso_i.setText("i" if tipo in ("info", "ok") else "!")
+            self.aviso.show()
+            if not hasattr(self, "t_aviso"):
+                self.t_aviso = QTimer(self, singleShot=True)
+                self.t_aviso.timeout.connect(lambda: None if self.b_actualizar.isVisible() else self.aviso.hide())
+            self.t_aviso.start(7000 if tipo in ("info", "ok") else 20000)
+
+        def _estado(self, texto, tipo="ok", ayuda=None):
+            """La pastilla de arriba a la derecha: un punto de color y pocas palabras («Todo listo», «Trabajando»)."""
+            color = {"ok": ESMERALDA.name(), "warn": AMBAR, "error": ROJO, "oro": "#D9A441"}.get(tipo, TENUE)
+            self.b_log.setText(texto)
+            self._estado_vivo = (color, tipo)          # (1.6.0) el punto late (mas rapido trabajando)
+            self._latir_estado()
+            repulir(self.b_log, tipo=tipo)
+            if ayuda is not None:
+                self.b_log.setToolTip(ayuda + "\n\nClic: ver lo que va haciendo")
+
+        def _latir_estado(self):
+            color, tipo = getattr(self, "_estado_vivo", (TENUE, "ok"))
+            if not hasattr(self, "t_latido"):
+                self.t_latido = QTimer(self, interval=90)
+                self.t_latido.timeout.connect(self._latir_estado)
+                self.t_latido.start()
+            if self.isMinimized():
+                return
+            f = 0.5 + 0.5 * math.sin(time.monotonic() * (5.0 if tipo == "oro" else 2.0))
+            self.b_log.setIcon(QIcon(piezas.punto_latido(color, piezas.px(24), f)))
+
+        def _brillos(self):
+            """(1.6.0) Botones, pastillas y pestañas brillan suave al pasar el raton."""
+            import animacion
+            colores = {"chip2": piezas.ORO, "segb": piezas.ORO, "pill": "#7CF5C0", "tab": piezas.ORO,
+                       "boton_verde": "#B8FFE0", "cancelar": piezas.ORO, "pill_tipo": piezas.ORO,
+                       "pill_vista": piezas.ORO, "boton": piezas.ORO, "borde": piezas.ORO, "estado": piezas.ORO}
+            redondos = {"tab", "estado", "pill_tipo", "pill_vista"}
+            for b in self.findChildren(QPushButton):
+                n = b.objectName()
+                if n in colores:
+                    animacion.brillo_al_pasar(b, colores[n], None if n in redondos else piezas.px(16))
 
         def _sub(self, texto, tipo=""):
             self.sub.setText(texto)
             repulir(self.sub, tipo=tipo)
+            # (1.6.0) vacio no ocupa lugar; trabajando no se ve (la maqueta: solo «Trabajando…», pasos y versiones)
+            self.sub.setVisible(bool(texto) and self.trabajo is None and not self.panel_trabajo.isVisible())
 
         def _pintar_evento(self, *_):
             tipo = self.c_tipo.currentText() if hasattr(self, "c_tipo") else \
                 dict(TIPOS).get(self.est.get("tipo_evento", "xv"), "XV años")
             nombre = self.e_nombre.text().strip() if hasattr(self, "e_nombre") else self.est.get("nombre_xv", "")
-            self.chip_evento.setText(("%s%s" % (tipo, ("  ·  " + nombre) if nombre else "  ·  escribe los nombres"))
+            self.chip_evento.setText(("   %s%s" % (tipo, (" · " + nombre) if nombre else " · escribe los nombres"))
                                      .replace("&", "&&"))
             if self.chip_evento.icon().isNull():                      # el lapiz, dibujado («✎» no esta en la fuente)
                 self.chip_evento.setIconSize(QSize(14, 14))
@@ -1728,16 +2283,23 @@ def app():
             return h + (((" · " if h else "") + "vertical " + vv) if vv else "")
 
         def _sub_material(self):
-            if self.trabajo is not None or self.flujo is not None:
-                return
+            """(1.6.0) Lo que hay va en las pastillas del panel (en ambar lo que falta) y la hora en que estara listo."""
             m = self.material
             c = m["cuenta"]
-            vers = self._texto_versiones()
+            faltan = dict(m["faltan"])
+            for tipo, ch in getattr(self, "chips_mat", {}).items():
+                ch.setText("   " + _cuantos(c.get(tipo, 0), tipo))         # el aire entre icono y texto (maqueta)
+                repulir(ch, tipo="falta" if faltan.get(tipo) else "")
+            if hasattr(self, "l_eta"):
+                s = self._estimar() if self.trabajo is None else None
+                self.l_eta.setText("Listo a las %s" % time.strftime("%H:%M", time.localtime(time.time() + s)) if s else "")
+            if self.trabajo is not None or self.flujo is not None:
+                return
             if m["ok"]:
-                self._sub("● %d fotos · %d videos · %d dron  ·  armará %s" % (c["foto"], c["video"], c["dron"], vers), "ok")
+                self._sub("")
             else:
-                self._sub("● Falta material: %s  ·  pulsa ► y te digo qué agregar" % ", ".join(
-                    "%d %s" % (n, motor.NOMBRE_CARPETA[t].lower()) for t, n in m["faltan"]))
+                self._sub("Falta material: %s  ·  pulsa el botón y te digo qué agregar" % ", ".join(
+                    _cuantos(n, t) for t, n in m["faltan"]))
 
         def _revisar_material_fondo(self):
             """Lo mismo, pero contando los archivos en otro hilo: recorrer 1 MATERIAL frenaba la ventana unos 60 ms
@@ -1758,12 +2320,13 @@ def app():
             for tipo, (t, n, e) in self.tarjetas.items():
                 cuantos = self.material["cuenta"][tipo]
                 falta = dict(self.material["faltan"]).get(tipo)
-                n.setText(str(cuantos))
+                import animacion
+                animacion.contar(n, cuantos)                   # (1.6.0) el numero sube contando
                 if falta:
                     e.setText("Faltan %d" % falta if cuantos else "Vacía: agrega %s" % (
                         "al menos 8 fotos" if tipo == "foto" else "videos"))
                 else:
-                    e.setText("Listo" if cuantos or tipo != "dron" else "Opcional")
+                    e.setText("" if cuantos else "Opcional")   # (1.6.0) lo que esta bien no se repite
                 repulir(t, estado="falta" if falta else "ok")
                 repulir(e, estado="falta" if falta else "ok")
             for d in rutas.CARPETAS.values():
@@ -1776,7 +2339,7 @@ def app():
         def _arranque(self):
             rutas.crear_carpetas()
             self._revisar_material_fondo()
-            self._avisar("Chequeo de arranque…")
+            self._estado("Revisando…", "", "Chequeo de arranque…")     # (1.6.0) en la pastilla, no en una franja
             self.cheq = Chequeo()
             self.cheq.fin.connect(self._fin_chequeo)
             self.cheq.start()
@@ -1803,12 +2366,15 @@ def app():
                     "Arrastra Tráiler automático a Aplicaciones y ábrelo desde ahí: así se actualiza solo.", "warn"))
 
         def _fin_chequeo(self, res):
+            """(1.6.0) El chequeo de arranque va a la pastilla de estado (ya no a una franja fija)."""
             mal = [(n, d) for n, ok, d in res if not ok]
+            self._chequeo = (len(res), mal)
+            detalle = "\n".join("· " + (d if ok else "Falta: " + d) for n, ok, d in res)
             if not mal:
-                self._avisar("Chequeo de arranque: todo en orden (%d de %d)." % (len(res), len(res)))
+                self._estado("Todo listo", "ok", "Chequeo de arranque: todo en orden (%d de %d)." % (len(res), len(res)))
             else:
-                self._avisar("Chequeo de arranque: %d de %d en orden · %s" % (
-                    len(res) - len(mal), len(res), " · ".join(d for _, d in mal)), "warn")
+                self._estado("%d de %d en orden" % (len(res) - len(mal), len(res)), "warn",
+                             "Chequeo de arranque:\n" + detalle)
 
         def _ver_davinci(self):
             if self.trabajo is not None:
@@ -1897,7 +2463,7 @@ def app():
             self._sub("%d fotos · %d videos · %d dron  ·  %.1f GB" % (c["foto"], c["video"], c["dron"], examen["bytes"] / 1e9), "ok")
             self.boton.poner_estado("trabajando", centro="Copiando")
             self.boton.poner_progreso(0.0)
-            self.chip_evento.hide()
+            self.dock.hide()                         # (1.6.0) mientras toma el material, sin el panel de abajo
             self.chip_cancelar.show()
             self.copia = Copia(archivos, tipo, examen, anterior)
             # _fin_copia suelta self.copia cuando el hilo AUN no acaba de salir de run(): si Qt destruye un QThread que
@@ -1919,7 +2485,7 @@ def app():
         def _fin_copia(self, res):
             self.copia = None
             self.chip_cancelar.hide()
-            self.chip_evento.show()
+            self.dock.show()
             self.boton.poner_estado("listo")
             self.titulo.setText("Material ordenado")
             if "error" in res:
@@ -2015,13 +2581,13 @@ def app():
         def _armar_flujo(self):
             self.hoja.ocultar()
             self.flujo = None
-            self.titulo.setText("Un clic y listo")
+            self.titulo.setText(TITULO_INICIO)
             self._play(auto=True)
 
         def _fin_flujo(self, texto, tipo="info"):
             self.hoja.ocultar()
             self.flujo = None
-            self.titulo.setText("Un clic y listo")
+            self.titulo.setText(TITULO_INICIO)
             self._avisar(texto, tipo)
             self._sub_material()
 
@@ -2187,14 +2753,31 @@ def app():
             self.boton.poner_progreso(0.0)
             self.escena.empezar()
             self._marcar("timeline", "activo")
-            self.chip_evento.hide()
-            for b in self._pastillas(True, True):
-                b.hide()
-            self.reserva.setFixedHeight(len(PASOS_GO) * 34 + 14)
+            # (1.6.0) en vez del panel de abajo: la fila de pasos y el avance de cada version
+            rutas.PARAR.clear()
+            self.dock.hide()
+            for a in self.adornos:
+                a.hide()
+            self.pasos.reiniciar()
+            self.pasos.poner("analizar", "activo")
+            if funcion is None:
+                vers = self._versiones() + ["VERTICAL " + x for x in self._versiones_v()]
+            else:                                    # renderizar lo editado: las lineas del evento
+                vers = [motor.rutas.etiqueta_de(t) for t in self.est.get("timelines") or []]
+            self.versiones.poner_versiones(vers)
+            self.versiones.poner_eta("")
+            if vers:
+                self.versiones.poner(vers[0], "armando", "Armando…" if funcion is None else "En cola")
+            self.panel_trabajo.show()
+            import animacion
+            animacion.aparecer(self.panel_trabajo, 450)      # (1.6.0) los pasos y las versiones aparecen suaves
+            self.sub.hide()                          # la maqueta: solo «Trabajando…», los pasos y las versiones
+            self.titulo.tam = 86
+            self._clips = {}
             self._acomodar()
             self.titulo.setText("Trabajando…")
             self._sub("Empezando…")
-            self._avisar(texto)
+            self._estado("Trabajando", "oro", texto)
             for b in self._pastillas(True):
                 b.setEnabled(False)
             try:                                         # si IntelliSearch esta trabajando, cede el paso
@@ -2266,11 +2849,55 @@ def app():
             else:
                 w = min(1.0, max(0.0, (f - 0.06) / 0.5))            # cuanto mas avanza, mas manda lo real
                 resto = (1 - w) * resto_previo + w * resto_real
-            self.titulo.setText("Trabajando… listo en " + motor.texto_tiempo(resto))
+            fin = time.strftime("%H:%M", time.localtime(time.time() + resto))
+            self.versiones.poner_eta("Listo a las <b>%s</b>  ·  <span style='color:%s;'>faltan %s</span>" % (
+                fin, TENUE, motor.texto_tiempo(resto).split(" (")[0].replace("unos ", "")))
+
+        def _paso_vista(self, texto):
+            """(1.6.0) La fila de pasos avanza con lo que va diciendo el trabajo (nunca hacia atras)."""
+            orden = [c for c, _ in PASOS_VISTA]
+            actual = self.pasos.activo()
+            for clave_txt, paso in ETAPAS_VISTA:
+                if clave_txt in texto:
+                    if actual is None or orden.index(paso) > orden.index(actual):
+                        self.pasos.poner(paso, "activo")
+                    return
+
+        def _versiones_vista(self, m):
+            """(1.6.0) El estado de cada version: «1min lista» al armarse; en el render, «1min Rendering 45%»."""
+            filas = self.versiones.filas
+            a = re.search(r"\b((?:VERTICAL )?\d+min) lista", m)
+            b = re.search(r"VIDEO FINAL (VERTICAL )?(\d+) MIN lista", m, re.I)    # nombre de linea de la 1.5.7
+            etq = a.group(1) if a else (("VERTICAL " if b.group(1) else "") + b.group(2) + "min") if b else None
+            if etq in filas:
+                n = re.search(r"lista: (\d+) clips", m)            # «plano 87 de 140» en el render
+                if n:
+                    self._clips[etq] = int(n.group(1))
+                filas[etq].poner("armada", "Armada")
+                sig = next((e for e, f in filas.items() if f.estado == "cola"), None)
+                if sig and not re.search(r"\b\d+min \w+ \d+%", m):
+                    filas[sig].poner("armando", "Armando…")
+                return
+            for etq, estado, pct in re.findall(r"((?:VERTICAL )?\d+min) (\w+) (\d+)%", m):
+                f = filas.get(etq)
+                if f is None:
+                    continue
+                if estado == "Complete":
+                    f.poner("listo", "Listo", 1.0)
+                elif estado in ("Failed", "Cancelled"):
+                    f.poner("error", "No se pudo renderizar")
+                elif estado == "Rendering":
+                    clips = getattr(self, "_clips", {}).get(etq)
+                    f.poner("render", "%s%%" % pct, int(pct) / 100.0,
+                            "plano %d de %d" % (max(1, round(int(pct) / 100.0 * clips)), clips) if clips else "")
+                else:
+                    f.poner("cola", "En cola")
 
         def _linea(self, m):
             self.registro.appendPlainText(m)
             registro.info(m)
+            self._paso_vista(m)
+            self._versiones_vista(m)
             a = re.match(r"\s+(\d+)/(\d+)\s+(\S.*)$", m)         # avance del analisis: «  12/65  DSC_0012.MP4»
             if a and int(a.group(2)) > 0 and self._prog < 0.12:
                 i, n = int(a.group(1)), int(a.group(2))
@@ -2291,8 +2918,23 @@ def app():
                 self._marcar("resolve", "activo")
             elif pct >= 46:
                 self._marcar("sfx", "activo")
+            self._paso_vista(texto)
             self._poner_prog(pct / 100.0)
             self._sub(texto + "…")
+
+        def _cancelar(self):
+            """(1.6.0) «Cancelar»: lo ya armado queda en DaVinci; el trabajo se corta en el paso que va (el render se
+            detiene en DaVinci)."""
+            if self.trabajo is None:
+                return
+            r = QMessageBox.question(self, TITULO_APP, "¿Cancelar el trabajo?\n\nLo que ya quedó armado en DaVinci se "
+                                     "queda ahí; lo demás se detiene en el paso que va.")
+            if r != QMessageBox.Yes or self.trabajo is None:
+                return
+            rutas.PARAR.set()
+            self.versiones.b_cancelar.setEnabled(False)
+            self.versiones.b_cancelar.setText("Cancelando…")
+            self._sub("Cancelando: termina lo que está haciendo en este momento…")
 
         # ---- la escena: geometria y barra de abajo
         def _geo_escena(self):
@@ -2317,6 +2959,7 @@ def app():
             return out
 
         def _datos_barra(self):
+            return None                              # (1.6.0) sin la barra de la escena: el avance va en self.versiones
             b = self.boton
             if b.estado == "trabajando":
                 prog = b._prog_visto
@@ -2336,11 +2979,19 @@ def app():
             return {"prog": prog, "tramos": self._tramos(), "estado": b.estado, "cierre": b._cierre, "izq": izq, "der": der}
 
         def _quitar_reserva(self):
-            if self.boton.estado != "trabajando":
-                self.reserva.setFixedHeight(0)
-                self.chip_evento.show()
-                for b in self._pastillas(True, True):
-                    b.show()
+            """Termino el trabajo (o la escena guardo sus etiquetas): vuelve el panel de abajo."""
+            if self.boton.estado != "trabajando" and self.trabajo is None:
+                self.panel_trabajo.hide()
+                for a in self.adornos:
+                    a.show()
+                self.titulo.tam = 100
+                self.titulo.setText(self.titulo.text())
+                self.sub.setVisible(bool(self.sub.text()))
+                self.dock.show()
+                import animacion
+                animacion.aparecer(self.dock, 450)
+                self._ver_formato(self.seg_formato.actual())
+                self._sub_material()
                 self._acomodar()
 
         def _acomodar(self):
@@ -2350,9 +3001,10 @@ def app():
             if hasattr(self, "hoja") and self.hoja.isVisible():
                 self.hoja.setGeometry(self.cielo.rect())
             pag = self.paginas.widget(0)
-            libre = self.hueco_boton.height() - 8
-            self.boton.poner_lado(int(max(200, min(libre, pag.width() * 0.5))))
+            libre = self.hueco_boton.height() - 4
+            self.boton.poner_lado(int(max(160, min(libre, pag.width() * 0.42))))     # (1.6.0) el astrolabio
             self._centrar_boton()
+            self._escalar_luego()
 
         def _centrar_boton(self):
             h = self.hueco_boton
@@ -2360,11 +3012,33 @@ def app():
 
         def _pagina(self, i):
             en_inicio = i == 0
-            self.escena.setVisible(en_inicio)
-            self.escena.activar(en_inicio)
-            self.cielo.pausar(en_inicio)
+            # (1.6.0, la maqueta) la escena de particulas ya no se ve: el astrolabio es la imagen de Higgsfield
+            self.escena.setVisible(False)
+            self.escena.activar(False)
+            self.cielo.pausar(False)
             if en_inicio:
                 self._acomodar()
+
+        def _escalar_luego(self):
+            """(1.6.0) Al cambiar de tamaño, todo sigue a la maqueta: medidas y letras por ancho / 2048 (en un rato,
+            cuando se suelta el borde: re-aplicar el estilo a toda la ventana cuesta)."""
+            if not hasattr(self, "t_escala"):
+                self.t_escala = QTimer(self, singleShot=True, interval=350)
+                self.t_escala.timeout.connect(self._escalar)
+            self.t_escala.start()
+
+        def _escalar(self):
+            s = max(0.5, min(1.0, min(self.width() / 2048.0, self.height() / 1300.0)))
+            if abs(s - piezas.ESCALA) < 0.015:
+                return
+            QApplication.instance().setStyleSheet(estilo_completo(s))
+            for w in self.findChildren(QWidget):
+                if hasattr(w, "reescalar"):
+                    w.reescalar()
+            self.b_logo.setIconSize(QSize(piezas.px(72), piezas.px(72)))
+            self._estado(self.b_log.text(), self.b_log.property("tipo") or "ok")
+            self.b_log.setIconSize(QSize(piezas.px(24), piezas.px(24)))
+            self._acomodar()
 
         def resizeEvent(self, e):
             super().resizeEvent(e)
@@ -2397,11 +3071,25 @@ def app():
             self.boton.poner_progreso(1.0)
             self.escena.progreso(1.0)
             bien = not videos or len(ok) == len(videos)
+            for c, _ in PASOS_VISTA:                   # (1.6.0) la fila de pasos y cada version, al final
+                if self.pasos.estado.get(c) in ("pendiente", "activo") and (videos or c in ("analizar", "ia", "armar")):
+                    self.pasos.poner(c, "hecho")
+                elif self.pasos.estado.get(c) == "activo":         # sin videos (solo armar): no quedo a medias
+                    self.pasos.poner(c, "pendiente")
+            hechos = {motor.rutas.etiqueta_de(n) for n, si, _ in videos if si}
+            for etq, f in self.versiones.filas.items():
+                if videos:
+                    f.poner("listo", "Listo", 1.0) if etq in hechos else f.poner("error", "No salió")
+                elif f.estado in ("armada", "armando", "cola"):
+                    f.poner("listo", "Armada en DaVinci", 1.0)
+            self.versiones.b_cancelar.setEnabled(False)
+            self.versiones.poner_eta("Terminado a las <b>%s</b>" % time.strftime("%H:%M"))
+            self._estado("Todo listo" if bien else "Revisa los videos", "ok" if bien else "warn")
 
             def cerrar():
                 self.escena.terminar(bien, "ok" if bien else "aviso")
                 self.boton.poner_estado("hecho", centro="", tono="ok" if bien else "aviso")
-            self.escena.explotar(cerrar)
+            cerrar()                                   # (1.6.0) sin la explosion de la escena (ya no se ve)
             self.titulo.setText("¡Listo!")
             if videos:
                 self._sub("%d de %d videos en «%s»" % (len(ok), len(videos), os.path.basename(
@@ -2449,11 +3137,26 @@ def app():
             activa = next((k for k, e in self.pasos_go.items() if e == "activo"), None)
             if activa:
                 self.escena.paso(activa, "error")
+            vista = self.pasos.activo()
+            if vista:
+                self.pasos.poner(vista, "error")
+            for f in self.versiones.filas.values():
+                if f.estado in ("armando", "render"):
+                    f.poner("error", "Cancelado" if texto == CANCELADO else "Se detuvo")
+            self.versiones.b_cancelar.setEnabled(False)
             self._ultimo_fallo = texto
+            self.titulo.setText(TITULO_INICIO)
+            if texto == CANCELADO:                     # (1.6.0) lo pidio la persona: no es un error
+                self.escena.terminar(False, "aviso")
+                self.boton.poner_estado("error", centro="Cancelado")
+                self._sub("Cancelado: lo que ya quedó armado sigue en DaVinci.")
+                self._estado("Cancelado", "warn")
+                self._avisar("Trabajo cancelado. Lo que ya quedó armado sigue en DaVinci.", "warn")
+                return
             self.escena.terminar(False, "ok")
             self.boton.poner_estado("error", centro="Error")
-            self.titulo.setText("Un clic y listo")
             self._sub("No se pudo terminar: %s" % texto, "error")
+            self._estado("Error", "error", texto)
             self._avisar("Error: %s" % texto, "error")
             self.b_log.setChecked(True)
 
@@ -2463,7 +3166,9 @@ def app():
             self._cargar_organizacion()
             for b in self._pastillas(True):
                 b.setEnabled(True)
-            QTimer.singleShot(6000, lambda: self.titulo.setText("Un clic y listo") if self.trabajo is None else None)
+            rutas.PARAR.clear()
+            QTimer.singleShot(6000, lambda: self.titulo.setText(TITULO_INICIO) if self.trabajo is None else None)
+            QTimer.singleShot(7000, self._quitar_reserva)      # vuelve el panel de abajo (si la escena no avisa antes)
 
         def _abrir_videos(self):
             rutas.abrir((self.resultado or {}).get("carpeta") or rutas.SALIDA)

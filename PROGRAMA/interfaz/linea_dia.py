@@ -1,25 +1,39 @@
 # -*- coding: utf-8 -*-
 """
-linea_dia.py - La linea del dia del evento (pagina Material): cada foto y cada video en su hora, pintado con el color
-de su momento (MAQUILLAJE morado, IGLESIA verde, FIESTA rosa), con los inicios de IGLESIA y FIESTA para arrastrar.
+linea_dia.py - La «Línea del día» del evento (página Material), IGUAL a la maqueta de Higgsfield (1.6.0,
+docs/capturas/propuesta_2_material.png): un carril por momento (Maquillaje morado, Iglesia verde, Fiesta rosa) con su
+bloque de color e icono, las miniaturas de las tomas en su hora, y abajo los momentos clave (beso, anillos, aplausos,
+pastel) unidos con una linea punteada dorada a la toma donde pasan. Las medidas son las de la maqueta (piezas.px).
 
-  LineaDia.poner(items, fecha, momentos)   items del analisis (analizar_material), momentos [[MOMENTO, "HH:MM"], ...]
-  LineaDia.limites_cambiados(dict)         al soltar un limite: {"IGLESIA": "15:32", "FIESTA": "18:16"}
+  LineaDia.poner(items, fecha, momentos)   items del analisis, momentos [[MOMENTO, "HH:MM"], ...]
+  LineaDia.poner_minis({ruta: QPixmap})    las miniaturas (miniaturas.py, en un hilo)
+  LineaDia.pide_minis([(ruta, tipo, t)])   las que faltan para lo que se ve
+  LineaDia.toma_movida(nombre, momento)    se arrastro una toma a otro carril («Arrastra una toma para cambiarla de
+                                           momento»): la ventana la guarda como excepcion a mano
+  LineaDia.limites_cambiados(dict)         se arrastro el rombo de inicio de Iglesia o Fiesta
   LineaDia.cuentas_vivas(dict)             mientras se arrastra: {momento: (fotos, videos, minutos)}
-
-Lo clasificado por CONTENIDO (camara sin hora) se pinta hueco; lo puesto a mano, con borde blanco.
 """
 import datetime
+import math
+import time
 
-from PySide6.QtCore import Qt, QRectF, QPointF, Signal
-from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPainterPath, QPixmap, QPolygonF
+from PySide6.QtCore import Qt, QRectF, QPointF, Signal, QTimer
+from PySide6.QtGui import QColor, QPainter, QPen, QFont, QPainterPath, QPixmap, QLinearGradient, QRadialGradient
 from PySide6.QtWidgets import QWidget, QToolTip
 
+import piezas
+from piezas import px
+
 MOMENTOS = ("MAQUILLAJE", "IGLESIA", "FIESTA")
-COLOR = {"MAQUILLAJE": QColor("#A67CF2"), "IGLESIA": QColor("#22C47E"), "FIESTA": QColor("#F06AAE")}
+COLOR = {"MAQUILLAJE": QColor("#8B57E0"), "IGLESIA": QColor("#1FA36A"), "FIESTA": QColor("#E0559A")}
+COLOR_OSCURO = {"MAQUILLAJE": QColor("#5B33A8"), "IGLESIA": QColor("#0F7A4D"), "FIESTA": QColor("#A82E6C")}
 NOMBRE = {"MAQUILLAJE": "Maquillaje", "IGLESIA": "Iglesia", "FIESTA": "Fiesta"}
-CARRILES = (("foto", "Fotos"), ("video", "Videos"), ("dron", "Dron"))
+ICONO = {"MAQUILLAJE": "pincel", "IGLESIA": "iglesia", "FIESTA": "fiesta"}
 TENUE = QColor("#8FA3A8")
+# momentos clave (etiquetas de vision_ia y «aplausos» del oido): texto e icono
+CLAVES = {"entrada": ("Entrada", "brillo"), "anillos": ("Anillos", "anillo"), "votos": ("Votos", "anillo"),
+          "beso": ("Beso", "corazon"), "aplausos": ("Aplausos", "aplausos"), "brindis": ("Brindis", "copa"),
+          "primer_baile": ("Primer baile", "nota"), "pastel": ("Pastel", "pastel")}
 
 
 def _a_min(hhmm):
@@ -35,41 +49,75 @@ def hhmm(minutos):
 class LineaDia(QWidget):
     limites_cambiados = Signal(dict)
     cuentas_vivas = Signal(dict)
-
-    IZQ, DER, ARRIBA, EJE = 70, 18, 40, 26
+    pide_minis = Signal(list)
+    toma_movida = Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(self.ARRIBA + 3 * 30 + self.EJE + 8)
         self.setMouseTracking(True)
-        self.items = []             # dicts: m (minuto), tipo, dur (min), momento, nombre, por, tramos
-        self.limites = {}           # {"IGLESIA": minuto, "FIESTA": minuto}
+        self.items, self.limites, self.marcas = [], {}, []
         self.rango = (0.0, 1440.0)
         self.editable = True
-        self._arrastra = None
+        self.minis = {}
+        self._pedidas = set()
+        self._colocadas = []         # [(QRectF, item)]
+        self._arrastra = None        # inicio de IGLESIA / FIESTA que se arrastra
         self._sobre = None
-        self._version = 0           # cambia con los datos: la imagen guardada deja de valer
-        self._imagen = None         # (clave, QPixmap) de lo ultimo pintado
+        self._toma = None            # (item, punto inicial) de la toma que se empieza a arrastrar
+        self._llevando = None        # (item, QPointF actual) mientras se lleva una toma
+        self._version = 0
+        self._imagen = None
+        self._destellos = []         # (1.6.0) [(pastilla, punto de la toma, punto de la pastilla)] de los momentos clave
+        self._reloj = QTimer(self, interval=50)
+        self._reloj.timeout.connect(self._tic)
+        self._reloj.start()
+        self.reescalar()
+
+    def _tic(self):
+        if self.isVisible() and not self.window().isMinimized() and (self._destellos or self.items):
+            self.update()
+
+    def reescalar(self):
+        self.IZQ, self.DER = px(300), px(40)
+        self.ARRIBA, self.CARRIL, self.GAP, self.ABAJO = px(92), px(108), px(24), px(104)
+        self.setMinimumHeight(self.ARRIBA + 3 * self.CARRIL + 2 * self.GAP + self.ABAJO)
+        self._version += 1
+        self.update()
 
     # ------------------------------------------------------------------ datos
     def poner(self, items, fecha, momentos):
         self._version += 1
-        self.items = []
-        self.limites = {}
+        self.items, self.limites, self.marcas = [], {}, []
         if not items or not fecha:
             self.update()
             return
         base = datetime.datetime.combine(datetime.date.fromisoformat(fecha), datetime.time())
+        primeras = {}
         for i in items:
             if i.get("descartar"):
                 continue
             try:
                 m = (datetime.datetime.fromisoformat(i["hora"]) - base).total_seconds() / 60.0
-            except (KeyError, ValueError):
+            except (KeyError, ValueError, TypeError):
                 continue
-            self.items.append({"m": m, "tipo": i["tipo"], "dur": i.get("dur", 0) / 60.0 if i["tipo"] != "foto" else 0.0,
-                               "momento": i.get("momento"), "nombre": i["nombre"], "por": i.get("por", "hora"),
-                               "tramos": i.get("tramos"), "seg": i.get("dur", 0)})
+            it = {"m": m, "tipo": i["tipo"], "dur": i.get("dur", 0) / 60.0 if i["tipo"] != "foto" else 0.0,
+                  "momento": i.get("momento"), "nombre": i["nombre"], "por": i.get("por", "hora"),
+                  "seg": i.get("dur", 0), "ruta": i.get("ruta")}
+            self.items.append(it)
+            for x in (i.get("ia") or {}).get("instantes") or []:          # lo que vio la IA, segundo a segundo
+                if len(x) > 2 and x[2] is not False:
+                    for k in x[1]:
+                        t = m + x[0] / 60.0
+                        if k in CLAVES and (k not in primeras or t < primeras[k][0]):
+                            primeras[k] = (t, it)
+            oido = i.get("oido") or {}
+            ap, paso = oido.get("aplausos") or [], oido.get("paso")
+            if ap and paso and max(ap) >= 0.45:                            # el aplauso mas claro de la toma
+                j = max(range(len(ap)), key=lambda q: ap[q])
+                t = m + (j * paso + oido.get("ventana", paso) / 2.0) / 60.0
+                if "aplausos" not in primeras or t < primeras["aplausos"][0]:
+                    primeras["aplausos"] = (t, it)
+        self.marcas = sorted((t, k, it) for k, (t, it) in primeras.items())
         for mom, h in momentos or []:
             if mom in ("IGLESIA", "FIESTA"):
                 try:
@@ -81,12 +129,18 @@ class LineaDia(QWidget):
             hi = max(x["m"] + x["dur"] for x in self.items)
             for v in self.limites.values():
                 lo, hi = min(lo, v), max(hi, v)
-            pad = max(8.0, (hi - lo) * 0.03)
-            self.rango = (lo - pad, hi + pad)
+            lo = (int(lo) // 60) * 60.0                                    # el eje empieza y acaba en hora redonda
+            hi = (int(hi) // 60 + 1) * 60.0
+            self.rango = (lo, max(hi, lo + 240.0))
+        self.update()
+
+    def poner_minis(self, minis):
+        self.minis.update(minis)
+        self._version += 1
         self.update()
 
     def momento_de(self, it):
-        """Lo clasificado por hora sigue a los limites (aunque se esten arrastrando); lo demas queda como esta."""
+        """Lo puesto a mano manda; lo clasificado por hora sigue a los limites (aunque se arrastren)."""
         if it["por"] != "hora" or not self.limites:
             return it["momento"]
         mom = "MAQUILLAJE"
@@ -120,155 +174,282 @@ class LineaDia(QWidget):
         r0, r1 = self.rango
         return r0 + (x - self.IZQ) / self._ancho() * (r1 - r0)
 
-    def _carril(self):
-        """Alto de cada carril (fotos, videos, dron): crece con la ventana, entre 30 y 64 px."""
-        return max(30.0, min(64.0, (self.height() - self.ARRIBA - self.EJE - 8) / 3.0))
-
     def _y_carril(self, k):
-        return self.ARRIBA + k * self._carril()
+        return self.ARRIBA + k * (self.CARRIL + self.GAP)
+
+    def _carril_en(self, y):
+        for k in range(3):
+            y0 = self._y_carril(k)
+            if y0 - self.GAP / 2 <= y <= y0 + self.CARRIL + self.GAP / 2:
+                return k
+        return None
 
     # ------------------------------------------------------------------ pintura
     def paintEvent(self, _):
-        """Cientos de puntos y barras: se dibujan UNA vez en una imagen y despues solo se copia. Antes se redibujaba
-        todo cada vez que el cielo de fondo parpadeaba (13 veces por segundo, 13 ms cada una: la pestana Material
-        iba a tirones). La imagen se rehace al cambiar los datos, el tamano, los limites o el raton sobre un limite."""
         dpr = self.devicePixelRatioF()
         clave = (self.width(), self.height(), dpr, self._version, self._arrastra, self._sobre, self.editable,
-                 tuple(sorted(self.limites.items())), self.font().key())
+                 tuple(sorted(self.limites.items())), self.font().key(),
+                 None if self._llevando is None else self._carril_en(self._llevando[1].y()))
         if self._imagen is None or self._imagen[0] != clave:
             pm = QPixmap(max(1, int(self.width() * dpr)), max(1, int(self.height() * dpr)))
             pm.setDevicePixelRatio(dpr)
             pm.fill(Qt.transparent)
             q = QPainter(pm)
+            self._destellos = []
             try:
                 self._pintar(q)
             finally:
                 q.end()
             self._imagen = (clave, pm)
-        QPainter(self).drawPixmap(0, 0, self._imagen[1])
+        p = QPainter(self)
+        p.drawPixmap(0, 0, self._imagen[1])
+        self._pintar_vida(p)
+        if self._llevando is not None:                   # la toma que se lleva, siguiendo al raton
+            it, pos = self._llevando
+            w, h = px(210), px(105)
+            r = QRectF(pos.x() - w / 2, pos.y() - h / 2, w, h)
+            p.setRenderHint(QPainter.Antialiasing)
+            p.setOpacity(0.85)
+            self._miniatura(p, it, r, QColor("#FFFFFF"))
+
+    def _pintar_vida(self, p):
+        """(1.6.0) Lo que se mueve encima del dibujo guardado: una luz recorre las horas y en cada momento clave una
+        chispa baja por la linea punteada y la pastilla brilla (cada una a su tiempo)."""
+        ahora = time.monotonic()
+        p.save()
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setCompositionMode(QPainter.CompositionMode_Plus)
+        if self.items:
+            u = (ahora % 11.0) / 3.2                   # la luz cruza los carriles cada 11 s
+            if u < 1.0:
+                x = self.IZQ + self._ancho() * u
+                y0, y1 = self._y_carril(0), self._y_carril(2) + self.CARRIL
+                g = QLinearGradient(QPointF(x - px(70), 0), QPointF(x + px(70), 0))
+                g.setColorAt(0.0, QColor(255, 236, 190, 0))
+                g.setColorAt(0.5, QColor(255, 236, 190, int(26 * math.sin(math.pi * u))))
+                g.setColorAt(1.0, QColor(255, 236, 190, 0))
+                p.fillRect(QRectF(x - px(70), y0, px(140), y1 - y0), g)
+        p.setPen(Qt.NoPen)
+        for i, (pill, arriba, abajo) in enumerate(self._destellos):
+            fase = (ahora * 0.55 + i * 0.37) % 1.0
+            y = arriba.y() + (abajo.y() - arriba.y()) * fase       # la chispa que baja hasta la pastilla
+            g = QRadialGradient(QPointF(arriba.x(), y), px(14))
+            g.setColorAt(0.0, QColor(255, 240, 200, int(220 * math.sin(math.pi * fase))))
+            g.setColorAt(1.0, QColor(240, 190, 90, 0))
+            p.setBrush(g)
+            p.drawEllipse(QPointF(arriba.x(), y), px(14), px(14))
+            lat = 0.5 + 0.5 * math.sin(ahora * 2.6 + i * 1.3)       # la pastilla late
+            borde = QColor(246, 210, 122, int(40 + 90 * lat))
+            p.setBrush(Qt.NoBrush)
+            p.setPen(QPen(borde, max(1.0, px(5))))
+            p.drawRoundedRect(pill.adjusted(-px(3), -px(3), px(3), px(3)), px(30), px(30))
+            p.setPen(Qt.NoPen)
+        p.restore()
+
+    def _miniatura(self, p, it, r, borde):
+        marco = QPainterPath()
+        marco.addRoundedRect(r, px(10), px(10))
+        pm = self.minis.get(it["ruta"])
+        p.save()
+        p.setClipPath(marco)
+        if pm is not None and not pm.isNull():
+            esc = max(r.width() / pm.width(), r.height() / pm.height())
+            tw, th = pm.width() * esc, pm.height() * esc
+            p.drawPixmap(QRectF(r.center().x() - tw / 2, r.center().y() - th / 2, tw, th), pm, QRectF(pm.rect()))
+        else:
+            p.fillRect(r, QColor(12, 28, 36))
+        p.restore()
+        p.setPen(QPen(borde, max(1.0, px(3))))
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r, px(10), px(10))
+        c = QPointF(r.center().x(), r.bottom() - r.height() * 0.30)        # el play de la maqueta, abajo al centro
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(0, 0, 0, 120))
+        p.drawEllipse(c, px(22), px(22))
+        p.drawPixmap(QPointF(c.x() - px(12), c.y() - px(13)), piezas.icono("play", "#FFFFFF", px(26)))
 
     def _pintar(self, p):
         p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.SmoothPixmapTransform)
         w = self.width()
-        alto = 3 * self._carril()
-        caja = QRectF(self.IZQ, self.ARRIBA, self._ancho(), alto)
         f = QFont(self.font())
-        f.setPointSizeF(max(7.5, f.pointSizeF() * 0.82))
-        f.setBold(True)
+        f.setPixelSize(px(26))
         p.setFont(f)
         if not self.items:
             p.setPen(TENUE)
-            p.drawText(QRectF(0, 0, w, self.height()), Qt.AlignCenter, "Sin analizar todavía")
+            f2 = QFont(f)
+            f2.setPixelSize(px(32))
+            p.setFont(f2)
+            p.drawText(QRectF(0, 0, w, self.height()), Qt.AlignCenter,
+                       "Todavía sin analizar: pulsa «Analizar ahora» o el botón de Inicio")
             return
-        # bandas de cada momento
-        cortes = [self.rango[0]] + [self.limites[m] for m in ("IGLESIA", "FIESTA") if m in self.limites] + [self.rango[1]]
-        noms = ["MAQUILLAJE"] + [m for m in ("IGLESIA", "FIESTA") if m in self.limites]
-        camino = QPainterPath()
-        camino.addRoundedRect(caja, 12, 12)
-        p.save()
-        p.setClipPath(camino)
-        for (a, b), mom in zip(zip(cortes, cortes[1:]), noms):
-            c = QColor(COLOR[mom])
-            c.setAlpha(34)
-            p.fillRect(QRectF(self.x_de(a), caja.top(), self.x_de(b) - self.x_de(a), alto), c)
-        p.restore()
-        p.setPen(QPen(QColor(255, 255, 255, 30), 1))
-        p.setBrush(Qt.NoBrush)
-        p.drawRoundedRect(caja, 12, 12)
-        # carriles
-        for k, (tipo, txt) in enumerate(CARRILES):
-            y = self._y_carril(k)
-            if k:
-                p.setPen(QPen(QColor(255, 255, 255, 18), 1, Qt.DashLine))
-                p.drawLine(QPointF(self.IZQ + 6, y), QPointF(self.IZQ + self._ancho() - 6, y))
-            p.setPen(TENUE)
-            p.drawText(QRectF(0, y, self.IZQ - 10, self._carril()), Qt.AlignVCenter | Qt.AlignRight, txt)
-        # eje de horas
+        # eje de horas (cada 4 h, como la maqueta; menos si el dia es corto)
         r0, r1 = self.rango
-        paso = next(s for s in (15, 30, 60, 120, 180, 240) if (r1 - r0) / s <= max(3, self._ancho() / 90))
-        t = (int(r0) // paso + 1) * paso
-        y_eje = self.ARRIBA + alto
-        while t < r1:
+        paso = next(s for s in (60, 120, 180, 240, 360) if (r1 - r0) / s <= 6)
+        y_eje = self.ARRIBA - px(34)
+        p.setPen(QPen(QColor(200, 215, 220, 110), max(1.0, px(2))))
+        p.drawLine(QPointF(self.x_de(r0), y_eje), QPointF(self.x_de(r1), y_eje))
+        t = r0
+        while t <= r1 + 0.1:
             x = self.x_de(t)
-            p.setPen(QPen(QColor(255, 255, 255, 40), 1))
-            p.drawLine(QPointF(x, y_eje), QPointF(x, y_eje + 5))
-            p.setPen(TENUE)
-            p.drawText(QRectF(x - 30, y_eje + 5, 60, self.EJE - 5), Qt.AlignHCenter | Qt.AlignTop, hhmm(t))
+            p.setPen(QPen(QColor(200, 215, 220, 150), max(1.0, px(2))))
+            p.drawLine(QPointF(x, y_eje - px(12)), QPointF(x, y_eje + px(12)))
+            p.setPen(QColor("#C8D3D6"))
+            p.drawText(QRectF(x - px(80), y_eje - px(70), px(160), px(44)), Qt.AlignHCenter | Qt.AlignBottom, hhmm(t))
             t += paso
-        # material
-        barra = max(12.0, min(22.0, self._carril() * 0.42))
-        for it in self.items:
-            k = {"foto": 0, "video": 1, "dron": 2}.get(it["tipo"], 1)
-            yc = self._y_carril(k) + self._carril() / 2.0
+        destino = None if self._llevando is None else self._carril_en(self._llevando[1].y())
+        # carriles: el bloque de color con icono y nombre, y el carril que se va apagando a la derecha
+        fl = QFont(self.font())
+        fl.setPixelSize(px(30))
+        fl.setWeight(QFont.Bold)
+        for k, mom in enumerate(MOMENTOS):
+            y = self._y_carril(k)
+            caja = QRectF(0, y, w - 2, self.CARRIL)
+            c, co = COLOR[mom], COLOR_OSCURO[mom]
+            g = QLinearGradient(caja.left(), 0, caja.right(), 0)
+            g.setColorAt(0.0, QColor(c.red(), c.green(), c.blue(), 95))
+            g.setColorAt(0.5, QColor(co.red(), co.green(), co.blue(), 60))
+            g.setColorAt(1.0, QColor(co.red(), co.green(), co.blue(), 35))
+            borde = QColor(c)
+            borde.setAlpha(230 if destino == k else 120)
+            p.setPen(QPen(borde, max(1.0, px(3 if destino == k else 2))))
+            p.setBrush(g)
+            p.drawRoundedRect(caja, px(16), px(16))
+            et = QRectF(0, y, px(258), self.CARRIL)
+            ge = QLinearGradient(et.left(), 0, et.right(), 0)
+            ge.setColorAt(0.0, co)
+            ge.setColorAt(1.0, c)
+            camino = QPainterPath()
+            camino.addRoundedRect(et, px(16), px(16))
+            p.setPen(Qt.NoPen)
+            p.fillPath(camino, ge)
+            p.drawPixmap(QPointF(et.left() + px(26), et.center().y() - px(26)),
+                         piezas.icono(ICONO[mom], "#FFFFFF", px(52)))
+            p.setFont(fl)
+            p.setPen(QColor("#FFFFFF"))
+            p.drawText(et.adjusted(px(96), 0, 0, 0), Qt.AlignVCenter | Qt.AlignLeft, NOMBRE[mom])
+        p.setFont(f)
+        # las tomas: miniaturas donde caben (en su hora), las fotos como puntos
+        self._colocadas, faltan = [], []
+        tw, th = float(px(210)), float(self.CARRIL - px(6))
+        fin = {m: -1e9 for m in MOMENTOS}
+        for it in sorted(self.items, key=lambda x: x["m"]):
             mom = self.momento_de(it)
-            col = QColor(COLOR.get(mom, TENUE))
-            hueco = it["por"] == "contenido"
+            if mom not in fin:
+                continue
+            k = MOMENTOS.index(mom)
+            y = self._y_carril(k)
+            x = max(px(262), min(self.x_de(it["m"]), w - tw - px(4)))
             if it["tipo"] == "foto":
-                col.setAlpha(150)
-                p.setPen(QPen(col, 1.4) if hueco else Qt.NoPen)
-                p.setBrush(Qt.NoBrush if hueco else QBrush(col))
-                jit = (sum(map(ord, it["nombre"])) % 9 - 4) / 4.0 * self._carril() * 0.28   # para que una rafaga no sea un solo punto
-                p.drawEllipse(QPointF(self.x_de(it["m"]), yc + jit), 2.6, 2.6)
-            else:
-                partes = [(a / 60.0, b / 60.0, m) for a, b, m in it["tramos"]] if it.get("tramos") and it["por"] == "hora" \
-                    else [(0.0, it["dur"], mom)]
-                for a, b, m in partes:
-                    c = QColor(COLOR.get(m if it.get("tramos") else mom, TENUE))
-                    c.setAlpha(205)
-                    x0, x1 = self.x_de(it["m"] + a), self.x_de(it["m"] + b)
-                    r = QRectF(x0, yc - barra / 2, max(3.0, x1 - x0), barra)
-                    p.setPen(QPen(c, 1.4) if hueco else QPen(QColor(0, 0, 0, 60), 0.8))
-                    p.setBrush(Qt.NoBrush if hueco else QBrush(c))
-                    p.drawRoundedRect(r, 3, 3)
-                if it["por"] == "manual":
-                    p.setPen(QPen(QColor("#FFFFFF"), 1.2))
-                    p.setBrush(Qt.NoBrush)
-                    x0, x1 = self.x_de(it["m"]), self.x_de(it["m"] + it["dur"])
-                    p.drawRoundedRect(QRectF(x0 - 1, yc - barra / 2 - 1, max(5.0, x1 - x0 + 2), barra + 2), 3, 3)
-        # limites para arrastrar
+                p.setPen(Qt.NoPen)
+                p.setBrush(QColor(255, 255, 255, 110))
+                p.drawEllipse(QPointF(self.x_de(it["m"]), y + self.CARRIL - px(10)), px(3), px(3))
+                continue
+            if x < fin[mom] + px(14):
+                x = fin[mom] + px(14)                    # en fila, como la maqueta, si cabe antes de la siguiente hora
+                if x + tw > w - px(4) or x - self.x_de(it["m"]) > tw * 1.6:
+                    continue
+            r = QRectF(x, y + px(3), tw, th)
+            fin[mom] = r.right()
+            if self._llevando is not None and self._llevando[0] is it:
+                continue
+            self._miniatura(p, it, r, COLOR[mom])
+            if it["por"] == "manual":
+                p.setPen(QPen(QColor("#FFFFFF"), max(1.0, px(3))))
+                p.setBrush(Qt.NoBrush)
+                p.drawRoundedRect(r.adjusted(-px(3), -px(3), px(3), px(3)), px(12), px(12))
+            if it["ruta"] and it["ruta"] not in self.minis and it["ruta"] not in self._pedidas:
+                faltan.append((it["ruta"], it["tipo"], None))
+            self._colocadas.append((r, it))
+        # inicios de IGLESIA y FIESTA: un rombo dorado en el eje (se arrastra)
+        abajo = self._y_carril(2) + self.CARRIL
         for mom in ("IGLESIA", "FIESTA"):
             if mom not in self.limites:
                 continue
             x = self.x_de(self.limites[mom])
             activo = self._arrastra == mom or self._sobre == mom
-            p.setPen(QPen(QColor(255, 255, 255, 230 if activo else 150), 2 if activo else 1.4))
-            p.drawLine(QPointF(x, self.ARRIBA - 4), QPointF(x, self.ARRIBA + alto))
-            txt = "%s  %s" % (NOMBRE[mom], hhmm(self.limites[mom]))
-            fm = p.fontMetrics()
-            ancho = fm.horizontalAdvance(txt) + 26
-            pill = QRectF(min(max(x - ancho / 2, 2), w - ancho - 2), 4, ancho, 24)
-            c = QColor(COLOR[mom])
-            p.setPen(QPen(QColor(255, 255, 255, 200 if activo else 60), 1))
-            p.setBrush(c if activo else QColor(c.red(), c.green(), c.blue(), 200))
-            p.drawRoundedRect(pill, 12, 12)
-            p.setPen(QColor("#04150D"))
-            p.drawText(pill.adjusted(16, 0, 0, 0), Qt.AlignVCenter | Qt.AlignLeft, txt)
-            # agarradera: dos rayitas
-            p.setPen(QPen(QColor(4, 21, 13, 160), 1.2))
-            for dx in (8, 11):
-                p.drawLine(QPointF(pill.left() + dx, pill.top() + 7), QPointF(pill.left() + dx, pill.bottom() - 7))
-            tri = QPolygonF([QPointF(x - 5, pill.bottom()), QPointF(x + 5, pill.bottom()), QPointF(x, pill.bottom() + 6)])
+            if activo:
+                p.setPen(QPen(QColor(226, 176, 79, 200), max(1.0, px(2)), Qt.DashLine))
+                p.drawLine(QPointF(x, y_eje), QPointF(x, abajo))
             p.setPen(Qt.NoPen)
-            p.drawPolygon(tri)
+            p.setBrush(QColor(piezas.ORO))
+            rombo = QPainterPath()
+            d = px(15 if activo else 11)
+            rombo.moveTo(x, y_eje - d)
+            rombo.lineTo(x + d * 0.8, y_eje)
+            rombo.lineTo(x, y_eje + d)
+            rombo.lineTo(x - d * 0.8, y_eje)
+            rombo.closeSubpath()
+            p.drawPath(rombo)
+            if activo:
+                txt = "%s  %s" % (NOMBRE[mom], hhmm(self.limites[mom]))
+                ancho = p.fontMetrics().horizontalAdvance(txt) + px(36)
+                pill = QRectF(min(max(x - ancho / 2, 2), w - ancho - 2), y_eje + px(16), ancho, px(46))
+                p.setBrush(COLOR[mom])
+                p.drawRoundedRect(pill, px(23), px(23))
+                p.setPen(QColor("#FFFFFF"))
+                p.drawText(pill, Qt.AlignCenter, txt)
+        # momentos clave: pastillas doradas abajo, unidas con linea punteada a su toma
+        y_m = abajo + px(44)
+        fm_f = QFont(self.font())
+        fm_f.setPixelSize(px(31))
+        p.setFont(fm_f)
+        ultimo = -1e9
+        self._destellos = []
+        donde = {id(it): r for r, it in self._colocadas}
+        for t, clave, it in self.marcas:
+            if not self.rango[0] <= t <= self.rango[1]:
+                continue
+            texto, ic = CLAVES[clave]
+            ancho = p.fontMetrics().horizontalAdvance(texto) + px(100)
+            rt = donde.get(id(it))
+            x = rt.center().x() if rt is not None else self.x_de(t)
+            pill = QRectF(min(max(x - ancho / 2, px(262)), w - ancho - px(4)), y_m, ancho, px(54))
+            if pill.left() < ultimo + px(20):
+                continue
+            ultimo = pill.right()
+            y0 = rt.bottom() if rt is not None else self._y_carril(MOMENTOS.index(self.momento_de(it))) + self.CARRIL
+            p.setPen(QPen(QColor(226, 176, 79, 210), max(1.0, px(3)), Qt.DotLine))
+            p.drawLine(QPointF(x, y0 + px(2)), QPointF(x, y_m))
+            self._destellos.append((pill, QPointF(x, y0 + px(2)), QPointF(x, y_m)))
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor("#F3CF7A"))
+            p.drawEllipse(QPointF(x, y_m), px(5), px(5))
+            p.setPen(QPen(QColor(226, 176, 79, 230), max(1.0, px(3))))
+            p.setBrush(QColor(28, 24, 12, 225))
+            p.drawRoundedRect(pill, px(27), px(27))
+            p.drawPixmap(QPointF(pill.left() + px(24), pill.center().y() - px(20)), piezas.icono(ic, "#F3CF7A", px(40)))
+            p.setPen(QColor("#FFFFFF"))
+            p.drawText(pill.adjusted(px(76), 0, -px(18), 0), Qt.AlignVCenter | Qt.AlignLeft, texto)
+        if faltan:
+            self._pedidas.update(r for r, _, _ in faltan)
+            QTimer.singleShot(0, lambda lista=faltan: self.pide_minis.emit(lista))
 
     # ------------------------------------------------------------------ raton
     def _limite_en(self, pos):
         if not self.editable:
             return None
-        mejor = None
+        y_eje = self.ARRIBA - px(34)
         for mom in ("IGLESIA", "FIESTA"):
             if mom in self.limites:
-                d = abs(pos.x() - self.x_de(self.limites[mom]))
-                cerca = d <= 9 or (pos.y() <= 30 and d <= 60)
-                if cerca and (mejor is None or d < mejor[0]):
-                    mejor = (d, mom)
-        return mejor[1] if mejor else None
+                if abs(pos.x() - self.x_de(self.limites[mom])) <= px(22) and abs(pos.y() - y_eje) <= px(26):
+                    return mom
+        return None
+
+    def _toma_en(self, pos):
+        return next((it for r, it in self._colocadas if r.contains(pos)), None)
 
     def mousePressEvent(self, e):
-        mom = self._limite_en(e.position())
+        pos = e.position()
+        mom = self._limite_en(pos)
         if mom and e.button() == Qt.LeftButton:
             self._arrastra = mom
             self.update()
+            e.accept()
+            return
+        it = self._toma_en(pos) if self.editable else None
+        if it is not None and e.button() == Qt.LeftButton:
+            self._toma = (it, QPointF(pos))
             e.accept()
             return
         super().mousePressEvent(e)
@@ -286,13 +467,30 @@ class LineaDia(QWidget):
             self.cuentas_vivas.emit(self.cuentas())
             self.update()
             return
+        if self._toma is not None:
+            it, ini = self._toma
+            if self._llevando is not None or (pos - ini).manhattanLength() > px(14):
+                self._llevando = (it, QPointF(pos))
+                self.setCursor(Qt.ClosedHandCursor)
+                self.update()
+            return
         sobre = self._limite_en(pos)
         if sobre != self._sobre:
             self._sobre = sobre
-            self.setCursor(Qt.SizeHorCursor if sobre else Qt.ArrowCursor)
             self.update()
-        if not sobre:
-            self._mostrar_ayuda(e)
+        toma = self._toma_en(pos) if self.editable else None
+        self.setCursor(Qt.SizeHorCursor if sobre else Qt.OpenHandCursor if toma is not None else Qt.ArrowCursor)
+        if sobre:
+            QToolTip.showText(e.globalPosition().toPoint(), "Arrastra para cambiar dónde empieza %s" % NOMBRE[sobre],
+                              self)
+        elif toma is not None:
+            extra = {"contenido": " · ordenado por lo que se ve", "manual": " · puesto a mano"}.get(toma["por"], "")
+            QToolTip.showText(e.globalPosition().toPoint(), "%s\n%s · %s · %d s%s\nArrástrala a otro carril para "
+                              "cambiarla de momento" % (toma["nombre"], hhmm(toma["m"]),
+                                                        NOMBRE.get(self.momento_de(toma), "?"), round(toma["seg"]),
+                                                        extra), self)
+        else:
+            QToolTip.hideText()
 
     def mouseReleaseEvent(self, e):
         if self._arrastra:
@@ -301,34 +499,23 @@ class LineaDia(QWidget):
             self.limites_cambiados.emit({m: hhmm(v) if v < 1440 else "%02d:%02d" % (int(v) // 60, int(v) % 60)
                                          for m, v in self.limites.items()})
             return
+        if self._toma is not None:
+            llevando = self._llevando
+            self._toma = self._llevando = None
+            self.setCursor(Qt.ArrowCursor)
+            if llevando is not None:
+                it, pos = llevando
+                k = self._carril_en(pos.y())
+                if k is not None and MOMENTOS[k] != self.momento_de(it):
+                    it["momento"], it["por"] = MOMENTOS[k], "manual"
+                    self._version += 1
+                    self.toma_movida.emit(it["nombre"], MOMENTOS[k])
+                    self.cuentas_vivas.emit(self.cuentas())
+            self.update()
+            return
         super().mouseReleaseEvent(e)
 
     def leaveEvent(self, e):
         self._sobre = None
         self.update()
         super().leaveEvent(e)
-
-    def _mostrar_ayuda(self, e):
-        pos = e.position()
-        k = int((pos.y() - self.ARRIBA) // self._carril())
-        if not 0 <= k < 3:
-            QToolTip.hideText()
-            return
-        tipo = CARRILES[k][0]
-        cerca = None
-        for it in self.items:
-            if it["tipo"] != tipo:
-                continue
-            x0, x1 = self.x_de(it["m"]), self.x_de(it["m"] + it["dur"])
-            d = 0 if x0 - 3 <= pos.x() <= x1 + 3 else min(abs(pos.x() - x0), abs(pos.x() - x1))
-            if d <= 5 and (cerca is None or d < cerca[0]):
-                cerca = (d, it)
-        if cerca is None:
-            QToolTip.hideText()
-            return
-        it = cerca[1]
-        extra = {"contenido": " · ordenado por contenido (su cámara no tenía buena hora)",
-                 "manual": " · puesto a mano"}.get(it["por"], "")
-        dur = " · %d s" % round(it["seg"]) if it["tipo"] != "foto" else ""
-        QToolTip.showText(e.globalPosition().toPoint(), "%s\n%s · %s%s%s" % (
-            it["nombre"], hhmm(it["m"]), NOMBRE.get(self.momento_de(it), "?"), dur, extra), self)

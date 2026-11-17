@@ -1195,6 +1195,17 @@ def guardar_momentos(inicios):
     _guardar_json(rutas.CLASIFICACION, cfg)
 
 
+def guardar_excepcion(nombre, momento):
+    """(1.6.0) En la Linea del dia se arrastro una toma a otro carril: queda como excepcion a mano
+    (CLASIFICACION «archivos» = {archivo: MOMENTO}; el analisis la marca «por: manual»)."""
+    cfg = leer_clasificacion()
+    arch = dict(cfg.get("archivos") or {})
+    arch[nombre] = momento
+    cfg["archivos"] = arch
+    cfg["revisado"] = True
+    _guardar_json(rutas.CLASIFICACION, cfg)
+
+
 def clasificar(items, base, log=print):
     """Relojes -> dia del evento -> horas corridas -> momentos por hora -> los dudosos por contenido y en el orden
     de su camara -> tramos de los videos largos que cruzan de un momento a otro."""
@@ -1517,6 +1528,7 @@ def _ver_con_ia(cache, lista, log):
     t0 = time.time()
 
     def una(par):
+        rutas.revisar_parada()                    # (1.6.0) «Cancelar»
         d = cache[_clave(par[1])]
         return d, vision_ia.describir(par[0], par[1], d.get("dur", 0.0), log)
     # en paralelo (la persona: «que use el máximo rendimiento»): mientras la GPU mira una toma, la otra ya saca sus
@@ -1564,6 +1576,7 @@ def _instantes_con_ia(cache, largos, log, vision_ia):
         "si se ven las caras..." % (vision_ia.INSTANTES_CADA_S, total / 60.0))
 
     def una(par):
+        rutas.revisar_parada()                    # (1.6.0) «Cancelar»
         d = cache[_clave(par[1])]
         if par[0] == "foto":                    # la foto entera es un solo cuadro (la misma regla de la cara)
             return d, vision_ia.revisar_foto(par[1], log)
@@ -1767,6 +1780,7 @@ def analizar(base=DEF_BASE, log=print, hilos=4):
         candado = threading.Lock()
 
         def uno(par):
+            rutas.revisar_parada()                # (1.6.0) «Cancelar»: lo que falta ni empieza
             previo = cache.get(_clave(par[1]))
             try:
                 d = _analizar_archivo(par[0], par[1], previo if previo and not previo.get("error") else None)

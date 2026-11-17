@@ -19,8 +19,10 @@
 ## Mapa de temas (`mapa id=<tema>`)
 <!-- MAPA:INICIO (lo escribe PROGRAMA/herramientas/mapa_codigo.py generar) -->
 - **boton-play**: El boton GO hace todo: analizar, armar en DaVinci, renderizar, masterizar, abrir carpeta
-- **inicio-escena**: Pantalla de Inicio = la de CineCaptions: esfera de particulas, astrolabio GO, cometas, explosion
+- **inicio-escena**: Escena GO de CineCaptions (esfera de particulas, cometas, explosion): OCULTA desde 1.6.0; el Inicio es el astrolabio vivo de la maqueta (tema animaciones)
 - **ventana**: Ventana sin marco: portada al instante, pestanas Material/Textos/Ajustes (voz original, verticales, ruido), chequeo de arranque, instancia unica
+- **diseno**: Diseño 1.6.0 (maquetas de Higgsfield, docs/capturas/propuesta_*): pastilla de estado, panel de Inicio, Material con miniaturas y Linea del dia por momento, Textos con vista previa, Ajustes en tarjetas, Trabajando con pasos, avance por version y Cancelar
+- **animaciones**: Animaciones 1.6.0 hechas en Higgsfield (Kling 3.0): astrolabio vivo (reposo, despertar, trabajo, hecho, dormir), cielo que fluye, bodegon de Ajustes; fundido entre paginas, luz en el titulo, pasos, versiones y Linea del dia vivos, vista previa de Textos con zoom lento, brillo al pasar el raton
 - **arranque**: Abrir sin tiempo de carga y con fluidez: portada nativa, fuentes (una familia, sin simbolos de reserva, hilo por ctypes), numpy/Pillow al primer uso, linea del dia y cielo guardados, tiempos con TRAILER_TIEMPOS
 - **material**: Material: solo fotos JPG, al menos 1 video (las fotos de la intro salen de capturas del video si faltan), arrastrar/agregar y el panel 'Como quedo organizado' (linea del dia)
 - **soltar**: Suelta la carpeta y listo: se usa DONDE ESTA (sin copiar), se une al mismo evento, sus archivos se renombran en su sitio con tipo y momento (nunca se borra nada); nuevo evento solo si el anterior ya termino
@@ -72,7 +74,7 @@
   - Formatos: el horizontal acepta videos horizontales y verticales; el vertical (9:16, mismas duraciones, líneas «… - VERTICAL 1min») solo los grabados en vertical.
 - **Ventana:** en su hilo no se llama a la API de Resolve ni se usa `subprocess`/`sleep`: eso va en hilos (`Trabajo`, `EstadoDV`, `qt_kit.correr_en_hilo`).
 - **Arranque:** el estilo lleva UNA familia de fuente (nunca una lista) y al abrir no se pinta ningún símbolo que Segoe UI no traiga (✓ ☰ ✕ ▶ ⤓ ⚠ ✎, emojis): cualquiera de las dos cosas suma 0,4 s de carga. Nada pesado antes de la ventana (`numpy`, Pillow, lecturas grandes).
-- **Escena de Inicio:** `escena_go`, `estilos_inicio`, `orbe_mecanica`, `ritmo_ui` y `boton_go` vienen de CineCaptions; ahí solo se cambian textos.
+- **Inicio y animaciones (1.6.0):** el Inicio es el astrolabio de la maqueta, vivo (`piezas.Astrolabio` + videos de Higgsfield en `recursos/animaciones`, `mapa id=animaciones`); la escena de CineCaptions (`escena_go` y compañía) queda oculta. Nada se queda quieto, pero cada animación pinta solo mientras se ve y los videos arrancan después de abrir la ventana.
 - **Rutas:** siempre con `rutas.py`, porque en el .exe todo queda junto en `sys._MEIPASS`.
   - `import rutas` pone las carpetas de código en `sys.path`; un script suelto agrega antes `PROGRAMA/nucleo`.
   - Un .py por ruta: `rutas.codigo("x.py")`. Versión, perfiles y LEEME: `rutas.CONFIG_PROG`.

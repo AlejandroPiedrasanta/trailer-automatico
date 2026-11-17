@@ -24,6 +24,18 @@ import subprocess
 
 ES_MAC = sys.platform == "darwin"
 ES_WIN = os.name == "nt"
+
+import threading  # noqa: E402
+PARAR = threading.Event()          # (1.6.0) «Cancelar» en la ventana: el trabajo se detiene en el paso que va
+
+
+class Detenido(BaseException):
+    """Se lanza al cancelar. BaseException: ningun «except Exception» del armado lo traga."""
+
+
+def revisar_parada():
+    if PARAR.is_set():
+        raise Detenido()
 CONGELADO = bool(getattr(sys, "frozen", False))
 NOMBRE_APP = "TrailerAutomatico"
 

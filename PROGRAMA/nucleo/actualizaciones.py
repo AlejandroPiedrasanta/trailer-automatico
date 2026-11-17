@@ -21,7 +21,6 @@ Nada de esto corre en el hilo de la ventana.
 """
 import os
 import re
-import sys
 import ssl
 import json
 import time

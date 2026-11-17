@@ -215,9 +215,9 @@ def app():
     _tiempo("sin portada")
     from PySide6.QtCore import (Qt, QThread, Signal, QTimer, QPointF, QRectF, QSize, QFileSystemWatcher, QVariantAnimation,
                                 QEasingCurve, QEvent, QLockFile)
-    from PySide6.QtGui import (QColor, QIcon, QPainter, QPixmap, QPolygonF, QPen, QBrush, QFont, QPainterPath,
-                               QRadialGradient, QLinearGradient, QConicalGradient, QImageReader)
-    from PySide6.QtWidgets import (QAbstractButton, QApplication, QCheckBox, QComboBox, QFileDialog, QFrame,
+    from PySide6.QtGui import (QColor, QIcon, QPainter, QPixmap, QPen, QBrush, QFont, QPainterPath,
+                               QRadialGradient, QLinearGradient, QImageReader)
+    from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFrame,
                                    QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
                                    QPushButton, QSizeGrip, QSlider, QStackedWidget, QVBoxLayout, QWidget, QScrollArea, QSizePolicy,
                                    QButtonGroup)
@@ -225,8 +225,7 @@ def app():
     import piezas                                  # (1.6.0) las piezas del diseño nuevo (Higgsfield, 17-nov)
     _tiempo("PySide6 importado")
 
-    ORO, ORO_CLARO, ORO_OSCURO = QColor("#C9A267"), QColor("#EBCB8F"), QColor("#6E4C24")
-    ESMERALDA, ESMERALDA_CLARO, ESMERALDA_OSCURO = QColor("#22C47E"), QColor("#7CF2C0"), QColor("#06301F")
+    ESMERALDA = QColor("#22C47E")
     TEXTO, TENUE, AMBAR, ROJO = "#EAF2F0", "#8FA3A8", "#F2B84B", "#F07A6A"
     # ---- fuentes (medido el 2026-11-16 en una PC con 628 familias; todo esto era «tiempo de carga» al abrir)
     #  1. La primera vez que Qt mide un texto arma la lista de fuentes de la PC: 0,2 s.

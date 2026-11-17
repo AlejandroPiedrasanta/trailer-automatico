@@ -237,6 +237,15 @@ def cargar_perfil(tipo):
     return perfil
 
 
+def _gesto(f):
+    """(1.6.0) La mirada de una foto (la vio la IA en el analisis, cache «mirada»): 0 con los ojos cerrados; un poco mas
+    si sonrie y mira a la camara; 1 si no se sabe."""
+    m = f.get("mirada") or {}
+    if m.get("ojos") == "cerrados":
+        return 0.0
+    return 1.0 + 0.15 * bool(m.get("sonrie")) + 0.05 * bool(m.get("mira"))
+
+
 def _modulo(nombre):
     ruta = rutas.codigo(nombre + ".py")
     spec = importlib.util.spec_from_file_location(nombre, ruta)
@@ -704,9 +713,12 @@ class Planificador:
         # con la persona festejada y poca gente (un retrato suyo, no una foto de grupo); si no hay, donde salga
         retratos = [f for f in cand if f.get("prota") and len(f.get("caras") or []) <= 3]
         cand = retratos or [f for f in cand if f.get("prota")] or cand
+        # (1.6.0) «foto final sin ojos cerrados»: la IA miro las candidatas (cache «mirada»): fuera las de ojos cerrados
+        # y, a nitidez parecida, gana la que sonrie y mira a la camara
+        cand = [f for f in cand if _gesto(f) > 0] or cand
         if not cand:
             return None
-        f = max(cand, key=lambda x: x["nitidez"])
+        f = max(cand, key=lambda x: x["nitidez"] * _gesto(x))
         self.fotos_usadas.add(f["ruta"])
         return {"tipo": "foto", "item": f, "dur_f": dur_f, "orden": _hora(f), "momento": f.get("momento"),
                 "relleno": True, "final": True, "hash": int(f["dhash"], 16) if f.get("dhash") else None}
@@ -765,6 +777,7 @@ class Planificador:
         cand = [f for f in self.fotos if f.get("brillo", 0.5) >= BRILLO_MIN_INTRO] or self.fotos
         # (1.5.7) lo que vio la IA local: fuera las que no sirven; con los novios / la festejada si alcanzan
         cand = [f for f in cand if (f.get("ia") or {}).get("util") is not False] or cand
+        cand = [f for f in cand if _gesto(f) > 0] or cand          # (1.6.0) sin ojos cerrados (los que vio la IA)
         con_novios = [f for f in cand if set((f.get("ia") or {}).get("etiquetas") or []) & {"novia", "novio", "festejada"}]
         if len(con_novios) >= n:
             cand = con_novios
@@ -3158,6 +3171,13 @@ def main():
             info["textos_nuevos"] = textos_extra(tl, mp, png, zonas, fps, perfil, ver, cortes)
         except Exception as ex:
             aviso("%s: no se pudieron poner los textos nuevos (%s)" % (nombre, ex))
+        try:                                     # (1.6.0) los titulos de los capitulos para YouTube (capitulos.py)
+            _modulo("capitulos").guardar_titulos(
+                nombre, " · ".join(x for x in (NOMBRE_XV, FRASE or perfil.get("titulo", "")) if x) or "Inicio",
+                {z: (v[0] if isinstance(v, (list, tuple)) and v else str(v))
+                 for z, v in (perfil.get("capitulos") or {}).items()})
+        except Exception as ex:
+            aviso("%s: no se pudieron guardar los capitulos (%s)" % (nombre, ex))
         info["whoosh"] = whooshes(tl, mp, zonas, fps, whoosh)
         try:                                     # SFX segun el momento (campanas en la iglesia, vitores en la fiesta)
             info["sfx"] = _modulo("sfx").sonorizar(tl, mp, lambda k: buscar_clip(root, k),

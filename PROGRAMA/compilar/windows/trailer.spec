@@ -41,6 +41,8 @@ a = Analysis(
 # lo que no hace falta y pesa (lecciones de CineCaptions): OpenGL por software y traducciones de Qt
 a.binaries = [b for b in a.binaries if "opengl32sw" not in b[0].lower()]
 a.datas = [d for d in a.datas if not d[0].replace("\\", "/").lower().startswith("pyside6/translations")]
+# el icono de las carpetas del proyecto (desktop.ini y .cf, iconos_carpetas.py) no va en el programa
+a.datas = [d for d in a.datas if "/.cf/" not in d[0].replace("\\", "/") and not d[0].lower().endswith("desktop.ini")]
 
 pyz = PYZ(a.pure)
 

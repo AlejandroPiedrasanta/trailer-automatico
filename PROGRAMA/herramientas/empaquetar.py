@@ -20,7 +20,7 @@ import rutas  # noqa: E402
 
 NOMBRE = "Trailer automatico (Mac).zip"
 RAIZ_ZIP = "TRAILER AUTOMATICO"
-SALTAR = {"datos", "__pycache__", "compilar"}
+SALTAR = {"datos", "__pycache__", "compilar", ".cf"}
 
 
 RAIZ = os.path.dirname(rutas.PROGRAMA)        # la carpeta del proyecto (solo PROGRAMA y 3 INSTALADORES, 16-nov)
@@ -56,7 +56,7 @@ def empaquetar(log=print):
         for raiz, dirs, archivos in os.walk(rutas.PROGRAMA):
             dirs[:] = [d for d in dirs if d not in SALTAR]
             for f in archivos:
-                if f.endswith((".pyc", ".tmp")):
+                if f.endswith((".pyc", ".tmp")) or f == "desktop.ini":
                     continue
                 p = os.path.join(raiz, f)
                 rel = os.path.relpath(p, RAIZ).replace(os.sep, "/")

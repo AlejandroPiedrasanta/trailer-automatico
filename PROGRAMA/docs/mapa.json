@@ -158,7 +158,7 @@
    "Miniaturas: nucleo/miniaturas.py en DATOS/miniaturas (Borrar cache las incluye); siempre en un hilo.",
    "Prueba: scratchpad captura_paginas.py / captura_estados.py (motor.armar_todo falso y analisis de mentira con tomas reales de D:/BODA 7 NOVIEMBRE); probar_arrastre.py: TODO BIEN en 56 s.",
    "(17-nov) «Hazlo 100% igual»: el Inicio ya no es la escena GO de CineCaptions (escena_go queda oculta y sin uso): es el astrolabio de la maqueta (piezas.Astrolabio, vivo: tema animaciones). Los pasos van en piezas.Pasos (PASOS_VISTA / ETAPAS_VISTA) y el avance de cada version en piezas.Versiones (lee el registro: «VIDEO FINAL 1 MIN lista» y «1min Rendering 45%»).",
-   "Medidas: todo en px() de la maqueta (2048 x 1360) por piezas.ESCALA; _escalar re-aplica qss_diseno() al cambiar de tamaño y llama reescalar() de cada pieza. Ajustes: el bodegon recortado (recursos/ajustes_bodegon.png) sobre el cielo; fondo_ajustes.jpg e ilustracion_ajustes.jpg ya no se usan.",
+   "Medidas: todo en px() de la maqueta (2048 x 1360) por piezas.ESCALA; _escalar re-aplica qss_diseno() al cambiar de tamaño y llama reescalar() de cada pieza. Ajustes: el bodegon recortado (recursos/ajustes_bodegon.png) sobre el cielo; fondo_ajustes.jpg e ilustracion_ajustes.jpg ya no se usan (guardados en docs/capturas).",
    "Iconos (17-nov, la persona: «usa Higgsfield para los iconos»): hojas de 4x4 iconos de trazo dorado sobre negro (gpt_image_2_6) -> herramientas/preparar_iconos.py -> recursos/iconos/<tipo>.png (blanco con alfa, 256 px). piezas.icono los pinta del color pedido con un degradado sutil y los guarda hechos (_ICONOS); los de controles (palomita, x, play, min, max, punto) siguen dibujados (SOLO_DIBUJADOS) y si falta un png, el dibujo de siempre."
   ]
  },
@@ -398,7 +398,8 @@
    "config"
   ],
   "archivos": [
-   "PROGRAMA/nucleo/rutas.py"
+   "PROGRAMA/nucleo/rutas.py",
+   "PROGRAMA/herramientas/iconos_carpetas.py"
   ],
   "simbolos": [
    "CONFIG_PROG",
@@ -418,6 +419,7 @@
    "_salida"
   ],
   "notas": [
+   "(17-nov) Iconos de carpeta como CINESLIDE (carpeta negra de CINEMA PRODUCTIONS con el nombre): python PROGRAMA/herramientas/iconos_carpetas.py (--quitar los quita). Raiz, PROGRAMA, 3 INSTALADORES y las de dentro; una carpeta nueva -> volver a correrlo. Cada una lleva ocultos .cf/icono.ico y desktop.ini: git, trailer.spec, empaquetar.py y la copia de LUT (tareas.py) los saltan. Base sin nombre: compilar/icono/carpeta_base.png.",
    "Instalado (1.5.7): recursos en sys._MEIPASS; datos en %LOCALAPPDATA%/TrailerAutomatico (Mac ~/Library/Application Support/TrailerAutomatico); BASE (1 MATERIAL) = DATOS/trabajo, por dentro. Codigo: BASE = carpeta del proyecto. TRAILER_BASE / TRAILER_DATOS para pruebas.",
    "Lo unico a la vista: SALIDA (Escritorio, o config.carpeta_terminados de Ajustes) / «EVENTO TERMINADO - <evento>» con VIDEO TERMINADO y PLANTILLAS DE LOS VIDEOS: carpeta_terminado, videos_terminados, plantillas_evento. TERMINADOS = SALIDA (espacio del render).",
    "nombre_video(linea): «... - 15min» -> «VIDEO FINAL 15 MIN»; «... - VERTICAL 1min» -> «VIDEO FINAL VERTICAL 1 MIN» (video y su .drp).",

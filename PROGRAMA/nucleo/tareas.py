@@ -64,6 +64,8 @@ def instalar(est):
     try:
         os.makedirs(rutas.DIR_LUT_MCP, exist_ok=True)
         for f in os.listdir(rutas.DCTL):
+            if not f.lower().endswith((".cube", ".dctl")):      # ni desktop.ini ni .cf (icono de la carpeta)
+                continue
             o, d = os.path.join(rutas.DCTL, f), os.path.join(rutas.DIR_LUT_MCP, f)
             if not os.path.exists(d) or os.path.getsize(d) != os.path.getsize(o):
                 shutil.copy2(o, d)

@@ -6,6 +6,9 @@ EVENTO TERMINADO - */
 INSTALADORES/
 3 INSTALADORES/
 PROGRAMA/datos/
+# icono de las carpetas en Windows (PROGRAMA/herramientas/iconos_carpetas.py)
+desktop.ini
+.cf/
 __pycache__/
 *.pyc
 # musica, SFX y fuentes con licencia: NO se publican tal cual; van cifrados en PROGRAMA/recursos_protegidos/

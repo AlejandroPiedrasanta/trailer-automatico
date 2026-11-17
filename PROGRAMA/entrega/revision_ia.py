@@ -27,6 +27,10 @@ COLOR_AUDIO = "Yellow"           # (1.5.9) lo que oye earshot en el audio final 
 MARCA_AUDIO = "REVISAR (AUDIO)"
 NOTA_AUDIO = ("El oído oye aquí un clic, un hueco de silencio o saturación en el audio. Escúchalo; si molesta, pon un "
               "fundido corto en el corte y pulsa «Renderizar lo editado» en el programa.")
+COLOR_IMAGEN = "Purple"          # (1.6.0) cuadros negros o congelados en el video final (masterizar.revisar_cortes)
+MARCA_IMAGEN = "REVISAR (IMAGEN)"
+NOTA_IMAGEN = ("Aquí el video se queda en negro o congelado (un hueco en la línea o un clip sin su archivo). Llena el "
+               "hueco o vuelve a enlazar el clip y pulsa «Renderizar lo editado» en el programa.")
 
 
 def _duracion(ruta):

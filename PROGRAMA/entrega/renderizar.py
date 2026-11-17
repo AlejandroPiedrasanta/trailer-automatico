@@ -71,13 +71,21 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
             log("En DaVinci queda abierta y editable: %s" % abierta)
     # audio de entrega: -14 LUFS y picos bajo -1 dBTP en todas las versiones (no necesita Resolve)
     import masterizar
-    revisar, revisar_audio = {}, {}
+    revisar, revisar_audio, revisar_imagen = {}, {}, {}
     for k, (nombre, ok, ruta) in enumerate(res, 1):
         if ok:
             if progreso:
                 progreso(100, "Masterizando audio %d de %d" % (k, len(res)))
             masterizar.masterizar(ruta, log)
             masterizar.verificar_imagen(ruta, log)       # mide saturacion y luz del video final
+            try:                                         # (1.6.0) cuadros negros o congelados
+                if progreso:
+                    progreso(100, "Revisando la imagen %d de %d" % (k, len(res)))
+                cortes = masterizar.revisar_cortes(ruta, log)
+                if cortes:
+                    revisar_imagen[nombre] = [s for s, _, _ in cortes]
+            except Exception as ex:
+                log("Aviso: no se pudo revisar la imagen de %s (%s)" % (os.path.basename(ruta), ex))
             try:                                         # (1.5.9) el oido: clics sueltos, huecos y saturacion
                 import oido
                 if progreso:
@@ -96,7 +104,7 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
                     revisar[nombre] = malos
             except Exception as ex:
                 log("Aviso: no se pudo revisar con IA %s (%s)" % (os.path.basename(ruta), ex))
-    if revisar or revisar_audio:                         # marcadores en la linea de DaVinci, para corregir a mano
+    if revisar or revisar_audio or revisar_imagen:       # marcadores en la linea de DaVinci, para corregir a mano
         try:
             import revision_ia
             with motor.CANDADO:
@@ -112,8 +120,25 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
                         n = revision_ia.marcar(tl, revisar_audio[tl.GetName()], inicio - tl.GetStartFrame(),
                                                revision_ia.COLOR_AUDIO, revision_ia.MARCA_AUDIO, revision_ia.NOTA_AUDIO)
                         log("%s: %d marcadores amarillos «REVISAR (AUDIO)» en la linea." % (tl.GetName(), n))
+                    if tl.GetName() in revisar_imagen:
+                        n = revision_ia.marcar(tl, revisar_imagen[tl.GetName()], inicio - tl.GetStartFrame(),
+                                               revision_ia.COLOR_IMAGEN, revision_ia.MARCA_IMAGEN, revision_ia.NOTA_IMAGEN)
+                        log("%s: %d marcadores morados «REVISAR (IMAGEN)» en la linea." % (tl.GetName(), n))
         except Exception as ex:
             log("Aviso: no se pudieron poner los marcadores de revision (%s)" % ex)
+    hechos = {nombre: ruta for nombre, ok, ruta in res if ok}
+    if hechos:                                           # (1.6.0) capitulos para YouTube junto a cada video
+        try:
+            import capitulos
+            with motor.CANDADO:
+                p = motor.conectar_resolve(log).GetProjectManager().GetCurrentProject()
+                desde = {j["TimelineName"]: int(j.get("MarkIn") or 0) for j in jobs}
+                for i in range(1, p.GetTimelineCount() + 1):
+                    tl = p.GetTimelineByIndex(i)
+                    if tl.GetName() in hechos:
+                        capitulos.escribir(tl, desde.get(tl.GetName()) or tl.GetStartFrame(), hechos[tl.GetName()], log)
+        except Exception as ex:
+            log("Aviso: no se pudieron escribir los capítulos para YouTube (%s)" % ex)
     return res
 
 

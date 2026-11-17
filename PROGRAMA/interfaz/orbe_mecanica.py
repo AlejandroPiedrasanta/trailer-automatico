@@ -23,7 +23,6 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QFont, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
                            QPolygonF, QRadialGradient)
 
-import qt_kit as ui
 from qt_kit import fuente
 
 

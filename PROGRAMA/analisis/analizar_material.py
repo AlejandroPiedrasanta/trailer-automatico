@@ -1544,6 +1544,46 @@ def _ver_con_ia(cache, lista, log):
     _instantes_con_ia(cache, largos, log, vision_ia)
 
 
+MIRADAS_MAX = 20                 # (1.6.0) fotos que la IA revisa por la mirada (las candidatas a la final y la intro)
+
+
+def _miradas_con_ia(cache, lista, log):
+    """(1.6.0) «Foto final sin ojos cerrados»: la IA local mira las mejores candidatas a la imagen final y a la intro
+    (nitidas, bien expuestas, con los novios o la festejada) y anota si alguien sale con los ojos cerrados, si sonrie y
+    si mira a la camara (cache «mirada»). build_trailers deja fuera las de ojos cerrados. Sin IA local o con la GPU
+    ocupada (DaVinci abierto) no hace nada: se hace la proxima vez."""
+    try:
+        import vision_ia
+    except Exception:
+        return
+    fotos = [(cache[_clave(r)], r) for t, r in lista if t == "foto" and _clave(r) in cache
+             and not cache[_clave(r)].get("error")]
+    cand = [(d, r) for d, r in fotos if d.get("nitidez") is not None and d.get("quemado", 0.0) < 0.08
+            and 0.22 <= d.get("brillo", 0.5) <= 0.62 and (d.get("ia") or {}).get("util") is not False]
+    gente = [(d, r) for d, r in cand if set((d.get("ia") or {}).get("etiquetas") or []) & {"novia", "novio", "festejada"}]
+    cand = sorted(gente or cand, key=lambda p: -p[0]["nitidez"])[:MIRADAS_MAX]
+    falta = [(d, r) for d, r in cand if (d.get("mirada") or {}).get("v", 0) < vision_ia.MIRADA_V]
+    if not falta or not vision_ia.modelo(log):
+        return
+    if not vision_ia.en_gpu():
+        log("La GPU está ocupada (DaVinci abierto): la mirada de las fotos se revisa la próxima vez.")
+        return
+    import time
+    t0 = time.time()
+
+    def una(par):
+        rutas.revisar_parada()                    # «Cancelar»
+        return par[0], vision_ia.mirada(par[1], log)
+    cerrados = 0
+    with ThreadPoolExecutor(vision_ia.PARALELO) as ex:
+        for d, m in ex.map(una, falta):
+            if m:
+                d["mirada"] = m
+                cerrados += m.get("ojos") == "cerrados"
+    log("La IA local miró los ojos en %d fotos candidatas (%.0f s): %d con los ojos cerrados quedan fuera de la imagen "
+        "final y la intro." % (len(falta), time.time() - t0, cerrados))
+
+
 def _oir(cache, lista, log):
     """(1.5.9) El oido (oido.py, earshot en la CPU) escucha cada toma en un hilo mientras la IA local la mira en la
     GPU: aplausos, vitores, risas, discursos, musica. Queda en el cache («oido»). Sin earshot no hace nada."""
@@ -1805,6 +1845,12 @@ def analizar(base=DEF_BASE, log=print, hilos=4):
     _nombres_originales(cache)
     oir = _oir(cache, lista, log)               # (1.5.9) el oido (CPU) escucha mientras la IA local (GPU) mira
     _ver_con_ia(cache, lista, log)
+    try:                                        # (1.6.0) ojos abiertos en las candidatas a la foto final y la intro
+        _miradas_con_ia(cache, lista, log)
+    except rutas.Detenido:
+        raise
+    except Exception as ex:
+        log("Aviso: no se pudo revisar la mirada de las fotos (%s)" % ex)
     if oir:
         if oir.is_alive():
             log("El oído termina de escuchar...")

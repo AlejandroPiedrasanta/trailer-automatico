@@ -95,6 +95,44 @@ def verificar_imagen(ruta, log=print):
     return res
 
 
+# (1.6.0) Control de cuadros NEGROS y CONGELADOS en el video final (la persona eligio esta mejora). Umbrales para no
+# confundir lo que es a proposito: los fundidos entre momentos pasan por negro menos de 1 s y las fotos llevan zoom.
+NEGRO_MIN_S = 1.0
+CONGELADO_MIN_S = 2.0
+SIN_REVISAR_INICIO_S, SIN_REVISAR_FINAL_S = 3.0, 12.0     # el fundido de la plantilla; la foto final con su tarjeta
+
+
+def revisar_cortes(ruta, log=print):
+    """Cuadros negros o congelados en el video final (un hueco en la linea, un clip sin su medio, un render trabado).
+    Devuelve [(segundo, "negro"|"congelado", duracion)] fuera del principio y del final; renderizar.py pone un marcador
+    morado «REVISAR (IMAGEN)» en cada uno."""
+    filtro = ("scale=320:-2,blackdetect=d=%.2f:pic_th=0.98:pix_th=0.06,freezedetect=n=0.003:d=%.2f"
+              % (NEGRO_MIN_S, CONGELADO_MIN_S))
+    r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", ruta, "-an", "-vf", filtro, "-f", "null", "-"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3600,
+                       stdin=subprocess.DEVNULL, creationflags=SIN_VENTANA)
+    d = re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", r.stderr)
+    total = int(d.group(1)) * 3600 + int(d.group(2)) * 60 + float(d.group(3)) if d else 0.0
+    malos = [(float(a), "negro", float(b) - float(a))
+             for a, b in re.findall(r"black_start:\s*([\d.]+)\s+black_end:\s*([\d.]+)", r.stderr)]
+    ini = [float(x) for x in re.findall(r"freeze_start:\s*([\d.]+)", r.stderr)]
+    fin = [float(x) for x in re.findall(r"freeze_end:\s*([\d.]+)", r.stderr)]
+    negros = list(malos)
+    for k, a in enumerate(ini):
+        b = fin[k] if k < len(fin) else total
+        if not any(n0 - 0.2 <= a and a + (b - a) <= n0 + dn + 0.2 for n0, _, dn in negros):   # el negro ya esta
+            malos.append((a, "congelado", b - a))
+    malos = sorted(m for m in malos if m[0] >= SIN_REVISAR_INICIO_S
+                   and (not total or m[0] + m[2] <= total - SIN_REVISAR_FINAL_S))
+    if malos:
+        log("Imagen %s: %s. Quedan marcadores morados «REVISAR (IMAGEN)» en la línea." % (
+            os.path.basename(ruta), ", ".join("%s %.1f s en %d:%02d" % (t, dur, int(s) // 60, int(s) % 60)
+                                              for s, t, dur in malos[:6])))
+    else:
+        log("Imagen %s: sin cuadros negros ni congelados." % os.path.basename(ruta))
+    return malos
+
+
 def masterizar_carpeta(carpeta, log=print):
     hechos = 0
     for f in sorted(os.listdir(carpeta)):

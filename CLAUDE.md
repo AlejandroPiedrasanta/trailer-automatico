@@ -8,6 +8,7 @@
   - `3 INSTALADORES`: Windows (.exe) · Mac (.dmg).
   - `PROGRAMA`: solo carpetas. Código en `interfaz/` (ventana, icono, Inicio), `nucleo/` (motor, rutas, registro, tareas), `analisis/` (material, escenas IA, ritmo), `armado/` (plantillas, SFX, mezcla, IntelliSearch), `entrega/` (render, master) y `herramientas/` (mapa_codigo, empaquetar). Además `config/` (versión, perfiles, requisitos, LEEME), `datos/` (cachés, respaldos, `registro/`), `recursos/`, `recursos_protegidos/`, `dctl/`, `compilar/` (`windows/`, `mac/`, `icono/`) y `docs/` (SKILL, mapa, capturas).
   - Ocultos en la raíz: `.git*`, `.github` y este `CLAUDE.md` (atributo oculto).
+  - Iconos de carpeta como CINESLIDE (ocultos `.cf/icono.ico` + `desktop.ini` en cada una): `python PROGRAMA/herramientas/iconos_carpetas.py`; al crear una carpeta nueva, volver a correrlo.
   - `LEEME.txt` para la persona: `PROGRAMA/config/LEEME.txt`. Para abrir sin instalar: `PROGRAMA/herramientas/ARMAR TRAILERS.bat` / `.command` (también sirven junto a `PROGRAMA` en el paquete de Mac).
 
 ## Encontrar algo sin leer archivos (en este orden)

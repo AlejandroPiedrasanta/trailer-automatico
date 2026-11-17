@@ -39,6 +39,7 @@ a = Analysis(
               "PySide6.QtSql", "PySide6.QtTest", "PySide6.QtBluetooth", "PySide6.QtPositioning", "PySide6.QtSvg"],
 )
 a.datas = [d for d in a.datas if not d[0].replace("\\", "/").lower().startswith("pyside6/translations")]
+a.datas = [d for d in a.datas if "/.cf/" not in d[0].replace("\\", "/") and not d[0].lower().endswith("desktop.ini")]
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="TrailerAutomatico", console=False, upx=False,
           argv_emulation=False)

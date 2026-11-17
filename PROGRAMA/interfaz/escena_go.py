@@ -26,13 +26,12 @@ Los sonidos del impacto y de la explosión son sintéticos (numpy) y muy suaves;
 import math
 import random
 import time
-from pathlib import Path
 
 import numpy as np
 
 import ritmo_ui
 from PySide6.QtCore import QEvent, QLineF, QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import (QColor, QConicalGradient, QFont, QFontMetricsF, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QPolygonF,
+from PySide6.QtGui import (QColor, QFont, QFontMetricsF, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QPolygonF,
                            QRadialGradient, QTransform)
 from PySide6.QtWidgets import QWidget
 
@@ -411,7 +410,6 @@ class EscenaGo(QWidget):
         self._sonidos = {}
         self._rep = None
         self.sonido = True
-        import ritmo_ui
         self._reloj = ritmo_ui.RelojPantalla(self)     # v5.49: a 60/30 fps late con el refresco del monitor (antes un QTimer de 16 ms: 62,5 Hz)
         self._reloj.pantalla = self._ventana_hwnd
         self._reloj.timeout.connect(self._tic)
@@ -822,7 +820,6 @@ class EscenaGo(QWidget):
     @staticmethod
     def _leer_prefs_escena():
         """(en un hilo) El modo de Inicio elegido en Ajustes, el estilo y «Reducir animaciones»."""
-        import ajustes_ui
         import efectos_ui
         import estilos_inicio
         modo = 'completo'                      # v5.69: sin «Animaciones de Inicio» en Ajustes ('go_animaciones' ya no se lee): la calidad adaptativa decide
@@ -1155,7 +1152,6 @@ class EscenaGo(QWidget):
         t = self._t
         e = self.energia
         g = self.gravedad
-        n = len(self._bx)
         # ondas orgánicas: patrón de pétalos que gira + respiración
         amp = 0.016 + 0.030 * e + 0.006 * np.sin(t * 0.7)
         lobulos = 6.0 + (2.0 if e > 0.6 else 0.0)

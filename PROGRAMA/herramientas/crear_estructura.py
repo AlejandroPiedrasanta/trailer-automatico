@@ -13,7 +13,6 @@ Se ejecuta DENTRO de Resolve (MCP: run_script_unsafe) con las variables opcional
     REHACER = True        # borra y reconstruye si la timeline ya existe
                           # (OJO: se pierden los videos y fotos ya colocados; vuelve a correr el PASO 2)
 """
-import os
 
 TEMPLATE = "TRAILER XV 4 - Dua Lipa"
 INTRO_FIN_SEG = 15.0           # el audio de la intro (0 a 15 s) se conserva tal cual

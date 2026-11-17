@@ -206,8 +206,8 @@ class Guion:
 
     # ---- arrastrar y soltar (los mismos eventos que manda el sistema al arrastrar desde el Explorador o el Finder)
     def _arrastrar(self):
-        from PySide6.QtCore import QMimeData, QUrl, QPointF, Qt, QTimer
-        from PySide6.QtGui import QDragEnterEvent, QDropEvent
+        from PySide6.QtCore import QMimeData, QUrl, Qt, QTimer
+        from PySide6.QtGui import QDragEnterEvent
         from PySide6.QtWidgets import QApplication
         self.foto("1_inicio")
         os_ = "%s %s" % (sys.platform, "instalado" if rutas.CONGELADO else "codigo")
@@ -246,7 +246,7 @@ class Guion:
             return self._terminar()
         try:
             getattr(self, "_etapa_" + self.etapa)(w)
-        except Exception as ex:
+        except Exception:
             import traceback
             self.falla("error del guion en «%s»: %s" % (self.etapa, traceback.format_exc()[-400:]))
             self._terminar()

@@ -409,5 +409,41 @@ def describir(tipo, ruta, dur=0.0, log=None):
             "util": not equipo and util is not False and str(util).lower() != "false"}
 
 
+# (1.6.0) LA MIRADA: que la imagen final y las fotos de la intro no salgan con los ojos cerrados (la persona eligio esta
+# mejora: «foto final sin ojos cerrados»). Solo para unas pocas fotos (las mejores candidatas, analizar_material.
+# _miradas_con_ia), con la GPU libre, y queda en el cache («mirada»).
+MIRADA_V = 1
+PROMPT_MIRADA = (
+    "Foto de un evento (boda, quinceañera o bautizo). Mira a la persona principal (la más grande o la del centro; si es "
+    "una pareja, a los dos). Responde SOLO un JSON con:\n"
+    "\"ojos\": \"abiertos\" si tiene los ojos abiertos, \"cerrados\" si los tiene cerrados o a medio cerrar (parpadeando o "
+    "con los ojos entrecerrados), \"no_se_ve\" si no se le ve bien la cara;\n"
+    "\"sonrie\": true si sonríe o se ve feliz; false si no;\n"
+    "\"mira\": true si mira a la cámara; false si no.")
+FORMATO_MIRADA = {"type": "object", "properties": {
+    "ojos": {"type": "string", "enum": ["abiertos", "cerrados", "no_se_ve"]}, "sonrie": {"type": "boolean"},
+    "mira": {"type": "boolean"}}, "required": ["ojos", "sonrie", "mira"]}
+
+
+def mirada(ruta, log=None):
+    """{"v", "ojos": abiertos|cerrados|no_se_ve, "sonrie", "mira"} de una foto, o None (sin IA local o si falla)."""
+    nombre = modelo()
+    img = _foto(ruta) if nombre else None
+    if not img:
+        return None
+    cuerpo = {"model": nombre, "stream": False, "format": FORMATO_MIRADA, "keep_alive": "10m",
+              "options": {"temperature": 0, "num_predict": 60, "num_ctx": NUM_CTX},
+              "messages": [{"role": "user", "content": PROMPT_MIRADA, "images": [img]}]}
+    try:
+        d = json.loads(_pedir("/api/chat", cuerpo, timeout=120.0)["message"]["content"])
+    except Exception as ex:
+        if log:
+            log("Aviso: la IA local no pudo ver la mirada en %s (%s)" % (os.path.basename(ruta), str(ex)[:80]))
+        return None
+    ojos = str(d.get("ojos") or "").strip().lower()
+    return {"v": MIRADA_V, "ojos": ojos if ojos in ("abiertos", "cerrados", "no_se_ve") else "no_se_ve",
+            "sonrie": _si(d.get("sonrie")), "mira": _si(d.get("mira"))}
+
+
 def _si(x):
     return x is True or str(x).strip().lower() in ("true", "si", "sí", "yes", "1")

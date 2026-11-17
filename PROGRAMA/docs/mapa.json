@@ -115,7 +115,8 @@
    "PROGRAMA/interfaz/linea_dia.py",
    "PROGRAMA/interfaz/trailer_xv.py",
    "PROGRAMA/nucleo/miniaturas.py",
-   "PROGRAMA/nucleo/rutas.py"
+   "PROGRAMA/nucleo/rutas.py",
+   "PROGRAMA/herramientas/preparar_iconos.py"
   ],
   "simbolos": [
    "Pasos",
@@ -146,7 +147,9 @@
    "_toma_movida",
    "_escalar",
    "qss_diseno",
-   "guardar_excepcion"
+   "guardar_excepcion",
+   "_mascara",
+   "_de_mascara"
   ],
   "notas": [
    "(17-nov) La persona: «hazlo así, exactamente así». Maquetas en docs/capturas/propuesta_1..5; ilustracion de Ajustes y fondo de la vista previa hechos en Higgsfield: recursos/ilustracion_ajustes.jpg y fondo_titulo.jpg.",
@@ -155,7 +158,8 @@
    "Miniaturas: nucleo/miniaturas.py en DATOS/miniaturas (Borrar cache las incluye); siempre en un hilo.",
    "Prueba: scratchpad captura_paginas.py / captura_estados.py (motor.armar_todo falso y analisis de mentira con tomas reales de D:/BODA 7 NOVIEMBRE); probar_arrastre.py: TODO BIEN en 56 s.",
    "(17-nov) «Hazlo 100% igual»: el Inicio ya no es la escena GO de CineCaptions (escena_go queda oculta y sin uso): es el astrolabio de la maqueta (piezas.Astrolabio, vivo: tema animaciones). Los pasos van en piezas.Pasos (PASOS_VISTA / ETAPAS_VISTA) y el avance de cada version en piezas.Versiones (lee el registro: «VIDEO FINAL 1 MIN lista» y «1min Rendering 45%»).",
-   "Medidas: todo en px() de la maqueta (2048 x 1360) por piezas.ESCALA; _escalar re-aplica qss_diseno() al cambiar de tamaño y llama reescalar() de cada pieza. Ajustes: el bodegon recortado (recursos/ajustes_bodegon.png) sobre el cielo; fondo_ajustes.jpg e ilustracion_ajustes.jpg ya no se usan."
+   "Medidas: todo en px() de la maqueta (2048 x 1360) por piezas.ESCALA; _escalar re-aplica qss_diseno() al cambiar de tamaño y llama reescalar() de cada pieza. Ajustes: el bodegon recortado (recursos/ajustes_bodegon.png) sobre el cielo; fondo_ajustes.jpg e ilustracion_ajustes.jpg ya no se usan.",
+   "Iconos (17-nov, la persona: «usa Higgsfield para los iconos»): hojas de 4x4 iconos de trazo dorado sobre negro (gpt_image_2_6) -> herramientas/preparar_iconos.py -> recursos/iconos/<tipo>.png (blanco con alfa, 256 px). piezas.icono los pinta del color pedido con un degradado sutil y los guarda hechos (_ICONOS); los de controles (palomita, x, play, min, max, punto) siguen dibujados (SOLO_DIBUJADOS) y si falta un png, el dibujo de siempre."
   ]
  },
  {
@@ -1001,7 +1005,9 @@
    "Icono: la imagen EXACTA de la persona (recursos/icono_fuente.png, sin fondo con: python PROGRAMA/compilar/icono/icono.py limpiar <imagen>). icono_app.dibujar la escala; sin ese archivo dibuja la version vectorial.",
    "El instalador son DOS archivos: el .exe (1 MB, abre al instante) y el .dat de al lado (el programa). Con todo en un .exe de 560 MB el antivirus lo revisaba entero antes de arrancar (8 s sin ver nada). La actualizacion publica sigue siendo un solo .exe.",
    "Sin autoprueba en el instalador ni espera al terminar: abre el programa y se queda hasta que su ventana se ve.",
-   "Icono: hasta 24 px va la version simplificada (la imagen detallada se volvia una mancha); 25-48 px afilada."
+   "Icono: hasta 24 px va la version simplificada (la imagen detallada se volvia una mancha); 25-48 px afilada.",
+   "(1.6.0) Los accesos del Inicio y el Escritorio llevan System.AppUserModel.ID = CinemaProductions.Trailer (Instalador.cs: Acceso via IShellLinkW + IPropertyStore), el mismo que pone la ventana (SetCurrentProcessExplicitAppUserModelID). Sin eso, abrirlo desde un icono anclado o «Recomendado» daba «Windows no puede encontrar el archivo cinemaproductions.trailer». Comprobar: Get-StartApps -> AppID.",
+   "(1.6.0) El .exe lleva sus datos (trailer.spec: VSVersionInfo -> «Tráiler automático», CINEMA PRODUCTIONS, version); el instalador lee el archivo de estado con FileShare.ReadWrite y tareas._escribir reintenta (antes: «Permission denied: trailer_instalar.txt»). El .ico trae 15 tamaños (16-256); hasta 40 px el dibujo simplificado de icono_app._chico."
   ]
  },
  {

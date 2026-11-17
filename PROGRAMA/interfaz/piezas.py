@@ -251,16 +251,74 @@ def _dibujar(p, tipo, col, s, grosor=None):
         p.drawEllipse(QPointF(cx * s, cy * s), r * s, r * s)
 
 
-def icono(tipo, color, lado=16, grosor=None):
-    """QPixmap del icono (dibujado a 4x: nitido en pantallas al 150 %)."""
-    k = 4
-    pm = QPixmap(int(lado * k), int(lado * k))
-    pm.setDevicePixelRatio(k)
-    pm.fill(Qt.transparent)
-    p = QPainter(pm)
-    p.setRenderHint(QPainter.Antialiasing)
-    _dibujar(p, tipo, QColor(color), float(lado), grosor)
+_MASCARAS = {}                       # (1.6.0) tipo -> QImage de recursos/iconos (Higgsfield) o None
+_ICONOS = {}                         # (tipo, color, lado, grosor) -> QPixmap ya hecho (se piden en cada pintada)
+# los de controles (palomita, x, play...) quedan dibujados: son geometria simple y se ven mejor exactos
+SOLO_DIBUJADOS = {"palomita", "check", "check_lleno", "cancelar", "min", "max", "x", "play", "punto"}
+
+
+def _mascara(tipo):
+    if tipo not in _MASCARAS:
+        img = None
+        if tipo not in SOLO_DIBUJADOS:
+            try:
+                import rutas
+                archivo = {"globo": "fiesta"}.get(tipo, tipo)
+                ruta = os.path.join(rutas.RECURSOS, "iconos", archivo + ".png")
+                if os.path.isfile(ruta):
+                    img = QImage(ruta).convertToFormat(QImage.Format_ARGB32_Premultiplied)
+                    img = None if img.isNull() else img
+            except Exception:
+                img = None
+        _MASCARAS[tipo] = img
+    return _MASCARAS[tipo]
+
+
+def _de_mascara(m, color, lado, k):
+    """El icono de Higgsfield del color pedido, con un degradado apenas perceptible (mas claro arriba, como el oro
+    de la maqueta)."""
+    T = max(4, int(round(lado * k)))
+    chica = m.scaled(T, T, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    out = QImage(T, T, QImage.Format_ARGB32_Premultiplied)
+    out.fill(Qt.transparent)
+    p = QPainter(out)
+    p.drawImage(QPointF((T - chica.width()) / 2.0, (T - chica.height()) / 2.0), chica)
+    p.setCompositionMode(QPainter.CompositionMode_SourceIn)
+    c = QColor(color)
+    g = QLinearGradient(0, 0, 0, T)
+    g.setColorAt(0.0, c.lighter(118))
+    g.setColorAt(0.55, c)
+    g.setColorAt(1.0, c.darker(110))
+    p.fillRect(QRectF(0, 0, T, T), g)
     p.end()
+    pm = QPixmap.fromImage(out)
+    pm.setDevicePixelRatio(k)
+    return pm
+
+
+def icono(tipo, color, lado=16, grosor=None):
+    """QPixmap del icono (a 4x: nitido en pantallas al 150 %). (1.6.0) Los de dibujo (fotos, video, dron, iglesia...)
+    salen de los iconos de Higgsfield (recursos/iconos, herramientas/preparar_iconos.py); si falta uno, el dibujo de
+    siempre. Se guardan hechos: se piden en cada pintada."""
+    clave = (tipo, QColor(color).name(QColor.HexArgb), int(round(lado * 4)), grosor)
+    pm = _ICONOS.get(clave)
+    if pm is not None:
+        return pm
+    k = 4
+    m = _mascara(tipo)
+    if m is not None:
+        pm = _de_mascara(m, color, lado, k)
+    else:
+        pm = QPixmap(int(lado * k), int(lado * k))
+        pm.setDevicePixelRatio(k)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing)
+        _dibujar(p, tipo, QColor(color), float(lado), grosor)
+        p.end()
+    if len(_ICONOS) > 500:
+        _ICONOS.clear()
+    _ICONOS[clave] = pm
     return pm
 
 

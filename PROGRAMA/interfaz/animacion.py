@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import threading
 import time
+import weakref
 
 from PySide6.QtCore import QObject, Qt, Signal, Slot, QVariantAnimation, QEasingCurve, QPointF, QRectF, QEvent
 from PySide6.QtGui import QImage, QPainter, QColor, QPen, QLinearGradient
@@ -37,13 +38,92 @@ def ruta(nombre):
     return r if os.path.isfile(r) else None
 
 
+_CERRANDO = False
+
+
 @atexit.register
 def _cerrar_todas():
+    global _CERRANDO
+    _CERRANDO = True                    # los hilos ya no avisan a una ventana que se esta destruyendo
     for p in list(_VIVAS):
         try:
             p.kill()
         except Exception:
             pass
+
+
+def _abrir(cmd):
+    """ffmpeg con su salida por un tubo -> (proceso, archivo para leer) o None. En Windows el tubo es de 4 MB: con el
+    de siempre (4 KB) cada cuadro del cielo eran miles de lecturas (la mitad de la CPU del lector, medido)."""
+    if rutas.ES_WIN:
+        try:
+            import _winapi
+            import msvcrt
+            leer, escribir = _winapi.CreatePipe(None, 4 << 20)
+            try:
+                fd = msvcrt.open_osfhandle(escribir, 0)
+            except Exception:
+                _winapi.CloseHandle(escribir)
+                _winapi.CloseHandle(leer)
+                raise
+            try:
+                p = subprocess.Popen(cmd, stdout=fd, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                                     creationflags=rutas.SIN_VENTANA)
+            except Exception:
+                _winapi.CloseHandle(leer)
+                raise
+            finally:
+                os.close(fd)                              # nuestra punta de escritura: sin ella llega el fin
+            return p, open(msvcrt.open_osfhandle(leer, 0), "rb", buffering=0)
+        except Exception:
+            pass
+    try:
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                             bufsize=0, creationflags=rutas.SIN_VENTANA)
+        return p, p.stdout
+    except Exception:
+        return None
+
+
+def _leer(tubo, buf, n):
+    """Llena buf con un cuadro entero; False al terminar el video (o si se corto)."""
+    mv = memoryview(buf)
+    hecho = 0
+    try:
+        while hecho < n:
+            m = tubo.readinto(mv[hecho:])
+            if not m:
+                return False
+            hecho += m
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+_PELIS = weakref.WeakSet()
+
+
+def detener_todas():
+    """(1.6.0) Al cerrar la ventana: para cada video (ffmpeg fuera) antes de que se destruyan sus piezas."""
+    global _CERRANDO
+    _CERRANDO = True
+    for peli in list(_PELIS):
+        try:
+            peli.detener()
+        except RuntimeError:
+            pass
+    _cerrar_todas()
+
+
+def _avisar(senal, *args):
+    """Emite desde el hilo; False si la ventana ya se destruyo (al cerrar: «Signal source has been deleted»)."""
+    if _CERRANDO:
+        return False
+    try:
+        senal.emit(*args)
+        return True
+    except RuntimeError:
+        return False
 
 
 class Pelicula(QObject):
@@ -65,6 +145,7 @@ class Pelicula(QObject):
         self.tam = (0, 0)
         self._nuevo.connect(self._tomar, Qt.QueuedConnection)
         self._acabo.connect(self._fin, Qt.QueuedConnection)
+        _PELIS.add(self)
 
     # ---- desde la ventana
     def reproducir(self, ruta, ancho, alto, fps=24.0, bucle=True, alfa=False):
@@ -135,17 +216,21 @@ class Pelicula(QObject):
         cmd += ["-i", ruta, "-an", "-filter_complex", vf, "-map", "[o]", "-f", "rawvideo", "-pix_fmt", "bgra",
                 "pipe:1"]
         n = w * h * 4
-        try:
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
-                                 bufsize=n, creationflags=rutas.SIN_VENTANA)
-        except Exception:
+        abierto = _abrir(cmd)
+        if abierto is None:
             return
+        p, tubo = abierto
         with self._candado:
             if gen != self._gen:
                 p.kill()
+                tubo.close()
                 return
             self._proc = p
         _VIVAS.add(p)
+        # memoria reusada (un cuadro nuevo no pide memoria nueva): ~200 ms de cuadros, para que el que se esta
+        # pintando no se sobrescriba aunque la ventana se demore
+        anillo = [bytearray(n) for _ in range(max(3, int(fps * 0.2) + 2))]
+        k = 0
         siguiente = time.perf_counter()
         terminado = False
         try:
@@ -155,8 +240,9 @@ class Pelicula(QObject):
                         if gen != self._gen:
                             return
                     siguiente = time.perf_counter()
-                buf = p.stdout.read(n)
-                if not buf or len(buf) < n:
+                buf = anillo[k % len(anillo)]
+                k += 1
+                if not _leer(tubo, buf, n):
                     terminado = True
                     break
                 img = QImage(buf, w, h, w * 4, fmt)
@@ -165,8 +251,8 @@ class Pelicula(QObject):
                         break
                     self._ultimo = (gen, img, buf)
                     avisar, self._avisado = not self._avisado, True
-                if avisar:
-                    self._nuevo.emit()
+                if avisar and not _avisar(self._nuevo):
+                    break
                 siguiente += 1.0 / max(1.0, fps * self._factor)
                 espera = siguiente - time.perf_counter()
                 if espera > 0:
@@ -181,8 +267,12 @@ class Pelicula(QObject):
                 p.kill()
             except Exception:
                 pass
-            if terminado and gen == self._gen:
-                self._acabo.emit(gen)
+            try:
+                tubo.close()
+            except Exception:
+                pass
+            if terminado and gen == self._gen and not _CERRANDO:
+                _avisar(self._acabo, gen)
 
 
 class _Brillo(QWidget):

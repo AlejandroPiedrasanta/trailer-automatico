@@ -19,16 +19,40 @@ def dibujar(t):
     return icono_app.dibujar(t)
 
 
+# (1.6.0) todos los tamaños que pide Windows a 100/125/150 % (barra, Inicio, Escritorio, Alt+Tab): si falta uno,
+# Windows reduce el siguiente y se ve borroso
+TAMANOS = (256, 128, 96, 80, 72, 64, 60, 48, 40, 36, 32, 30, 24, 20, 16)
+
+
+def _desde_fuente(t):
+    """De 41 px para arriba: la imagen del icono reducida con Lanczos (premultiplicada: sin bordes de color en las
+    esquinas) y, hasta 96 px, un enfoque suave para que la pareja y el oro no se vean lavados."""
+    from PIL import Image, ImageFilter
+    import icono_app
+    f = icono_app._fuente()
+    if not f:
+        return None
+    src = Image.open(f).convert("RGBA")
+    im = src.convert("RGBa").resize((t, t), Image.LANCZOS).convert("RGBA")
+    if t <= icono_app.MEDIANO:
+        im = im.filter(ImageFilter.UnsharpMask(radius=0.8, percent=70 if t >= 64 else 90, threshold=1))
+    return im
+
+
 def guardar(ruta_ico):
     from PIL import Image
     QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
+    import icono_app
     imgs = []
-    for t in (256, 128, 64, 48, 32, 24, 16):
-        buf = QByteArray()
-        b = QBuffer(buf)
-        b.open(QIODevice.WriteOnly)
-        dibujar(t).save(b, "PNG")
-        imgs.append(Image.open(io.BytesIO(bytes(buf))).convert("RGBA"))
+    for t in TAMANOS:
+        im = _desde_fuente(t) if t > icono_app.CHICO else None
+        if im is None:                                   # los chicos: el dibujo simplificado (icono_app._chico)
+            buf = QByteArray()
+            b = QBuffer(buf)
+            b.open(QIODevice.WriteOnly)
+            dibujar(t).save(b, "PNG")
+            im = Image.open(io.BytesIO(bytes(buf))).convert("RGBA")
+        imgs.append(im)
     # cada tamano con su propio dibujo (los chicos van simplificados), no reescalados del grande
     imgs[0].save(ruta_ico, format="ICO", sizes=[(i.width, i.height) for i in imgs], append_images=imgs[1:])
     imgs[0].save(ruta_ico.replace(".ico", ".png"))

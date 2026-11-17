@@ -35,6 +35,53 @@ interface IVista
     void Log(string texto);
 }
 
+// (1.6.0) COM del acceso directo con propiedades (para el AppUserModelID)
+[ComImport, Guid("00021401-0000-0000-C000-000000000046")]
+class ShellLinkCom { }
+
+[ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("000214F9-0000-0000-C000-000000000046")]
+interface IShellLinkW
+{
+    void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszFile, int cch, IntPtr pfd, int fFlags);
+    void GetIDList(out IntPtr ppidl);
+    void SetIDList(IntPtr pidl);
+    void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszName, int cch);
+    void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+    void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszDir, int cch);
+    void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
+    void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszArgs, int cch);
+    void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
+    void GetHotkey(out short pwHotkey);
+    void SetHotkey(short wHotkey);
+    void GetShowCmd(out int piShowCmd);
+    void SetShowCmd(int iShowCmd);
+    void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszIconPath, int cch, out int piIcon);
+    void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
+    void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, int dwReserved);
+    void Resolve(IntPtr hwnd, int fFlags);
+    void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 4)]
+struct ClaveProp { public Guid fmtid; public uint pid; }
+
+[StructLayout(LayoutKind.Explicit, Size = 16)]
+struct ValorProp
+{
+    [FieldOffset(0)] public ushort vt;
+    [FieldOffset(8)] public IntPtr p;
+}
+
+[ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
+interface IPropertyStore
+{
+    void GetCount(out uint cProps);
+    void GetAt(uint iProp, out ClaveProp pkey);
+    void GetValue(ref ClaveProp key, out ValorProp pv);
+    void SetValue(ref ClaveProp key, ref ValorProp pv);
+    void Commit();
+}
+
 static class Instalador
 {
     public const string APP = "TrailerAutomatico";
@@ -248,6 +295,7 @@ static class Instalador
             if (Escritorio)
                 Acceso(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), NOMBRE + ".lnk"), exe);
             Registrar(exe);
+            try { SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero); } catch { }   // (1.6.0) Windows relee los iconos
             L(v, "Accesos en el menú Inicio" + (Escritorio ? " y en el Escritorio" : "") + "; aparece en Configuración > Aplicaciones.");
             P(v, 2, EstadoPaso.Hecho, -1);
 
@@ -287,7 +335,17 @@ static class Instalador
             {
                 if (File.Exists(estado))
                 {
-                    string[] lineas = File.ReadAllLines(estado);
+                    // (1.6.0) leerlo DEJANDO escribir: con File.ReadAllLines el programa no podia anotar mientras se
+                    // leia («Permission denied: trailer_instalar.txt», 13-nov) y la tarea se caia
+                    List<string> l0 = new List<string>();
+                    using (FileStream fs = new FileStream(estado, FileMode.Open, FileAccess.Read,
+                                                          FileShare.ReadWrite | FileShare.Delete))
+                    using (StreamReader sr = new StreamReader(fs, Encoding.UTF8))
+                    {
+                        string s;
+                        while ((s = sr.ReadLine()) != null) l0.Add(s);
+                    }
+                    string[] lineas = l0.ToArray();
                     for (int i = leidas; i < lineas.Length; i++)
                     {
                         string l = lineas[i];
@@ -309,7 +367,40 @@ static class Instalador
         return ultima;
     }
 
+    // (1.6.0) El acceso lleva el mismo AppUserModelID que la ventana (trailer_xv.py: SetCurrentProcessExplicit...).
+    // Sin eso Windows conoce el programa por la ruta del .exe y, al abrirlo por su ID (icono anclado en la barra,
+    // «Recomendado» del Inicio, una notificacion), sale «Windows no puede encontrar el archivo cinemaproductions.trailer».
+    public const string AUMID = "CinemaProductions.Trailer";
+
+    [DllImport("shell32.dll")] static extern void SHChangeNotify(int wEventId, int uFlags, IntPtr dwItem1, IntPtr dwItem2);
+
     static void Acceso(string lnk, string exe)
+    {
+        try
+        {
+            IShellLinkW l = (IShellLinkW)new ShellLinkCom();
+            l.SetPath(exe);
+            l.SetWorkingDirectory(Path.GetDirectoryName(exe));
+            l.SetIconLocation(exe, 0);
+            l.SetDescription("Un clic y listo · CINEMA PRODUCTIONS");
+            IPropertyStore ps = (IPropertyStore)l;
+            ClaveProp clave = new ClaveProp();
+            clave.fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");      // PKEY_AppUserModel_ID
+            clave.pid = 5;
+            ValorProp valor = new ValorProp();
+            valor.vt = 31;                                                     // VT_LPWSTR
+            valor.p = Marshal.StringToCoTaskMemUni(AUMID);
+            try { ps.SetValue(ref clave, ref valor); ps.Commit(); }
+            finally { Marshal.FreeCoTaskMem(valor.p); }
+            ((System.Runtime.InteropServices.ComTypes.IPersistFile)l).Save(lnk, true);
+            Marshal.ReleaseComObject(l);
+            return;
+        }
+        catch { }
+        AccesoSimple(lnk, exe);                       // sin el ID (si fallara la via COM): al menos el acceso
+    }
+
+    static void AccesoSimple(string lnk, string exe)
     {
         try
         {

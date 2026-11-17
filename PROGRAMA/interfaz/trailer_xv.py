@@ -3246,11 +3246,18 @@ def app():
             if self.actualizacion and not self._instalando:      # la version nueva ya bajada se instala al cerrar
                 self._instalando = True
                 self._lanzar_instalacion(reabrir=False)
+            try:                                       # (1.6.0) los videos se paran antes de destruirse la ventana
+                import animacion
+                animacion.detener_todas()
+            except Exception:
+                pass
             e.accept()
 
     if rutas.ES_WIN:
         try:
             import ctypes
+            # el MISMO ID que llevan los accesos del Inicio y el Escritorio (Instalador.cs: AUMID); si no coinciden,
+            # Windows no sabe abrirlo desde un icono anclado: «no puede encontrar cinemaproductions.trailer» (1.6.0)
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("CinemaProductions.Trailer")
         except Exception:
             pass
@@ -3264,7 +3271,7 @@ def app():
     # Mientras esa lista se arma (0,2 s), aqui se hace lo que no necesita letras: cargar el codigo de la escena de
     # Inicio y de las paginas (0,1 s de puro Python). Despues el estilo ya pide fuentes y esperaria igual.
     try:
-        import boton_go, escena_go, linea_dia  # noqa: F401
+        import escena_go, linea_dia, piezas, animacion  # noqa: F401   (1.6.0: boton_go ya no se usa)
     except Exception:
         pass
     _tiempo("modulos de la escena")

@@ -31,13 +31,16 @@ def _fuente():
         return None
 
 
-CHICO, MEDIANO = 24, 48        # hasta CHICO px: version simplificada; hasta MEDIANO: la imagen, afilada
+CHICO, MEDIANO = 40, 96        # hasta CHICO px: version simplificada; hasta MEDIANO: la imagen, afilada
+# (1.6.0) antes CHICO era 24: a 32 px (barra de tareas al 125-150 %) la pareja era una mancha; ahora hasta 40 px va
+# el dibujo propio (play de oro nitido, terciopelo mas claro con canto de luz y el destello) y desde 41 la imagen
 
 
 def dibujar(t):
-    """El icono a t x t. La imagen es muy detallada: a 16-24 px (barra de tareas, pestanas, lista de programas) se
+    """El icono a t x t. La imagen es muy detallada: a 16-40 px (barra de tareas, pestanas, lista de programas) se
     volveria una mancha. En esos tamanos va la version simplificada (_chico: el cuadro de terciopelo y el play de oro,
-    que si se lee); de 25 a 48 px, la imagen con mascara de enfoque; mas grande, tal cual."""
+    que si se lee); de 41 a 96 px, la imagen con mascara de enfoque; mas grande, tal cual. (El .ico lo arma
+    compilar/icono/icono.py: desde 41 px reduce la imagen con Lanczos, mejor que aqui.)"""
     f = _fuente()
     if f and t > CHICO:
         img = _desde_imagen(f, t)
@@ -52,38 +55,74 @@ TRIANGULO_ORO = ((0.245, 0.185), (0.255, 0.840), (0.825, 0.515))     # el play d
 
 
 def _chico(t):
-    """El icono simplificado para 16-24 px (y si faltara la imagen): el cuadro de terciopelo morado y el play de oro
-    con las puntas redondeadas; la pareja recortada no se ve a ese tamano."""
-    img = QImage(t, t, QImage.Format_ARGB32)
+    """El icono simplificado para 16-40 px (y si faltara la imagen): el cuadro de terciopelo y el play de oro con las
+    puntas redondeadas; la pareja recortada no se ve a ese tamano. (1.6.0) Pulido: terciopelo mas claro con un canto
+    de luz arriba y un borde oscuro (se lee en la barra oscura y en la clara), el oro con brillo y canto, y desde
+    20 px el destello de arriba a la derecha, como el grande. Se dibuja a 4x y se reduce: bordes limpios."""
+    k = 4
+    T = t * k
+    img = QImage(T, T, QImage.Format_ARGB32_Premultiplied)
     img.fill(Qt.transparent)
     p = QPainter(img)
     p.setRenderHint(QPainter.Antialiasing)
-    m = t * 0.02
-    rect = QRectF(m, m, t - 2 * m, t - 2 * m)
+    m = T * 0.03
+    rect = QRectF(m, m, T - 2 * m, T - 2 * m)
+    radio = rect.width() * 0.225
+    cuadro = QPainterPath()
+    cuadro.addRoundedRect(rect, radio, radio)
     fondo = QLinearGradient(rect.topLeft(), rect.bottomRight())
-    fondo.setColorAt(0.0, QColor("#4A1442"))
-    fondo.setColorAt(1.0, QColor("#1E0619"))
-    p.setPen(Qt.NoPen)
+    fondo.setColorAt(0.0, QColor("#5A1A4E"))                         # el vino del icono grande, un poco mas claro
+    fondo.setColorAt(0.55, QColor("#3A0C33"))
+    fondo.setColorAt(1.0, QColor("#22061D"))
+    p.setPen(QPen(QColor(18, 3, 15, 210), max(1.0, T * 0.035)))      # borde oscuro: se ve en barras claras
     p.setBrush(fondo)
-    p.drawRoundedRect(rect, rect.width() * 0.225, rect.width() * 0.225)
+    p.drawPath(cuadro)
+    p.save()
+    p.setClipPath(cuadro)
+    luz = QRadialGradient(QPointF(rect.center().x() - rect.width() * 0.08, rect.top() + rect.height() * 0.30),
+                          rect.width() * 0.75)
+    luz.setColorAt(0.0, QColor(255, 140, 200, 46))                    # el brillo del terciopelo detras del play
+    luz.setColorAt(1.0, QColor(255, 140, 200, 0))
+    p.setPen(Qt.NoPen)
+    p.setBrush(luz)
+    p.drawRect(rect)
+    canto = QLinearGradient(rect.topLeft(), QPointF(rect.left(), rect.top() + rect.height() * 0.5))
+    canto.setColorAt(0.0, QColor(255, 200, 235, 120))                 # canto de luz arriba: se ve en barras oscuras
+    canto.setColorAt(0.12, QColor(255, 200, 235, 0))
+    p.setBrush(Qt.NoBrush)
+    p.setPen(QPen(canto, T * 0.05))
+    p.drawRoundedRect(rect.adjusted(T * 0.025, T * 0.025, -T * 0.025, -T * 0.025), radio * 0.9, radio * 0.9)
+    p.restore()
 
     def P(x, y):
         return QPointF(m + x * rect.width(), m + y * rect.height())
     tri = QPainterPath()
-    tri.addPolygon(QPolygonF([P(x, y) for x, y in TRIANGULO_ORO]))
+    tri.addPolygon(QPolygonF([P(x, y) for x, y in ((0.255, 0.200), (0.265, 0.825), (0.815, 0.512))]))
     tri.closeSubpath()
     trazo = QPainterPathStroker()
-    trazo.setWidth(t * 0.07)
+    trazo.setWidth(T * 0.085)
     trazo.setJoinStyle(Qt.RoundJoin)
     tri = tri.united(trazo.createStroke(tri))                     # las puntas redondeadas, como el de oro
-    oro = QLinearGradient(P(0.25, 0.18), P(0.80, 0.85))
-    oro.setColorAt(0.0, QColor("#FFE7A6"))
-    oro.setColorAt(0.5, QColor("#F0B54A"))
-    oro.setColorAt(1.0, QColor("#B97A1E"))
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(20, 4, 16, 140))                            # sombra del play
+    p.drawPath(tri.translated(T * 0.012, T * 0.03))
+    oro = QLinearGradient(P(0.25, 0.18), P(0.78, 0.86))
+    oro.setColorAt(0.0, QColor("#FFF1C4"))
+    oro.setColorAt(0.35, QColor("#FFC85A"))
+    oro.setColorAt(0.75, QColor("#E09A2C"))
+    oro.setColorAt(1.0, QColor("#A8681A"))
+    p.setPen(QPen(QColor(120, 70, 10, 200), max(1.0, T * 0.018), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
     p.setBrush(oro)
     p.drawPath(tri)
+    if t >= 24:                                                   # el filo de luz del oro (arriba)
+        filo = QPainterPath(P(0.29, 0.25))
+        filo.lineTo(P(0.74, 0.50))
+        p.setPen(QPen(QColor(255, 250, 225, 150), T * 0.02, Qt.SolidLine, Qt.RoundCap))
+        p.drawPath(filo)
+    if t >= 20:                                                   # el destello, como en el grande
+        _estrella(p, P(0.78, 0.21), T * (0.085 if t >= 32 else 0.10), "#FFE9B0")
     p.end()
-    return img
+    return img.scaled(t, t, Qt.IgnoreAspectRatio, Qt.SmoothTransformation).convertToFormat(QImage.Format_ARGB32)
 
 
 def _afilar(img, cuanto):

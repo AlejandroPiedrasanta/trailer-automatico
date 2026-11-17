@@ -43,6 +43,29 @@ a.binaries = [b for b in a.binaries if "opengl32sw" not in b[0].lower()]
 a.datas = [d for d in a.datas if not d[0].replace("\\", "/").lower().startswith("pyside6/translations")]
 
 pyz = PYZ(a.pure)
+
+# (1.6.0) datos del .exe (Propiedades > Detalles, Administrador de tareas, avisos de Windows): sin ellos Windows lo
+# mostraba como «TrailerAutomatico.exe», sin nombre ni empresa
+from PyInstaller.utils.win32.versioninfo import (VSVersionInfo, FixedFileInfo, StringFileInfo, StringTable,
+                                                  StringStruct, VarFileInfo, VarStruct)
+VER = open(os.path.join(PROG, "config", "version.txt"), encoding="utf-8").read().strip()
+NUMS = tuple(int(x) for x in (VER.split(".") + ["0", "0", "0"])[:4])
+VERSION_EXE = os.path.join(os.environ.get("TEMP", PROG), "trailer_version_exe.txt")
+with open(VERSION_EXE, "w", encoding="utf-8") as f:
+    f.write(str(VSVersionInfo(
+        ffi=FixedFileInfo(filevers=NUMS, prodvers=NUMS, mask=0x3F, flags=0x0, OS=0x40004, fileType=0x1,
+                          subtype=0x0, date=(0, 0)),
+        kids=[StringFileInfo([StringTable("0C0A04B0", [
+                  StringStruct("CompanyName", "CINEMA PRODUCTIONS"),
+                  StringStruct("FileDescription", "Tráiler automático"),
+                  StringStruct("FileVersion", VER),
+                  StringStruct("InternalName", "TrailerAutomatico"),
+                  StringStruct("LegalCopyright", "© CINEMA PRODUCTIONS"),
+                  StringStruct("OriginalFilename", "TrailerAutomatico.exe"),
+                  StringStruct("ProductName", "Tráiler automático"),
+                  StringStruct("ProductVersion", VER)])]),
+              VarFileInfo([VarStruct("Translation", [0x0C0A, 1200])])])))
+
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="TrailerAutomatico", console=False, upx=False,
-          icon=ICONO if os.path.exists(ICONO) else None)
+          icon=ICONO if os.path.exists(ICONO) else None, version=VERSION_EXE)
 coll = COLLECT(exe, a.binaries, a.datas, upx=False, name="TrailerAutomatico")

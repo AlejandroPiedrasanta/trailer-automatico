@@ -16,6 +16,7 @@ import os
 import sys
 import shutil
 import subprocess
+import time
 import traceback
 
 import rutas
@@ -29,8 +30,15 @@ class Estado:
 
     def _escribir(self, linea):
         if self.ruta:
-            with open(self.ruta, "a", encoding="utf-8") as f:
-                f.write(linea + "\n")
+            # (1.6.0) el instalador lo lee cada 250 ms: si justo lo tiene abierto, Windows no deja escribir
+            # («Permission denied», 13-nov). Se reintenta un rato; si ni asi, la tarea sigue (no se cae por esto).
+            for _ in range(60):
+                try:
+                    with open(self.ruta, "a", encoding="utf-8") as f:
+                        f.write(linea + "\n")
+                    return
+                except PermissionError:
+                    time.sleep(0.05)
         else:
             print(linea, flush=True)
 

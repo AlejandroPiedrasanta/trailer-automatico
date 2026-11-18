@@ -1444,40 +1444,57 @@
  },
  {
   "id": "analisis-seguro",
-  "resumen": "Que el analisis no se pierda ni se repita: punto de guardado cada minuto, incrustado en cada archivo original (flujo NTFS :trailer), ficha en la carpeta del evento (.trailer/analisis.json) y archivo buscable de todos los eventos (buscar.py)",
+  "resumen": "Que el analisis no se pierda ni se repita y SE VEA: metadatos visibles dentro de cada video (titulo y comentario en Windows y DaVinci), punto de guardado cada minuto, incrustado oculto por archivo (flujo NTFS :trailer), ficha en la carpeta del evento y archivo buscable (buscar.py)",
   "claves": [
-   "metadatos",
-   "incrustar",
-   "cache",
-   "guardar",
-   "punto de guardado",
-   "ficha",
    "archivo",
    "buscar",
-   "se cerro",
+   "cache",
+   "comentario",
+   "davinci metadata",
+   "detalles",
+   "ficha",
+   "guardar",
+   "incrustar",
+   "metadatos",
    "perder",
-   "reanalizar"
+   "propiedades",
+   "punto de guardado",
+   "reanalizar",
+   "se cerro",
+   "titulo",
+   "visible"
   ],
   "archivos": [
    "PROGRAMA/analisis/analizar_material.py",
+   "PROGRAMA/analisis/metadatos.py",
+   "PROGRAMA/armado/build_trailers.py",
    "PROGRAMA/herramientas/buscar.py"
   ],
   "simbolos": [
-   "_punto_de_guardado",
-   "_incrustar",
-   "_leer_incrustados",
-   "_guardar_fichas",
-   "_leer_fichas",
    "_guardar_archivo",
+   "_guardar_fichas",
+   "_incrustar",
    "_leer_cache",
-   "buscar"
+   "_leer_fichas",
+   "_leer_incrustados",
+   "_metadatos_visibles",
+   "_punto_de_guardado",
+   "buscar",
+   "campos_de",
+   "escribir",
+   "leer",
+   "metadatos_davinci",
+   "restaurar"
   ],
   "notas": [
    "(17-nov) Antes el analisis se guardaba UNA vez al final (material.json): cerrar a los 50 min lo perdia todo. Ahora: _punto_de_guardado cada 60 s (material_parcial.json, lo lee _leer_cache si es mas nuevo), _incrustar(d) en cuanto se analiza cada archivo y al terminar, _guardar_fichas por carpeta del evento y _guardar_archivo.",
    "INCRUSTADO: «archivo.mp4:trailer» (flujo alterno de NTFS) con la entrada JSON de la cache; no cambia tamaño, contenido ni fecha (se restaura con os.utime: la fecha del archivo es la hora de la camara) ni la clave nombre|tamaño. Probado: 448 de 448 recuperados con la cache vacia. Se pierde al copiar a exFAT/Mac/nube: ahi vale la ficha .trailer/analisis.json (2,4 MB este evento). NO reescribir el MP4 para meter metadatos: arriesga el original.",
    "ARCHIVO: datos/archivo/<evento>.json (resumen por toma: ruta, tipo, escena, etiquetas, belleza, momentos clave, caras); no se borra con evento nuevo. python PROGRAMA/herramientas/buscar.py dron iglesia | fiesta bonita (belleza >= 8).",
    "vision_ia VERSION 4 (belleza 1-10 en la primera vista -> Planificador.lo_que_ve x0,8-1,25) e INSTANTES_V 6 («sonrisa» como etiqueta del instante -> ia_tramos PESO_SONRISA 1,3; estorbo mas estricto). en_gpu(): si el modelo quedo cargado en CPU (DaVinci abierto al cargar) lo descarga y recarga: 129 tomas en 5 min en vez de 18 s por toma.",
-   "sanear_pool (build_trailers): clips del media pool con Frames/FPS distinto del «dur» real del archivo (venian de un armado viejo del mismo evento, reenlazados) -> se quitan y se reimportan. Daban HUECOS NEGROS (vertical 1 min, 0:38 y 0:44) porque DaVinci recortaba con su largo."
+   "sanear_pool (build_trailers): clips del media pool con Frames/FPS distinto del «dur» real del archivo (venian de un armado viejo del mismo evento, reenlazados) -> se quitan y se reimportan. Daban HUECOS NEGROS (vertical 1 min, 0:38 y 0:44) porque DaVinci recortaba con su largo.",
+   "METADATOS VISIBLES (18-nov, la persona: «no hay metadatos en los videos y deberían estar»; el flujo :trailer no se ve en ningun lado): metadatos.py escribe titulo (escena), comentario (momento · escena · se ve · momentos · belleza · sirve · Tráiler automático), desc y keyw en udta/meta/ilst del MP4/MOV ORIGINAL. Solo reescribe la cola desde «moov» (en camara Sony, iPhone y DJI va despues de «mdat»: la imagen no se mueve); con «moov» antes de «mdat» devuelve False. Guarda la cola original en <carpeta>/.trailer/original/<archivo>.<tamaño>.cola: metadatos.restaurar(ruta) lo deja identico (probado byte a byte en 5 tipos). Windows muestra Titulo y Comentarios (NO lee «keyw» como Etiquetas).",
+   "El archivo crece 220-330 bytes -> cambia su clave nombre|tamaño: analizar_material._metadatos_visibles (tras _organizar) pasa la entrada de la cache a la clave nueva, reemplaza «nombre|tamaño» en los demas .json de datos/analisis (personas, voz, ruido), renombra su proxy (huella ruta|tamaño) y recalcula res['huella']. Probado en el XV 8-nov: 129 videos en 4 s, los 129 se leen enteros sin error, proxies 129/129, segunda pasada escribe 0. Estado «metadatos_visibles» False lo apaga. Las fotos JPG no se tocan.",
+   "En DaVinci: build_trailers.metadatos_davinci(pool, items) tras organizar_pool: SetMetadata Description / Comments / Keywords (separadas por coma) / Scene (momento) en cada clip. Con pywin32 la escritura por el sistema de propiedades de Windows daba «Acceso denegado» en los MP4 de Sony: por eso el editor de atomos propio."
   ]
  }
 ]

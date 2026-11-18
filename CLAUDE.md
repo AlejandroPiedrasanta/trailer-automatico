@@ -50,7 +50,7 @@
 - **tiempos**: Cuanto tarda cada etapa y donde se va el tiempo (medido); como ver el avance sin leer el registro (avance.py); que ya se acelero y que no sirve intentar
 - **musica**: Musica ORIGINAL por estilo (Cine latino, Juvenil, Clasico, Emotivo) en vez de las canciones de la plantilla: papeles, pistas encadenadas para 1-30 min, intro con la rampa de fotos, selector en Ajustes, y escuchar.py para oir sin oidos (earshot)
 - **efectos**: Tipos de intro (ritmo de las 8 fotos + su SFX de rampa), overlays de luz propios (destello en cambios de momento, brillos en titulos; XV/boda, H/V) y el titulo DETRAS de la persona con recorte local (RVM, sin Mascara Magica)
-- **analisis-seguro**: Que el analisis no se pierda ni se repita: punto de guardado cada minuto, incrustado en cada archivo original (flujo NTFS :trailer), ficha en la carpeta del evento (.trailer/analisis.json) y archivo buscable de todos los eventos (buscar.py)
+- **analisis-seguro**: Que el analisis no se pierda ni se repita y SE VEA: metadatos visibles dentro de cada video (titulo y comentario en Windows y DaVinci), punto de guardado cada minuto, incrustado oculto por archivo (flujo NTFS :trailer), ficha en la carpeta del evento y archivo buscable (buscar.py)
 <!-- MAPA:FIN -->
 
 ## Reglas que no se rompen

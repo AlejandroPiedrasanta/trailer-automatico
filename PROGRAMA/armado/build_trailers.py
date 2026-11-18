@@ -2853,6 +2853,32 @@ def organizar_pool(mp, root, evento, items):
     return pool
 
 
+def metadatos_davinci(pool, items):
+    """(18-nov, la persona: «deberían estar los metadatos») Lo que se entiende de cada toma, en el panel Metadatos de
+    su clip en DaVinci: Descripción (qué pasa), Comentarios (momento · escena · belleza · si sirve), Palabras clave y
+    Escena (el momento). Sirve para buscar en el media pool. Solo escribe lo que cambió. Devuelve cuántos clips."""
+    try:
+        mt = _modulo("metadatos")
+    except Exception:
+        return 0
+    n = 0
+    for i in items:
+        c = pool.get(os.path.normcase(i["ruta"]))
+        if c is None or not (i.get("ia") or i.get("momento")):
+            continue
+        try:
+            campos = mt.campos_de(i)
+            nuevo = {"Description": campos["titulo"], "Comments": campos["comentario"],
+                     "Keywords": campos["etiquetas"].replace("; ", ","), "Scene": campos["descripcion"]}
+            if (c.GetMetadata("Comments") or "") == nuevo["Comments"]:
+                continue
+            if c.SetMetadata(nuevo):
+                n += 1
+        except Exception:
+            pass
+    return n
+
+
 def sanear_pool(mp, pool, items):
     """(17-nov, vertical del XV 8-nov: huecos en NEGRO) Clips del media pool que DaVinci cree de otro largo que el
     archivo que hay hoy en esa ruta (aqui: «VIDEO VERTICAL 035» decia 206 cuadros y el archivo tiene 897; venian de un
@@ -3086,6 +3112,12 @@ def main():
     except Exception as ex:
         aviso("No se pudo revisar el largo de los clips del media pool (%s)" % ex)
     print("Media pool: %d archivos en carpetas MAQUILLAJE / IGLESIA / FIESTA con colores" % len(pool))
+    try:
+        n_meta = metadatos_davinci(pool, items)
+        if n_meta:
+            print("Metadatos en DaVinci: %d clips con su descripción, comentarios, palabras clave y escena." % n_meta)
+    except Exception as ex:
+        aviso("No se pudieron poner los metadatos en DaVinci (%s)" % ex)
     otra_vez = bool(locals().get("viejos_pool"))     # cambiaron largos: el plan se hace otra vez con ellos
     try:                                         # la IA de Resolve reconoce a las personas (IntelliSearch con caras)
         pares_p = [(pool[os.path.normcase(i["ruta"])], i) for i in items

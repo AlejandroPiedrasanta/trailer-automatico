@@ -1455,6 +1455,79 @@ def _leer_incrustados(cache, lista):
     return n
 
 
+def _metadatos_visibles(cache, items, log):
+    """(18-nov, la persona: «no hay metadatos en los videos y deberían estar») Lo que se entiende de cada VIDEO queda
+    escrito dentro del archivo original como etiquetas normales (titulo y comentario que se ven en Propiedades >
+    Detalles de Windows, en DaVinci, VLC...): metadatos.py, que solo toca la cabecera y guarda la original.
+    El archivo crece unos cientos de bytes, y aqui todo lo que lo reconoce por nombre|tamaño se pasa al tamaño nuevo:
+    la cache, los demas .json del analisis (personas, voz, ruido...) y su proxy. Devuelve cuantos escribio."""
+    try:
+        import motor
+        if motor.leer_estado().get("metadatos_visibles", True) is False:
+            return 0
+    except Exception:
+        pass
+    try:
+        import metadatos
+    except Exception:
+        return 0
+    cambios, hechos, fallos = [], 0, 0
+    for it in items:
+        ruta = it.get("ruta") or ""
+        if it.get("tipo") == "foto" or not (it.get("ia") or it.get("momento")) or not os.path.exists(ruta):
+            continue
+        try:
+            campos = metadatos.campos_de(it)
+            if metadatos.leer(ruta) == {k: v for k, v in campos.items() if v}:
+                continue
+            antes = os.stat(ruta).st_size
+            if not metadatos.escribir(ruta, campos):
+                continue
+            hechos += 1
+            ahora = os.stat(ruta).st_size
+            if ahora != antes:
+                cambios.append((ruta, antes, ahora))
+        except Exception:
+            fallos += 1                          # en uso por otro programa o disco de solo lectura: la proxima vez
+    if cambios:
+        for ruta, antes, ahora in cambios:
+            n = os.path.basename(ruta)
+            if "%s|%d" % (n, antes) in cache:
+                cache["%s|%d" % (n, ahora)] = cache.pop("%s|%d" % (n, antes))
+        try:                                     # los demas .json que guardan algo por nombre|tamaño
+            for f in os.listdir(rutas.ANALISIS):
+                if not f.endswith(".json") or f in ("material.json", "material_parcial.json"):
+                    continue
+                p = os.path.join(rutas.ANALISIS, f)
+                with open(p, encoding="utf-8") as h:
+                    texto = nuevo = h.read()
+                for ruta, antes, ahora in cambios:
+                    n = json.dumps(os.path.basename(ruta), ensure_ascii=False)[1:-1]
+                    n2 = json.dumps(os.path.basename(ruta))[1:-1]
+                    for nombre in {n, n2}:
+                        nuevo = nuevo.replace("%s|%d" % (nombre, antes), "%s|%d" % (nombre, ahora))
+                if nuevo != texto:
+                    with open(p + ".tmp", "w", encoding="utf-8") as h:
+                        h.write(nuevo)
+                    os.replace(p + ".tmp", p)
+        except Exception:
+            pass
+        try:                                     # el proxy lleva en su nombre la huella de ruta + tamaño
+            import hashlib
+            for ruta, antes, ahora in cambios:
+                def proxy(tam):
+                    h = hashlib.sha1(("%s|%d" % (os.path.normcase(os.path.abspath(ruta)), tam)).encode("utf-8")).hexdigest()[:12]
+                    return os.path.join(rutas.BASE, "PROXIES", "%s_%s_proxy.mov" % (os.path.splitext(os.path.basename(ruta))[0][:60], h))
+                if os.path.exists(proxy(antes)) and not os.path.exists(proxy(ahora)):
+                    os.rename(proxy(antes), proxy(ahora))
+        except Exception:
+            pass
+    if hechos or fallos:
+        log("Metadatos escritos dentro de %d videos (título y comentario: se ven en Propiedades > Detalles)%s."
+            % (hechos, "; %d no se pudieron abrir para escribir (se intenta la próxima vez)" % fallos if fallos else ""))
+    return hechos
+
+
 def _raices():
     try:
         return [r for r in rutas.fuentes() if os.path.isdir(r)]
@@ -2046,6 +2119,11 @@ def analizar(base=DEF_BASE, log=print, hilos=4):
         oir.join()
     _punto_de_guardado(cache, True)             # por si lo que sigue falla: lo analizado ya esta a salvo
     cache, res = _organizar(cache, lista, base, log)
+    try:                                        # (18-nov) lo entendido de cada video, escrito dentro del archivo
+        if _metadatos_visibles(cache, res.get("items") or [], log):
+            res["huella"] = huella(base)        # cambio el tamaño de esos archivos
+    except Exception as ex:
+        log("Aviso: no se pudieron escribir los metadatos en los videos (%s)" % ex)
     _guardar(cache, res)
     _guardar_fichas(cache)
     try:

@@ -1471,14 +1471,19 @@
    "PROGRAMA/herramientas/buscar.py"
   ],
   "simbolos": [
+   "_bloque_xmp",
+   "_escribir_jpg",
    "_guardar_archivo",
    "_guardar_fichas",
+   "_imagen",
    "_incrustar",
    "_leer_cache",
    "_leer_fichas",
    "_leer_incrustados",
+   "_leer_jpg",
    "_metadatos_visibles",
    "_punto_de_guardado",
+   "_sonido",
    "buscar",
    "campos_de",
    "escribir",
@@ -1494,7 +1499,9 @@
    "sanear_pool (build_trailers): clips del media pool con Frames/FPS distinto del «dur» real del archivo (venian de un armado viejo del mismo evento, reenlazados) -> se quitan y se reimportan. Daban HUECOS NEGROS (vertical 1 min, 0:38 y 0:44) porque DaVinci recortaba con su largo.",
    "METADATOS VISIBLES (18-nov, la persona: «no hay metadatos en los videos y deberían estar»; el flujo :trailer no se ve en ningun lado): metadatos.py escribe titulo (escena), comentario (momento · escena · se ve · momentos · belleza · sirve · Tráiler automático), desc y keyw en udta/meta/ilst del MP4/MOV ORIGINAL. Solo reescribe la cola desde «moov» (en camara Sony, iPhone y DJI va despues de «mdat»: la imagen no se mueve); con «moov» antes de «mdat» devuelve False. Guarda la cola original en <carpeta>/.trailer/original/<archivo>.<tamaño>.cola: metadatos.restaurar(ruta) lo deja identico (probado byte a byte en 5 tipos). Windows muestra Titulo y Comentarios (NO lee «keyw» como Etiquetas).",
    "El archivo crece 220-330 bytes -> cambia su clave nombre|tamaño: analizar_material._metadatos_visibles (tras _organizar) pasa la entrada de la cache a la clave nueva, reemplaza «nombre|tamaño» en los demas .json de datos/analisis (personas, voz, ruido), renombra su proxy (huella ruta|tamaño) y recalcula res['huella']. Probado en el XV 8-nov: 129 videos en 4 s, los 129 se leen enteros sin error, proxies 129/129, segunda pasada escribe 0. Estado «metadatos_visibles» False lo apaga. Las fotos JPG no se tocan.",
-   "En DaVinci: build_trailers.metadatos_davinci(pool, items) tras organizar_pool: SetMetadata Description / Comments / Keywords (separadas por coma) / Scene (momento) en cada clip. Con pywin32 la escritura por el sistema de propiedades de Windows daba «Acceso denegado» en los MP4 de Sony: por eso el editor de atomos propio."
+   "En DaVinci: build_trailers.metadatos_davinci(pool, items) tras organizar_pool: SetMetadata Description / Comments / Keywords (separadas por coma) / Scene (momento) en cada clip. Con pywin32 la escritura por el sistema de propiedades de Windows daba «Acceso denegado» en los MP4 de Sony: por eso el editor de atomos propio.",
+   "METADATOS AMPLIADOS y FOTOS (18-nov, la persona: «nivel de exposición, si hay sonido o voz útil, más metadatos útiles aunque crezca el triple; en cualquier análisis y también en las fotos»): metadatos.campos_de(item, voz, caras) arma el comentario por partes: CONTENIDO (momento, escena, se ve, momentos clave con su minuto, belleza, % que no sirve y por que, SIRVE/NO SIRVE) | IMAGEN (exposicion por la luz mediana: <0,20 muy oscura, <0,30 algo oscura, <=0,58 correcta, <=0,68 clara; negros, luces quemadas, saturacion, tono por los grises, contraste, enfoque por nitidez >=35 nitido / >=15 normal, camara por temblor) | SONIDO (nivel dB, aplausos/gritos/risas del oido con su minuto, musica del lugar, VOZ UTIL con los pasajes de escenas_ia y su texto) | PERSONAS | TECNICO (tamaño, c/s, duracion, camara, hora real, nombre original). 330-820 caracteres.",
+   "FOTOS JPG: paquete XMP propio (segmento APP1), sin recomprimir (pixeles, EXIF e ICC identicos, probado) ni tocar el EXIF; si la foto ya trae XMP (DxO: 17 KB) se AGREGA un rdf:Description marcado con el atributo trailer:v=\"1\". NO usar comentarios XML <!-- --> dentro del XMP: Windows deja de leer TODO el paquete (hasta las etiquetas que ya traia la foto). Windows muestra Titulo (dc:title), Comentarios (exif:UserComment) y Etiquetas (dc:subject; si la foto ya traia las suyas, se respetan y las nuestras no se agregan). Se escribe el archivo entero al lado y se cambia de golpe (os.replace) conservando fechas; la cabecera original queda en .trailer/original/<foto>.<tamaño>.cabecera. XV 8-nov: 448 archivos en 13 s, segunda pasada 0."
   ]
  }
 ]

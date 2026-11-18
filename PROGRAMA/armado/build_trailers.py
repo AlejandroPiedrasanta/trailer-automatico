@@ -2861,13 +2861,19 @@ def metadatos_davinci(pool, items):
         mt = _modulo("metadatos")
     except Exception:
         return 0
+    voces, esc = {}, None
+    try:
+        esc = _modulo("escenas_ia")
+        voces = esc.leer_cache() or {}
+    except Exception:
+        pass
     n = 0
     for i in items:
         c = pool.get(os.path.normcase(i["ruta"]))
         if c is None or not (i.get("ia") or i.get("momento")):
             continue
         try:
-            campos = mt.campos_de(i)
+            campos = mt.campos_de(i, voces.get(esc._clave(i["ruta"])) if esc else None)
             nuevo = {"Description": campos["titulo"], "Comments": campos["comentario"],
                      "Keywords": campos["etiquetas"].replace("; ", ","), "Scene": campos["descripcion"]}
             if (c.GetMetadata("Comments") or "") == nuevo["Comments"]:

@@ -1472,13 +1472,22 @@ def _metadatos_visibles(cache, items, log):
     except Exception:
         return 0
     cambios, hechos, fallos = [], 0, 0
+    voces, personas = {}, {}
+    try:                                         # lo que DaVinci escucho y a quien reconocio (si ya hubo un armado)
+        import escenas_ia
+        voces, personas = escenas_ia.leer_cache() or {}, escenas_ia.leer_personas() or {}
+    except Exception:
+        pass
     for it in items:
         ruta = it.get("ruta") or ""
-        if it.get("tipo") == "foto" or not (it.get("ia") or it.get("momento")) or not os.path.exists(ruta):
+        if not (it.get("ia") or it.get("momento")) or not os.path.exists(ruta):
             continue
         try:
-            campos = metadatos.campos_de(it)
-            if metadatos.leer(ruta) == {k: v for k, v in campos.items() if v}:
+            k = _clave(ruta)
+            campos = metadatos.campos_de(it, voces.get(k), personas.get(k))
+            ya = metadatos.leer(ruta)
+            if " ".join((ya.get("comentario") or "").split()) == " ".join(campos["comentario"].split()) \
+                    and (ya.get("titulo") or "") == " ".join(campos["titulo"].split()):
                 continue
             antes = os.stat(ruta).st_size
             if not metadatos.escribir(ruta, campos):
@@ -1523,7 +1532,7 @@ def _metadatos_visibles(cache, items, log):
         except Exception:
             pass
     if hechos or fallos:
-        log("Metadatos escritos dentro de %d videos (título y comentario: se ven en Propiedades > Detalles)%s."
+        log("Metadatos escritos dentro de %d fotos y videos (título, comentarios y etiquetas: se ven en Propiedades > Detalles)%s."
             % (hechos, "; %d no se pudieron abrir para escribir (se intenta la próxima vez)" % fallos if fallos else ""))
     return hechos
 

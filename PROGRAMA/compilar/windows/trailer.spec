@@ -30,8 +30,13 @@ a = Analysis(
     pathex=[os.path.join(PROG, g) for g in GRUPOS],
     binaries=[],
     datas=datas,
-    hiddenimports=modulos + ["PIL.Image", "PIL.ImageOps", "numpy", "winreg", "logging.handlers", "faulthandler"],
-    excludes=["librosa", "numba", "llvmlite", "scipy", "sklearn", "matplotlib", "pandas", "tkinter", "IPython",
+    # onnxruntime: el recorte de persona (armado/recorte.py, modelo RVM en recursos/modelos)
+    hiddenimports=modulos + ["PIL.Image", "PIL.ImageOps", "numpy", "winreg", "logging.handlers", "faulthandler",
+                             "onnxruntime"],
+    # (1.6.2) onnxruntime arrastraba torch entero (el instalador paso de 560 MB a 1,1 GB): el recorte solo usa la sesion
+    excludes=["torch", "torchvision", "torchaudio", "transformers", "sympy", "onnx", "tensorboard", "tensorflow",
+              "onnxruntime.transformers", "onnxruntime.quantization", "onnxruntime.training", "onnxruntime.tools",
+              "librosa", "numba", "llvmlite", "scipy", "sklearn", "matplotlib", "pandas", "tkinter", "IPython",
               "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets", "PySide6.QtNetwork", "PySide6.QtOpenGL",
               "PySide6.QtOpenGLWidgets", "PySide6.QtPdf", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets",
               "PySide6.QtMultimedia", "PySide6.Qt3DCore", "PySide6.QtCharts", "PySide6.QtDataVisualization",
@@ -43,6 +48,9 @@ a.binaries = [b for b in a.binaries if "opengl32sw" not in b[0].lower()]
 a.datas = [d for d in a.datas if not d[0].replace("\\", "/").lower().startswith("pyside6/translations")]
 # el icono de las carpetas del proyecto (desktop.ini y .cf, iconos_carpetas.py) no va en el programa
 a.datas = [d for d in a.datas if "/.cf/" not in d[0].replace("\\", "/") and not d[0].lower().endswith("desktop.ini")]
+# recursos/musica/xv es la primera prueba de la musica propia (ya copiada a las carpetas de estilo): no va en el programa
+a.datas = [d for d in a.datas if "/musica/xv/" not in d[0].replace("\\", "/").lower()
+           and "/musica/_descartadas/" not in d[0].replace("\\", "/").lower()]
 
 pyz = PYZ(a.pure)
 

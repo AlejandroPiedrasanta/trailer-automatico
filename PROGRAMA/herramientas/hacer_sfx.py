@@ -123,7 +123,45 @@ def obturador(rng):
     return _normal(_estereo(clic, np.roll(clic, 7)), -8.0)
 
 
+def rampa(rng, cortes=(5,) * 8):
+    """(17-nov) La apertura es una RAMPA DE VELOCIDAD de las 8 fotos (40 cuadros = 1,667 s) y luego arranca el video:
+    aire que sube y late una vez por foto (cortes = cuadros de cada foto: build_trailers.INTROS) y, justo al terminar
+    las fotos, un impacto grave con un platillo de aire que se abre."""
+    fotos = sum(cortes) / 24.0
+    t = _t(fotos + 2.6)
+    antes = t < fotos
+    u = np.clip(t / fotos, 0.0, 1.0)
+    sube = u ** 2.2
+    late = np.full(len(t), 0.55)                                              # un latido al empezar cada foto
+    ini = 0.0
+    for c in cortes:
+        d = t - ini
+        late += 0.45 * np.where((d >= 0) & (d < c / 24.0), np.exp(-d / (0.35 * c / 24.0)), 0.0)
+        ini += c / 24.0
+    aire_i = _banda_movil(rng.standard_normal(len(t)), 220.0, 9000.0)
+    aire_d = _banda_movil(rng.standard_normal(len(t)), 260.0, 9800.0)
+    tono = np.sin(2 * np.pi * np.cumsum(70.0 * (12.0 ** u)) / FS) * 0.3
+    corte = np.minimum(1.0, np.clip(fotos - t, 0.0, None) / 0.01)             # el aire termina en seco en el impacto
+    sub_i, sub_d = (aire_i + tono) * sube * late * corte * antes, (aire_d + tono) * sube * late * corte * antes
+    d = np.clip(t - fotos, 0.0, None)
+    ya = t >= fotos
+    fase = 2 * np.pi * np.cumsum(32.0 + 58.0 * np.exp(-d / 0.08)) / FS
+    grave = np.sin(fase) * np.exp(-d / 0.6) * np.minimum(1.0, d / 0.003) * ya
+    chasq = _paso_bajo(rng.standard_normal(len(t)), 2400.0) * np.exp(-d / 0.05) * ya
+    plato_i = (rng.standard_normal(len(t)) - _paso_bajo(rng.standard_normal(len(t)), 3000.0)) * np.exp(-d / 0.9) * ya
+    plato_d = (rng.standard_normal(len(t)) - _paso_bajo(rng.standard_normal(len(t)), 3000.0)) * np.exp(-d / 0.9) * ya
+    fin = np.minimum(1.0, (t[-1] - t) / 0.3)
+    izq = 0.55 * _normal(sub_i, 0.0) + (grave + 0.5 * chasq + 0.12 * plato_i) * fin
+    der = 0.55 * _normal(sub_d, 0.0) + (grave + 0.5 * chasq + 0.12 * plato_d) * fin
+    return _normal(_estereo(izq, der), -4.0)
+
+
+# una rampa por tipo de intro (los mismos ritmos que build_trailers.INTROS; sfx.momentos elige por el ritmo de las fotos)
+RAMPAS = {"XV_RAMPA": (5,) * 8, "XV_RAMPA_ACELERA": (9, 7, 6, 5, 4, 4, 3, 2), "XV_RAMPA_FRENA": (2, 3, 4, 4, 5, 6, 7, 9),
+          "XV_RAMPA_LATIDO": (7, 3, 7, 3, 7, 3, 7, 3)}
 SONIDOS = {"XV_GOLPE": golpe, "XV_SUBIDA": subida, "XV_BRILLO": brillo, "XV_PASO": paso, "XV_OBTURADOR": obturador}
+for _n, _c in RAMPAS.items():
+    SONIDOS[_n] = (lambda rng, c=_c: rampa(rng, c))
 
 
 def guardar(nombre, x):

@@ -78,9 +78,58 @@ def _golpes_numpy(ruta, src, dur):
     return golpes[::-1]
 
 
-def golpes(tl, fps, base, log=print):
-    """Frames de la timeline (desde 0) donde cae un golpe de musica."""
-    tramos = tramos_musica(tl, fps)
+def _bpm_propio(ruta):
+    """El tempo con que se pidio una pista propia (recursos/musica/pistas.json: «<estilo>/<archivo>» -> bpm), o None."""
+    import rutas
+    raiz = os.path.join(rutas.RECURSOS, "musica")
+    if not os.path.normcase(os.path.abspath(ruta)).startswith(os.path.normcase(raiz)):
+        return None
+    try:
+        with open(os.path.join(raiz, "pistas.json"), encoding="utf-8") as f:
+            tabla = json.load(f)
+    except Exception:
+        return None
+    clave = "%s/%s" % (os.path.basename(os.path.dirname(ruta)), os.path.basename(ruta))
+    return tabla.get(clave) or next((v for k, v in tabla.items() if k.endswith("*") and clave.startswith(k[:-1])), None)
+
+
+def _golpes_rejilla(ruta, src, dur, bpm):
+    """(17-nov, la persona: «en el de 1 minuto, al ritmo de la música») Golpes en REJILLA para las pistas propias, de las
+    que se sabe el tempo: se afina el periodo (±5 %) y la fase doblando el flujo de ataques sobre el compas. El buscador
+    general se equivocaba de tempo con el dembow (136 por minuto en una pista de 100) y los cortes caian fuera."""
+    import subprocess
+    import numpy as np
+    import rutas
+    sr, hop, win = 11025, 128, 1024
+    r = subprocess.run(["ffmpeg", "-v", "error", "-ss", "%.3f" % src, "-t", "%.3f" % dur, "-i", ruta, "-ac", "1",
+                        "-ar", str(sr), "-f", "s16le", "-"], capture_output=True, timeout=600,
+                       creationflags=rutas.SIN_VENTANA)
+    y = np.frombuffer(r.stdout, dtype=np.int16).astype(np.float32) / 32768.0
+    if len(y) < win * 8:
+        return []
+    n = 1 + (len(y) - win) // hop
+    marcos = np.lib.stride_tricks.as_strided(y, (n, win), (y.strides[0] * hop, y.strides[0])) * np.hanning(win)
+    esp = np.log1p(np.abs(np.fft.rfft(marcos, axis=1)) * 10)
+    flujo = np.maximum(0, np.diff(esp[:, :200], axis=0)).sum(axis=1)          # ataques, sobre todo graves y medios
+    flujo = np.maximum(0, flujo - np.convolve(flujo, np.ones(43) / 43.0, "same"))
+    paso = hop / float(sr)
+    idx = np.arange(len(flujo))
+    mejor = (0.0, 60.0 / bpm / paso, 0.0)
+    for b in np.arange(bpm * 0.95, bpm * 1.05 + 1e-6, 0.05):
+        p = 60.0 / b / paso                                                  # periodo en muestras del flujo
+        dobl = np.bincount(((idx % p) / p * 48).astype(int) % 48, weights=flujo, minlength=48)
+        dobl = dobl + 0.5 * (np.roll(dobl, 1) + np.roll(dobl, -1))
+        k = int(np.argmax(dobl))
+        if dobl[k] > mejor[0]:
+            mejor = (float(dobl[k]), p, (k + 0.5) / 48.0 * p)
+    _, p, fase = mejor
+    return [round(float(t), 3) for t in (np.arange(fase, len(flujo), p) * paso + win / 2.0 / sr) if t < dur]
+
+
+def golpes(tl, fps, base, log=print, tramos=None):
+    """Frames de la timeline (desde 0) donde cae un golpe de musica. tramos: los de otra musica (musica_propia) en
+    lugar de los de la linea."""
+    tramos = tramos_musica(tl, fps) if tramos is None else tramos
     if not tramos:
         return []
     import rutas
@@ -98,6 +147,19 @@ def golpes(tl, fps, base, log=print):
     nuevos = False
     for ruta, src, ini, dur in tramos:
         clave = "%s|%s|%s" % (os.path.basename(ruta), src, dur)
+        bpm = _bpm_propio(ruta)
+        if bpm:                                 # pista propia: clave con su estilo y tamaño (se llaman igual en cada uno)
+            clave = "rejilla|%s/%s|%d|%s|%s" % (os.path.basename(os.path.dirname(ruta)), os.path.basename(ruta),
+                                                os.path.getsize(ruta), src, dur)
+            if clave not in cache:
+                try:
+                    cache[clave] = _golpes_rejilla(ruta, src, dur, float(bpm))
+                    nuevos = True
+                    log("Ritmo: %d golpes en rejilla (%s por minuto) en %s" % (len(cache[clave]), bpm,
+                                                                               os.path.basename(ruta)[:40]))
+                except Exception as ex:
+                    log("Aviso: no se pudo poner en rejilla el ritmo de %s (%s)" % (os.path.basename(ruta), ex))
+                    cache[clave] = []
         if clave not in cache:
             try:
                 try:

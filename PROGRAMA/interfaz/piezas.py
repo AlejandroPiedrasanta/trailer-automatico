@@ -38,6 +38,9 @@ ROJO = "#F07A6A"
 OSCURO = "#04150D"
 
 ESCALA = 0.605                       # la ventana la cambia al cambiar de tamaño (ancho / 2048 de la maqueta)
+# (1.6.1, la persona: «no se ve fluido») las animaciones pintaban a 25-30 cuadros por segundo: ahora a 60. Todas
+# calculan su movimiento con el reloj (time), no por pasos, asi que solo cambia la suavidad, no la velocidad.
+CUADRO_MS = 16
 
 
 def px(v):
@@ -479,6 +482,19 @@ class Pastillas(QWidget):
             self.botones[i].setChecked(True)
 
 
+def sin_recorte(botones):
+    """(1.6.1) Las pestañas y pastillas se ponen en negrita al marcarlas, pero su ancho se midio con la letra normal:
+    la ultima letra salia cortada («Materia|»). Aqui se les da el ancho de su texto en negrita."""
+    for b in botones:
+        b.setMinimumWidth(0)
+        b.ensurePolished()
+        normal = QFont(b.font())
+        gruesa = QFont(normal)
+        gruesa.setWeight(QFont.Bold)
+        extra = QFontMetricsF(gruesa).horizontalAdvance(b.text()) - QFontMetricsF(normal).horizontalAdvance(b.text())
+        b.setMinimumWidth(b.sizeHint().width() + max(0, int(math.ceil(extra))) + 2)
+
+
 def separador_v(alto=60):
     s = QFrame()
     s.setFixedSize(1, px(alto))
@@ -608,7 +624,7 @@ class Titulo(QWidget):
         self._pintado_luz = False
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.setText(texto)
-        self._reloj = QTimer(self, interval=33)
+        self._reloj = QTimer(self, interval=CUADRO_MS)
         self._reloj.timeout.connect(self._tic)
         self._reloj.start()
 
@@ -712,7 +728,7 @@ class Adorno(QWidget):
         self.ventana = (0.0, 0.6) if lado == "izq" else (1.6, 2.2)
         self._pintado_luz = False
         self.reescalar()
-        self._reloj = QTimer(self, interval=33)
+        self._reloj = QTimer(self, interval=CUADRO_MS)
         self._reloj.timeout.connect(self._tic)
         self._reloj.start()
 
@@ -956,7 +972,7 @@ class Popup(QWidget):
                                           easingCurve=QEasingCurve.OutCubic)
         self._aparece.valueChanged.connect(self._paso)
         self._aparece.finished.connect(self._fin_anim)
-        self._reloj = QTimer(self, interval=33)
+        self._reloj = QTimer(self, interval=CUADRO_MS)
         self._reloj.timeout.connect(self._tic)
         self.show()
         self.raise_()
@@ -988,8 +1004,10 @@ class Popup(QWidget):
 
     def _tic(self):
         if self.isVisible() and not self.window().isMinimized():
-            self.emblema.update()
-            self.update(self.tarjeta.geometry().adjusted(-px(70), -px(70), px(70), px(70)))
+            self.emblema.update()                   # el aro, a 60 por segundo (es chico)
+            self._n = (getattr(self, "_n", 0) + 1) % 3
+            if self._n == 0:                        # el filo que respira va lento: a 20 basta (repinta la tarjeta)
+                self.update(self.tarjeta.geometry().adjusted(-px(70), -px(70), px(70), px(70)))
             if self._destello is not None and (time.time() % 3.0) < 1.0:
                 self._destello.setGeometry(self._destello.parentWidget().rect())
                 self._destello.update()
@@ -1076,7 +1094,7 @@ class Sala(QWidget):
         self._t0 = time.time()
         self.setMouseTracking(True)
         self.reescalar()
-        self._reloj = QTimer(self, interval=33)
+        self._reloj = QTimer(self, interval=CUADRO_MS)
         self._reloj.timeout.connect(self._tic)
 
     def reescalar(self):
@@ -1252,7 +1270,7 @@ class Astrolabio(QWidget):
         self._t_tam.timeout.connect(self._retomar)
         self._reloj = QTimer(self)
         self._reloj.timeout.connect(self._tic)
-        self._reloj.start(40)
+        self._reloj.start(CUADRO_MS)
 
     # ---- la API de boton_go.BotonGo que usa la ventana
     def poner_estado(self, estado, centro=None, tono=None):
@@ -1352,26 +1370,31 @@ class Astrolabio(QWidget):
 
     # ---- animacion y raton
     def _tic(self):
-        self._t += 0.04
+        ahora = time.monotonic()                      # (1.6.1) por tiempo, no por pasos: a 60 por segundo, igual de rapido
+        dt = min(0.1, ahora - getattr(self, "_t_ult", ahora))
+        self._t_ult = ahora
+        self._t += dt
         ver = self.isVisible() and not self.window().isMinimized()
         if self._peli is not None:
             self._peli.pausar(not ver)
             self._peli.lento(not self.window().isActiveWindow())
         if self._prog_visto < self._prog:
-            self._prog_visto = min(self._prog, self._prog_visto + 0.008)
+            self._prog_visto = min(self._prog, self._prog_visto + 0.2 * dt)
         if self._sonando is None:                     # sin video: el arco se ve mientras trabaja
             quiere = 1.0 if self._trabajando() else 0.0
         else:                                         # con video: solo en el bucle de trabajo (no al despertar)
             quiere = 1.0 if self._sonando == "trabajo" else 0.0
-        self._velo += (quiere - self._velo) * 0.12
+        self._velo += (quiere - self._velo) * (1.0 - 0.88 ** (dt / 0.04))
         if self._onda >= 0:
-            self._onda += 0.04 / 0.7
+            self._onda += dt / 0.7
             if self._onda > 1.0:
                 self._onda = -1.0
-        ahora = time.monotonic()
         self._chispas = [c for c in self._chispas if ahora - c[4] < c[5]]
-        if ver and (self._sonando is None or self._onda >= 0 or self._chispas or 0.01 < self._velo < 0.99
-                    or self._previo is not None or self.estado == "reposo"):
+        self._par = not getattr(self, "_par", False)
+        vivo = self._onda >= 0 or bool(self._chispas) or 0.01 < self._velo < 0.99 or self._previo is not None
+        # lo que se mueve de verdad (onda, chispas, cambios), a 60 por segundo; el halo en reposo, a 30 (el video
+        # del astrolabio es de 24 y pide sus propias pintadas)
+        if ver and (vivo or (self._par and (self._sonando is None or self.estado == "reposo"))):
             self.update()
 
     def enterEvent(self, e):
@@ -1568,7 +1591,7 @@ class Pasos(QWidget):
         self.estado = {c: "pendiente" for c, _ in self.pasos}
         self._cuando = {}                             # clave -> cuando quedo hecho
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self._reloj = QTimer(self, interval=33)
+        self._reloj = QTimer(self, interval=CUADRO_MS)
         self._reloj.timeout.connect(self._tic)
         self.reescalar()
 
@@ -1742,7 +1765,7 @@ class _FilaVersion(QWidget):
         self.estado, self.pct, self.texto, self.detalle = "cola", 0.0, "En cola", ""
         self.ultima = False
         self._visto, self._t_listo = 0.0, -10.0
-        self._reloj = QTimer(self, interval=33)
+        self._reloj = QTimer(self, interval=CUADRO_MS)
         self._reloj.timeout.connect(self._tic)
         self.reescalar()
 
@@ -1769,7 +1792,7 @@ class _FilaVersion(QWidget):
 
     def _tic(self):
         meta = self._meta()
-        self._visto = meta if meta < self._visto else self._visto + (meta - self._visto) * 0.10
+        self._visto = meta if meta < self._visto else self._visto + (meta - self._visto) * 0.05    # (a 60 por segundo)
         if not self._anima():
             self._reloj.stop()
         if self.isVisible() and not self.window().isMinimized():
@@ -1924,7 +1947,7 @@ class Pila(QWidget):
         super().__init__(parent)
         self.fotos = []
         self._t_abre = -10.0                          # (1.6.0) al llegar las fotos se abren en abanico
-        self._reloj = QTimer(self, interval=40)       # y despues flotan suave, cada una a su ritmo
+        self._reloj = QTimer(self, interval=CUADRO_MS)       # y despues flotan suave, cada una a su ritmo
         self._reloj.timeout.connect(self._tic)
         self._reloj.start()
         self.reescalar()
@@ -1990,7 +2013,7 @@ class BarraUso(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.frac = self._visto = 0.0                 # (1.6.0) la barra se llena suave y un brillo la recorre
-        self._reloj = QTimer(self, interval=40)
+        self._reloj = QTimer(self, interval=CUADRO_MS)
         self._reloj.timeout.connect(self._tic)
         self._reloj.start()
         self.reescalar()
@@ -1998,7 +2021,7 @@ class BarraUso(QWidget):
     def _tic(self):
         if not self.isVisible() or self.window().isMinimized():
             return
-        self._visto += (self.frac - self._visto) * 0.12
+        self._visto += (self.frac - self._visto) * 0.05      # (a 60 por segundo)
         if abs(self.frac - self._visto) > 0.001 or time.monotonic() % 5.0 < 1.3:
             self.update()
 
@@ -2135,7 +2158,7 @@ class VistaTitulo(QWidget):
         # (1.6.0) viva, como el titulo en el video: la foto con un zoom lento (Ken Burns) y el texto que aparece
         self._t_modo = time.monotonic()
         self._base = None                             # (ancho, alto, dpr, QPixmap) la foto ya escalada
-        self._reloj = QTimer(self, interval=50)
+        self._reloj = QTimer(self, interval=33)
         self._reloj.timeout.connect(self._tic)
         self._reloj.start()
 

@@ -26,7 +26,7 @@ import urllib.request
 
 import rutas
 
-VERSION = 3                 # 2: pregunta aparte por equipo de filmacion en primer plano (se colaba la camara)
+VERSION = 4                 # 4 (17-nov): «belleza» 1-10 de cada toma. 2: pregunta aparte por equipo de filmacion en primer plano (se colaba la camara)
 #                             3: tiraba tomas buenas por una camara al fondo o en manos de un invitado: solo cuenta
 #                                el equipo pegado al lente que TAPA la imagen (boda: de 20 fuera a solo las de la camara)
 PARALELO = 3               # tomas a la vez: ffmpeg saca los cuadros de las siguientes mientras la GPU mira una
@@ -58,7 +58,10 @@ Responde SOLO un JSON con estas claves:
           una cámara. Cámaras, celulares o fotógrafos al fondo, en manos de los invitados o pequeños en la imagen NO
           cuentan: false.
 "util": false SOLO si la toma no sirve para el video final: se ve sobre todo el piso o el techo, está muy borrosa o
-        a oscuras, algo tapa casi toda la imagen, o no se ve a nadie ni nada del evento; si no, true. Ante la duda, true.""" % \
+        a oscuras, algo tapa casi toda la imagen, o no se ve a nadie ni nada del evento; si no, true. Ante la duda, true.
+"belleza": un número del 1 al 10: qué tan BONITA es la toma para un video profesional (encuadre, luz, se ve bien a la
+           persona, emoción, fondo limpio). 1-3 fea o descuidada; 4-6 normal; 7-8 bonita; 9-10 espectacular, de portada.
+           Sé exigente: la mayoría de las tomas son 4-6.""" % \
     ", ".join(ETIQUETAS)
 
 _estado = {"modelo": None, "probado": 0.0}
@@ -157,12 +160,22 @@ def en_gpu(minimo=0.8):
     nombre = modelo()
     if not nombre:
         return False
-    try:                                         # que este cargado (una consulta minima, sin imagen)
-        _pedir("/api/generate", {"model": nombre, "prompt": "", "keep_alive": "10m",
+    def parte():
+        _pedir("/api/generate", {"model": nombre, "prompt": "", "keep_alive": "10m",    # que este cargado (sin imagen)
                                  "options": {"num_ctx": NUM_CTX}}, timeout=180.0)
         for m in _pedir("/api/ps", timeout=5.0).get("models") or []:
             if (m.get("name") or m.get("model")) == nombre and m.get("size"):
-                return float(m.get("size_vram") or 0) / float(m["size"]) >= minimo
+                return float(m.get("size_vram") or 0) / float(m["size"])
+        return 0.0
+    try:
+        p = parte()
+        if p < minimo:
+            # (17-nov) el modelo se QUEDA como se cargo: si entro con DaVinci abierto (80 % en el procesador) sigue asi
+            # aunque DaVinci ya este cerrado y la GPU libre (18 s por toma en vez de 3). Se descarga y se carga otra vez.
+            _pedir("/api/generate", {"model": nombre, "prompt": "", "keep_alive": 0}, timeout=60.0)
+            time.sleep(2.0)
+            p = parte()
+        return p >= minimo
     except Exception:
         pass
     return False
@@ -234,7 +247,7 @@ def _cuadro(ruta, t, lado=448):
     return base64.b64encode(r.stdout).decode() if r.returncode == 0 and r.stdout else None
 
 
-INSTANTES_V = 5               # 2: equipo de filmacion; 3: solo el equipo que TAPA la imagen; 4: ver abajo; 5: tambien
+INSTANTES_V = 6               # 6 (17-nov): «sonrisa» y estorbo mas estricto (marcaba 328 de 1368; la mitad eran buenas). 2: equipo de filmacion; 3: solo el equipo que TAPA la imagen; 4: ver abajo; 5: tambien
 #                               el «estorbo» (un hombro o una espalda pegados al lente, desenfocados, tapando un costado:
 #                               la cara de la señora del microfono se veia y pasaba) y las etiquetas solo de momentos clave
 # (4) La persona (16-nov), viendo el de 1 min: «hay tomas que no se ve nada, apuntan al techo... hay tomas que no apuntan a
@@ -268,17 +281,20 @@ PROMPT_INSTANTE = (
     "dentro del cuadro); false si no hay caras o solo se ven nucas, espaldas o caras tapadas o borrosas;\n"
     "\"sin_cabeza\": true si la persona principal sale SIN CABEZA (el cuadro le corta la cabeza) o solo se ve su "
     "cuerpo, torso, brazos, piernas o ropa de cerca, o se ve de espaldas; si no, false;\n"
-    "\"estorbo\": true si algo MUY cerca de la cámara (un hombro, una espalda, una cabeza, un brazo, ropa, una silla, "
-    "un arreglo) sale desenfocado y tapa un costado o una parte importante de la imagen (más o menos una cuarta parte o "
-    "más); false si la imagen está limpia;\n"
+    "\"estorbo\": true SOLO si algo PEGADO a la cámara (un hombro, una espalda, una cabeza, un brazo, ropa, una silla, "
+    "un arreglo) sale BORROSO, desenfocado, y tapa una tercera parte o más de la imagen o a la persona principal; "
+    "false si la imagen está limpia. Gente nítida que forma parte de la escena (invitados de pie, alguien que pasa, "
+    "la maquillista trabajando, personas en primer plano bien enfocadas) NO es estorbo: false. Ante la duda, false;\n"
+    "\"sonrie\": true si la persona principal se ve con claridad SONRIENDO o riendo; si no, false;\n"
     "\"etiquetas\": SOLO los momentos de esta lista que estén pasando en el cuadro (si ninguno, []): %s."
     % ", ".join(MOMENTOS_CLAVE))
 # respuesta cerrada (Ollama: «structured outputs»): sin palabras inventadas y sin texto de mas (va mas rapido)
 FORMATO_INSTANTE = {"type": "object", "properties": {
     "apunta": {"type": "string", "enum": list(APUNTA)}, "de_cabeza": {"type": "boolean"},
     "cara": {"type": "boolean"}, "sin_cabeza": {"type": "boolean"}, "estorbo": {"type": "boolean"},
+    "sonrie": {"type": "boolean"},
     "etiquetas": {"type": "array", "items": {"type": "string", "enum": list(MOMENTOS_CLAVE)}}},
-    "required": ["apunta", "de_cabeza", "cara", "sin_cabeza", "estorbo", "etiquetas"]}
+    "required": ["apunta", "de_cabeza", "cara", "sin_cabeza", "estorbo", "sonrie", "etiquetas"]}
 
 
 def motivo_cuadro(d):
@@ -305,7 +321,10 @@ def _ver_cuadro(nombre, img):
               "messages": [{"role": "user", "content": PROMPT_INSTANTE, "images": [img]}]}
     d = json.loads(_pedir("/api/chat", cuerpo, timeout=120.0)["message"]["content"])
     et = [e for e in (str(x).strip().lower().replace(" ", "_") for x in d.get("etiquetas") or []) if e in MOMENTOS_CLAVE]
-    return et, motivo_cuadro(d)
+    motivo = motivo_cuadro(d)
+    if not motivo and _si(d.get("sonrie")) and _si(d.get("cara")):
+        et.append("sonrisa")                     # (v6) el armado prefiere cortar donde la persona sonrie
+    return et, motivo
 
 
 def instantes(ruta, dur, log=None):
@@ -404,8 +423,12 @@ def describir(tipo, ruta, dur=0.0, log=None):
     util = d.get("util")
     # (v3) solo cuenta el equipo que TAPA la imagen (la camara del camarografo en primer plano): esa toma no sirve
     equipo = _si(d.get("equipo"))
+    try:                                         # (v4, 17-nov) que tan bonita es la toma: ordena lo bueno (lo_que_ve)
+        belleza = max(1, min(10, int(round(float(d.get("belleza"))))))
+    except (TypeError, ValueError):
+        belleza = None
     return {"v": VERSION, "modelo": nombre, "momento": mom, "escena": str(d.get("escena") or "")[:80],
-            "etiquetas": etiquetas, "equipo": equipo,
+            "etiquetas": etiquetas, "equipo": equipo, "belleza": belleza,
             "util": not equipo and util is not False and str(util).lower() != "false"}
 
 

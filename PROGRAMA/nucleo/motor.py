@@ -1028,11 +1028,31 @@ def _conectar_resolve(log):
     r = dvr.scriptapp("Resolve")
     if r is None and rutas.abrir_resolve():
         log("Abriendo DaVinci Resolve...")
-        for _ in range(60):
-            time.sleep(3)
-            r = dvr.scriptapp("Resolve")
-            if r is not None and r.GetProjectManager() is not None:
-                break
+
+        def esperar(veces):
+            r = None
+            for _ in range(veces):
+                time.sleep(3)
+                r = dvr.scriptapp("Resolve")
+                if r is not None and r.GetProjectManager() is not None:
+                    break
+            return r
+        r = esperar(40)
+        if (r is None or r.GetProjectManager() is None) and os.name == "nt" and \
+                not any(t.startswith("DaVinci Resolve") for t in _titulos_resolve(True)):
+            # (17-nov, dos veces en un dia) DaVinci abrio pero se quedo sin contestar: colgado en la portada «Cargando
+            # proyectos» o parado en el Organizador de proyectos. No hay ningun proyecto abierto (su ventana se llamaria
+            # «DaVinci Resolve - ...»), asi que no se pierde nada: se cierra y se abre otra vez, una sola vez.
+            log("DaVinci no contesta (portada u Organizador de proyectos): lo cierro y lo abro otra vez...")
+            try:
+                import subprocess
+                subprocess.run(["taskkill", "/IM", "Resolve.exe", "/F"], capture_output=True, timeout=30,
+                               creationflags=rutas.SIN_VENTANA)
+                time.sleep(4)
+                if rutas.abrir_resolve():
+                    r = esperar(60)
+            except Exception as ex:
+                log("  no se pudo reabrir DaVinci (%s)" % ex)
         time.sleep(5)                     # que termine de arrancar antes de pedirle el proyecto
     if r is None or r.GetProjectManager() is None:       # a veces scriptapp devuelve un objeto "hueco"
         raise RuntimeError("No pude conectar con DaVinci Resolve. Abrelo y revisa Preferencias > Sistema > "
@@ -1072,13 +1092,24 @@ def reenlazar(project, log=print):
     mp = project.GetMediaPool()
     perdidos = []
 
-    def recorrer(f):
-        for c in f.GetClipList() or []:
-            r = c.GetClipProperty("File Path") or ""
-            if r and not os.path.exists(r):
-                perdidos.append((c, re.split(r"[\\/]", r)[-1]))
+    # (17-nov, XV 8-nov) El material de OTRO evento no se reenlaza por nombre: los archivos se llaman igual en todos
+    # («VIDEO VERTICAL 029 (FIESTA).MOV»), y los clips de la boda del 7-nov (su carpeta ya no estaba) quedaron
+    # enlazados a los videos del XV: lineas de la boda con imagenes del XV, clips con el largo cambiado (huecos en
+    # negro) y DaVinci colgado invalidando la cache. Solo se reenlaza lo del evento de ahora y lo que no es de ningun
+    # evento (plantillas, musica, efectos).
+    evento = str(leer_estado().get("evento") or "").strip().upper()
+    de_eventos = ("VIDEO", "FOTOS", "DRON", "EVENTOS", "SECUENCIAS")
+
+    def recorrer(f, camino=()):
+        ajeno = len(camino) >= 2 and re.sub(r"^\d+\s+", "", camino[0]).upper() in de_eventos \
+            and bool(evento) and camino[1].strip().upper() != evento
+        if not ajeno:
+            for c in f.GetClipList() or []:
+                r = c.GetClipProperty("File Path") or ""
+                if r and not os.path.exists(r):
+                    perdidos.append((c, re.split(r"[\\/]", r)[-1]))
         for s in f.GetSubFolderList() or []:
-            recorrer(s)
+            recorrer(s, camino + (s.GetName() or "",))
     recorrer(mp.GetRootFolder())
     if not perdidos:
         return 0

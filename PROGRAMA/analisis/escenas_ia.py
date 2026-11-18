@@ -396,7 +396,27 @@ def _con_limite(fn, limite_s):
     return res.get("v")
 
 
-def reconocer(pares, log=print, limite_s=VIDEOS_LIMITE_S, renderizando=None):
+def _por_carpeta(raiz, pendientes):
+    """[(Folder, [pendientes de esa carpeta])]: las fotos primero y luego los videos, las carpetas mas cortas antes.
+    La llamada analiza la carpeta entera (lo que ya estaba hecho no importa); un pendiente solo va archivo por archivo."""
+    de = {}                                      # id del clip -> su carpeta
+
+    def andar(f):
+        for c in f.GetClipList() or []:
+            de[c.GetUniqueId()] = f
+        for s in f.GetSubFolderList() or []:
+            andar(s)
+    andar(raiz)
+    grupos = {}
+    for p in pendientes:
+        f = de.get(p[3].GetUniqueId())
+        if f is not None:
+            grupos.setdefault((p[0], f.GetUniqueId()), (f, []))[1].append(p)
+    lotes = [v for _, v in sorted(grupos.items(), key=lambda kv: (kv[0][0], sum(g[1] for g in kv[1][1])))]
+    return [l for l in lotes if len(l[1]) > 1]
+
+
+def reconocer(pares, log=print, limite_s=VIDEOS_LIMITE_S, renderizando=None, raiz=None):
     """pares: [(MediaPoolItem, item del analisis)] de fotos y videos. Pasa por IntelliSearch con caras (modo rapido)
     lo que aun no se analizo y lee las personas de cada uno.
     - Primero las fotos (0,7 s cada una): son las que dicen quien es la persona festejada.
@@ -439,7 +459,43 @@ def reconocer(pares, log=print, limite_s=VIDEOS_LIMITE_S, renderizando=None):
         % (n_fotos, len(pendientes) - n_fotos))
     t0, t_videos, hechos_n = time.time(), None, 0
     despierta = _pantalla_despierta(True)
+    # (1.6.1, 17-nov) POR CARPETA: cada llamada a AnalyzeForIntellisearch cuesta ~11 s fijos (XV 8-nov: 12 s por foto,
+    # 420 archivos = 80 min). Folder.AnalyzeForIntellisearch hace la carpeta entera de una vez: 0,83 s por foto (medido).
+    # Lo que no quede resuelto por carpeta sigue despues archivo por archivo, como antes.
     try:
+        lotes = _por_carpeta(raiz, pendientes) if raiz is not None else []
+    except Exception as ex:
+        log("  (por carpeta no se pudo: %s; sigo archivo por archivo)" % ex)
+        lotes = []
+    trabado = False
+    try:
+        for carpeta, grupo in lotes:
+            es_video = grupo[0][0]
+            if es_video and t_videos is None:
+                t_videos = time.time()
+            if (renderizando and renderizando()) or (es_video and time.time() - t_videos > limite_s):
+                break
+            dur = sum(g[1] for g in grupo)
+            try:
+                if not _con_limite(lambda: carpeta.AnalyzeForIntellisearch(True, False), 120.0 + 3.0 * len(grupo) + 0.6 * dur):
+                    continue                     # DaVinci dijo que no: esos van despues uno por uno
+            except TimeoutError:
+                log("  DaVinci se quedó trabado reconociendo la carpeta %s: sigo sin las caras de lo que falta (cierra la "
+                    "ventana «Analizar para IntelliSearch» de DaVinci si quedó abierta)." % carpeta.GetName())
+                trabado = True
+                break
+            except Exception as ex:
+                log("  carpeta %s: no se pudo reconocer (%s)" % (carpeta.GetName(), ex))
+                continue
+            for _, _, k, c, it in grupo:
+                try:
+                    cache[k] = personas_de(c)
+                    hechos_n += 1
+                except Exception:
+                    pass
+            _guardar_personas(cache)
+            log("  %d/%d reconocidos (%.0f s)" % (hechos_n, len(pendientes), time.time() - t0))
+        pendientes = [] if trabado else [p for p in pendientes if p[2] not in cache]
         for n, (es_video, _, k, c, it) in enumerate(pendientes, 1):
             if es_video and t_videos is None:
                 t_videos = time.time()

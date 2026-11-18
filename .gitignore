@@ -14,3 +14,7 @@ __pycache__/
 # musica, SFX y fuentes con licencia: NO se publican tal cual; van cifrados en PROGRAMA/recursos_protegidos/
 PROGRAMA/recursos/audio/
 PROGRAMA/recursos/fuentes/FogtwoNo5.ttf
+
+# musica propia: la primera prueba y las pistas rehechas no van (ni en git ni en el instalador)
+PROGRAMA/recursos/musica/xv/
+PROGRAMA/recursos/musica/_descartadas/

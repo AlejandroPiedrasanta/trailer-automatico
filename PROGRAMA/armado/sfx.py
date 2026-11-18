@@ -27,6 +27,9 @@ MAX_VITORES = 10
 # los nivela mezcla.py (objetivo SFX); a los cortos se les pone aqui el volumen.
 PISTA_MOMENTOS = "SFX MOMENTOS"
 VOL_PASO, VOL_OBTURADOR = -7.0, -12.0
+# el SFX de la rampa de cada tipo de intro, por el ritmo de sus fotos (los mismos de build_trailers.INTROS)
+RAMPAS = {"XV_RAMPA": (5,) * 8, "XV_RAMPA_ACELERA": (9, 7, 6, 5, 4, 4, 3, 2), "XV_RAMPA_FRENA": (2, 3, 4, 4, 5, 6, 7, 9),
+          "XV_RAMPA_LATIDO": (7, 3, 7, 3, 7, 3, 7, 3)}
 
 
 def _pista(tl, nombre):
@@ -201,4 +204,9 @@ def momentos(tl, mp, propios, fps, fotos_intro=(), log=print):
             poner("XV_PASO", ini - int(0.2 * S), VOL_PASO)
     for f in fotos_intro:
         poner("XV_OBTURADOR", f, VOL_OBTURADOR)
+    if fotos_intro:                             # (17-nov) rampa de velocidad de las fotos: aire que late con cada foto
+        fs = sorted(fotos_intro)                # e impacto al arrancar el video; una rampa por tipo de intro (Ajustes)
+        pasos = [b - a for a, b in zip(fs, fs[1:])]
+        nombre = next((n for n, c in RAMPAS.items() if list(c[:len(pasos)]) == pasos and n in propios), "XV_RAMPA")
+        poner(nombre, fs[0])
     return puestos

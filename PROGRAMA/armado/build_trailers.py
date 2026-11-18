@@ -45,17 +45,32 @@ ZONAS_TODAS = ["MAQUILLAJE", "IGLESIA", "FIESTA"]
 VERSIONES = [
     {"plantilla": "TRAILER XV - 1min", "sufijo": "1min", "seg": 60, "corte": (1.0, 2.2), "apertura": (0.6, 1.2),
      "grupo": "XV 1min - COLOR", "tr": {"zona": 14, "suave": 7, "suaves_en": (), "apertura": 3, "final": 30}},
-    {"plantilla": "TRAILER XV - 3min", "sufijo": "3min", "seg": 180, "corte": (1.8, 4.0), "apertura": (0.8, 1.6),
+    # (17-nov, la persona: «en el de 1 minuto al ritmo de la música; de 3 a 30, más tranquilo, para no aburrir con tanto
+    # corte») planos mas largos en las versiones largas: 3 min 1,8-4,0 -> 2,4-5,0; 15 min 3-7 -> 4-9; 30 min 4-9 -> 5-12
+    {"plantilla": "TRAILER XV - 3min", "sufijo": "3min", "seg": 180, "corte": (2.4, 5.0), "apertura": (0.8, 1.6),
      "grupo": "XV 3min - COLOR", "tr": {"zona": 20, "suave": 12, "suaves_en": (), "apertura": 4, "final": 42}},
-    {"plantilla": "TRAILER XV - 15min", "sufijo": "15min", "seg": 900, "corte": (3.0, 7.0), "apertura": (1.2, 2.5),
+    {"plantilla": "TRAILER XV - 15min", "sufijo": "15min", "seg": 900, "corte": (4.0, 9.0), "apertura": (1.2, 2.5),
      "grupo": "XV 15min - COLOR", "tr": {"zona": 28, "suave": 18, "suaves_en": (), "apertura": 5, "final": 54}},
-    {"plantilla": "TRAILER XV - 30min", "sufijo": "30min", "seg": 1800, "corte": (4.0, 9.0), "apertura": (1.5, 3.0),
+    {"plantilla": "TRAILER XV - 30min", "sufijo": "30min", "seg": 1800, "corte": (5.0, 12.0), "apertura": (1.5, 3.0),
      "grupo": "XV 30min - COLOR", "tr": {"zona": 32, "suave": 20, "suaves_en": (), "apertura": 6, "final": 60}},
 ]
 # (1.5.7, la persona: «las transiciones están muy bruscas») antes solo habia fundidos entre momentos y en algunas zonas
 # de las versiones largas: todo lo demas era corte seco. Ahora: disolvencia corta en TODOS los cortes (mas corta en la
 # apertura, que va al ritmo), mas larga en las versiones largas, y un fundido a color mas largo al cambiar de momento.
 INTRO_CORTES = [5] * 8                  # 8 fotos de 5 frames (24 fps): las unicas fotos del video
+# (17-nov, la persona: «en Ajustes, escoger los tipos de intro, ya sea la speed ramp u otras, con su SFX y musica») El
+# ritmo de las 8 fotos de la apertura; todos suman 40 cuadros (el impacto de la musica y del SFX cae ahi, al arrancar
+# el video). Cada uno tiene su SFX (hacer_sfx.RAMPAS -> recursos/sfx/XV_RAMPA*.wav; sfx.momentos lo elige por el ritmo).
+INTROS = {"rampa": [5] * 8,                      # pareja: una foto cada 5 cuadros
+          "acelera": [9, 7, 6, 5, 4, 4, 3, 2],   # empieza lenta y se dispara hasta el impacto
+          "frena": [2, 3, 4, 4, 5, 6, 7, 9],     # rafaga que se va deteniendo en la ultima foto
+          "latido": [7, 3, 7, 3, 7, 3, 7, 3]}    # de dos en dos, como un corazon
+try:
+    import motor as _motor_intro
+    INTRO_CORTES = list(INTROS.get(str(os.environ.get("TRAILER_INTRO") or
+                                       _motor_intro.leer_estado().get("intro_tipo") or "rampa").lower(), INTRO_CORTES))
+except Exception:
+    pass
 ZONAS = ["MAQUILLAJE", "IGLESIA", "FIESTA"]
 COLORES = {"MAQUILLAJE": "Purple", "IGLESIA": "Green", "FIESTA": "Pink", "DESCARTADOS": "Brown"}
 PISTA_VIDEOS, PISTA_FOTOS, PISTA_TEXTOS, PISTA_WHOOSH = "VIDEOS", "FOTOS INTRO", "TEXTOS", "SFX WHOOSH"
@@ -540,6 +555,10 @@ class Planificador:
             p *= PESO_PROTA_IA
         elif et & {"familia", "grupo", "baile"}:
             p *= PESO_GENTE_IA
+        try:                                     # (17-nov) lo bonito primero: belleza 1-10 de la vista -> x0,8 a x1,25
+            p *= 0.75 + 0.05 * max(1, min(10, int(ia["belleza"])))
+        except (KeyError, TypeError, ValueError):
+            pass
         return p * (PESO_INUTIL_IA if ia.get("util") is False else 1.0)
 
     @staticmethod
@@ -617,6 +636,12 @@ class Planificador:
                 for i in range(max(0, int((t - paso / 2.0) / PASO_CALIDAD)),
                                min(n, int(math.ceil((t + paso / 2.0) / PASO_CALIDAD)))):
                     f[i] = min(f[i], PESO_ESTORBO)
+        for x in inst:                                   # (17-nov) donde la persona SONRIE, el tramo vale mas: ahi se corta
+            if x[2] is not False and "sonrisa" in (x[1] or []):
+                for i in range(max(0, int((x[0] - paso / 2.0) / PASO_CALIDAD)),
+                               min(n, int(math.ceil((x[0] + paso / 2.0) / PASO_CALIDAD)))):
+                    if f[i] >= 1.0:
+                        f[i] = PESO_SONRISA
         return f
 
     def media(self, serie, a, l):
@@ -799,12 +824,17 @@ class Planificador:
         """(1.5.7) Frames de planos DISTINTOS que da el material bueno de ese momento con ese largo de corte (lo que
         cabe sin repetir tomas)."""
         lo, hi = corte
+        # (17-nov, XV 8-nov: la «iglesia» eran 3 videos y en el de 1 min uno salia 4 veces) en las versiones cortas una
+        # misma toma no cuenta mas de 2 planos (1 min) o 3 (3 min): el momento con poco material se acorta y su tiempo
+        # pasa a los que tienen de sobra (repartir_zonas), en vez de repetir la toma
+        tope = 2 if lo <= 1.2 else 3 if lo <= 2.0 else None
         n = 0
         for v in self.vids:
             if v.get("momento") != momento and not any(m == momento for _, _, m in v.get("tramos") or []):
                 continue
             largo = sum(b - a for a, b in self.utiles(v, [momento]) if b - a >= lo)
-            n += int(largo // (lo + SEPARACION))
+            k = int(largo // (lo + SEPARACION))
+            n += k if tope is None else min(k, tope)
         return int(n * (lo + hi) / 2.0 * self.fps)
 
     def zona(self, momentos, dur_f, corte, rng, dron_primero, con_fotos=False):
@@ -848,10 +878,12 @@ class Planificador:
         tope_de = {g: (max(1, int(math.ceil(len(cortes) * TOPE_DRON))) if g == "dron" and varios else
                        max(2, int(math.ceil(len(cortes) * TOPE_MISMO_ENCUADRE))) if varios else len(cortes))
                    for g in set(grupo)}
-        cuenta = [0] * len(cand)
-        en_grupo = {}
         total = sum(pesos)
-        if total > 0:
+
+        def repartir(topes):
+            cuenta, en_grupo = [0] * len(cand), {}
+            if total <= 0:
+                return cuenta
             ideal = [len(cortes) * p / total for p in pesos]
             orden = sorted(range(len(cand)), key=lambda i: -ideal[i])
             for i in orden:                         # primero la parte entera, sin pasar el tope de su encuadre
@@ -859,7 +891,8 @@ class Planificador:
                 if n > 0:
                     cuenta[i] = n
                     en_grupo[grupo[i]] = en_grupo.get(grupo[i], 0) + n
-            orden = sorted(range(len(cand)), key=lambda i: ideal[i] - int(ideal[i]), reverse=True)
+            # lo que falta, a las de mas peso primero (antes: por la parte decimal, que con tope por toma dejaba fuera
+            # a las mejores)
             falta = len(cortes) - sum(cuenta)
             while falta > 0:
                 hubo = False
@@ -871,6 +904,14 @@ class Planificador:
                         hubo = True
                 if not hubo:
                     break
+            return cuenta
+        # (17-nov, XV 8-nov: el de 1 min sacaba 5 veces la misma toma larga de la fiesta y 3 otra, con 56 videos de
+        # fiesta sin usar: el reparto es por minutos de toma y una de 10 min se lo lleva todo) VARIEDAD: cada toma sale
+        # como mucho lo justo para llenar la zona entre todas (x1,5); si asi no alcanza, se reparte como antes.
+        por_toma = max(1, int(math.ceil(1.5 * len(cortes) / float(max(1, len(cand))))))
+        cuenta = repartir([min(t, por_toma) for t in topes])
+        if sum(cuenta) < len(cortes):
+            cuenta = repartir(topes)
         piezas, pendientes, cola = [], [], list(cortes)
         for (v, ls), n in zip(cand, cuenta):
             if n <= 0:
@@ -1134,10 +1175,11 @@ def _cuadro_malo(x, dron=False):
 
 
 IA_BLANDOS = ("estorbo",)     # (16-nov) algo de gente delante: se prefiere lo limpio, pero no se tira (vision_ia.BLANDOS)
-PESO_ESTORBO = 0.12           # cuanto vale un tramo con estorbo frente a uno limpio (16-nov: con 0,35 el de 15 min metia
+PESO_SONRISA = 1.3            # (17-nov) un tramo donde la vista ve sonreir a la persona vale un 30 % mas
+PESO_ESTORBO = 0.12         # cuanto vale un tramo con estorbo frente a uno limpio (16-nov: con 0,35 el de 15 min metia
 #                               9 veces en un minuto el hombro borroso con huipil: ahora queda bajo UMBRAL_PLANO y el
 #                               armado prefiere repetir una toma buena o rellenar, como pide la regla del montaje)
-ESTORBO_DURO_HASTA_S = 180    # (16-nov) en las versiones de hasta 3 min el estorbo queda fuera del todo (solo lo limpio)
+ESTORBO_DURO_HASTA_S = int(os.environ.get("TRAILER_ESTORBO_DURO_S", 180))    # (16-nov) en las versiones de hasta 3 min el estorbo queda fuera del todo (solo lo limpio)
 
 
 def objetivos_de_luz(items):
@@ -2039,6 +2081,19 @@ def cruces_de_musica(tl, mp, fps):
         if not -(CRUCE_RETRASO_MAX + 20) * fps <= cruce <= 6 * fps:      # ni se tocan ni estan cerca
             continue
         try:
+            # (17-nov, medido en el de 15 min: 2,5 s de silencio) dos pistas PROPIAS del mismo papel puestas seguidas
+            # (musica_propia las encadena: una acaba en su final y la otra entra en su primer golpe) no son un «cambio
+            # de cancion» que arreglar: alargar la que sale la metia en su cola de silencio y la otra entraba 4 s tarde
+            ra = os.path.normcase(a.GetMediaPoolItem().GetClipProperty("File Path") or "")
+            rb = os.path.normcase(b.GetMediaPoolItem().GetClipProperty("File Path") or "")
+            propia = os.path.normcase(os.path.join(rutas.RECURSOS, "musica"))
+            if abs(cruce) <= 2 and ra.startswith(propia) and rb.startswith(propia) and any(
+                    p in os.path.basename(ra).upper() and p in os.path.basename(rb).upper()
+                    for p in ("FIESTA", "ROMANTICA", "EPICA")):
+                continue
+        except Exception:
+            pass
+        try:
             cola = _final_de_cancion(a, fps)                         # s finales en que la que sale ya no suena
             # cuadros que le faltan a la que sale para sonar hasta 1,5 s despues de entrar la otra
             entra = _entrada_de_cancion(b, fps) if cola > 0.75 or cruce < 0 else 0.0     # la otra puede entrar muy bajito
@@ -2653,6 +2708,8 @@ def instalar_dctl(project):
         os.makedirs(destino, exist_ok=True)
         for f in os.listdir(origen):
             o, d = os.path.join(origen, f), os.path.join(destino, f)
+            if not os.path.isfile(o) or f.startswith(".") or f.lower() == "desktop.ini":
+                continue                         # .cf y desktop.ini son el icono de la carpeta, no DCTL
             if not os.path.exists(d) or open(o, "rb").read() != open(d, "rb").read():
                 shutil.copy2(o, destino)                     # copia los que faltan o cambiaron
         project.RefreshLUTList()
@@ -2796,6 +2853,36 @@ def organizar_pool(mp, root, evento, items):
     return pool
 
 
+def sanear_pool(mp, pool, items):
+    """(17-nov, vertical del XV 8-nov: huecos en NEGRO) Clips del media pool que DaVinci cree de otro largo que el
+    archivo que hay hoy en esa ruta (aqui: «VIDEO VERTICAL 035» decia 206 cuadros y el archivo tiene 897; venian de un
+    armado anterior del mismo evento, con otros nombres, reenlazados). El plan se hace con el largo real y DaVinci
+    recorta con el suyo: el plano sale mas corto y queda un hueco.
+    NO se borran del media pool: los usan otras lineas del proyecto y al quitarlos (primer intento, 17-nov) DaVinci se
+    quedo 45 minutos colgado invalidando la cache de todas. Aqui solo se le dice al plan cuanto mide de verdad cada
+    clip PARA DAVINCI: la toma se usa hasta el menor de los dos largos (queda en i["dur"] solo durante este armado).
+    Devuelve cuantas tomas ajusto."""
+    n = 0
+    for i in items:
+        c = pool.get(os.path.normcase(i["ruta"]))
+        if c is None or i["tipo"] == "foto" or not i.get("dur"):
+            continue
+        try:
+            cuadros, fps_c = float(c.GetClipProperty("Frames") or 0), float(c.GetClipProperty("FPS") or 0)
+        except Exception:
+            continue
+        if cuadros > 0 and fps_c > 0 and abs(cuadros / fps_c - i["dur"]) > max(0.6, 0.03 * i["dur"]):
+            corto = min(float(i["dur"]), cuadros / fps_c)
+            if corto < i["dur"]:
+                i["dur_real"] = i["dur"]
+                i["dur"] = round(corto, 2)
+                for clave in ("calidad", "audio"):       # las series por medio segundo, hasta ahi
+                    if isinstance(i.get(clave), list):
+                        i[clave] = i[clave][:max(1, int(corto / PASO_CALIDAD))]
+            n += 1
+    return n
+
+
 # ------------------------------------------------------------------ todo junto
 def main():
     pm = resolve.GetProjectManager()
@@ -2866,7 +2953,9 @@ def main():
             golpes = []
             if ritmo:
                 try:
-                    golpes = ritmo.golpes(tpl, fps, BASE, log=print)
+                    # (17-nov) con musica propia el ritmo es el de ESA musica, no el de la cancion de la plantilla
+                    golpes = ritmo.golpes(tpl, fps, BASE, log=print, tramos=_modulo("musica_propia").tramos_ritmo(
+                        tpl, fps, TIPO_EVENTO, ritmo.tramos_musica(tpl, fps)))
                 except Exception as ex:
                     aviso("%s: no se pudo leer el ritmo (%s)" % (ver["sufijo"], ex))
             plan.poner_estorbo_duro(ver["seg"] <= ESTORBO_DURO_HASTA_S)
@@ -2885,8 +2974,23 @@ def main():
                         plan.usados = reservados
                     lo = ver["apertura"][0]
                 else:
+                    antes_u = {k: list(v) for k, v in plan.usados.items()}
                     piezas, reusos = plan.zona([nombre], z1 - z0, ver["corte"], rng, nombre != "MAQUILLAJE",
                                                ver["sufijo"] in RELLENO_FOTOS)
+                    if reusos and plan.estorbo_duro:
+                        # (17-nov) en 1 y 3 min el «estorbo» (alguien delante, pegado al lente) queda fuera, pero la
+                        # vista lo marca de mas (328 de 1368 cuadros; de 12 mirados, la mitad eran tomas buenas): si
+                        # sin esas tomas hay que REPETIR, entran (con su peso bajo) antes que repetir
+                        con_u = plan.usados
+                        plan.usados = antes_u
+                        plan.poner_estorbo_duro(False)
+                        p2, r2 = plan.zona([nombre], z1 - z0, ver["corte"], rng, nombre != "MAQUILLAJE",
+                                           ver["sufijo"] in RELLENO_FOTOS)
+                        plan.poner_estorbo_duro(True)
+                        if r2 < reusos:
+                            piezas, reusos = p2, r2
+                        else:
+                            plan.usados = con_u
                     lo = ver["corte"][0]
                 multicam = plan.multicamara(piezas)
                 al_golpe += al_ritmo(piezas, z0, z1, golpes, fps, lo)
@@ -2974,14 +3078,21 @@ def main():
     sat_evento = objetivo_de_saturacion(items)
     reporte["luz_objetivo"] = {k: round(v, 3) for k, v in objetivos.items()}
     pool = organizar_pool(mp, root, evento, items)
+    try:
+        viejos_pool = sanear_pool(mp, pool, items)
+        if viejos_pool:
+            print("Media pool: %d clips miden para DaVinci distinto que su archivo; el plan usa el largo menor "
+                  "(para que no queden huecos en negro)." % viejos_pool)
+    except Exception as ex:
+        aviso("No se pudo revisar el largo de los clips del media pool (%s)" % ex)
     print("Media pool: %d archivos en carpetas MAQUILLAJE / IGLESIA / FIESTA con colores" % len(pool))
-    otra_vez = False
+    otra_vez = bool(locals().get("viejos_pool"))     # cambiaron largos: el plan se hace otra vez con ellos
     try:                                         # la IA de Resolve reconoce a las personas (IntelliSearch con caras)
         pares_p = [(pool[os.path.normcase(i["ruta"])], i) for i in items
                    if not i.get("descartar") and os.path.normcase(i["ruta"]) in pool]
-        cache_p = ia.reconocer(pares_p, print, renderizando=project.IsRenderingInProgress)
+        cache_p = ia.reconocer(pares_p, print, renderizando=project.IsRenderingInProgress, raiz=root)
         protas, huella = ia.aplicar_personas(items, cache_p, TIPO_EVENTO)
-        otra_vez = huella != huella_personas
+        otra_vez = otra_vez or huella != huella_personas
         vid = [i for i in items if i["tipo"] == "video" and i.get("caras") is not None]
         fot = [i for i in items if i["tipo"] == "foto" and i.get("caras") is not None]
         reporte["personas"] = {"protagonistas": len(protas), "videos_con_ella": sum(1 for i in vid if i.get("prota")),
@@ -3063,6 +3174,15 @@ def main():
         project.SetCurrentTimeline(tl)
         time.sleep(1.0)            # Resolve solo cambia el estado de los clips de la timeline activa y ya asentada
         tl = project.GetCurrentTimeline() or tl
+        try:                                    # (17-nov) musica original del tipo de evento en vez de la de la plantilla
+            mus = carpeta_raiz(mp, root, "MUSICA")
+            propia = next((f for f in mus.GetSubFolderList() or [] if f.GetName() == "MUSICA PROPIA"), None) \
+                or mp.AddSubFolder(mus, "MUSICA PROPIA")
+            info_musica = _modulo("musica_propia").aplicar(tl, mp, propia, fps, TIPO_EVENTO, print)
+        except Exception as ex:
+            info_musica = 0
+            aviso("Música propia: no se pudo cambiar (%s); queda la de la plantilla." % ex)
+        mp.SetCurrentFolder(dir_tl)
         tam_v = None
         if VERTICAL:                            # la copia pasa a 9:16; la plantilla sigue como estaba
             tam_v = poner_vertical(tl)
@@ -3192,6 +3312,34 @@ def main():
             info["momentos"] = _modulo("sfx").momentos(tl, mp, propios, fps, ini_fotos, print)
         except Exception as ex:
             aviso("%s: no se pudieron colocar los momentos (%s)" % (nombre, ex))
+        try:                                     # (17-nov) overlays de luz propios: destello en cada cambio de momento
+            efe_ov = carpeta_raiz(mp, root, "EFECTOS")           # y brillos sobre el nombre y la tarjeta final
+            dir_ov = next((x for x in efe_ov.GetSubFolderList() or [] if x.GetName() == "OVERLAYS"), None) or \
+                mp.AddSubFolder(efe_ov, "OVERLAYS")
+            cambios_ov = [z[1] for z in zonas if z[0] in ZONAS][1:]
+            info["overlays"] = _modulo("overlays").poner(resolve, tl, mp, dir_ov, fps, TIPO_EVENTO, VERTICAL,
+                                                         cambios_ov, print)
+            mp.SetCurrentFolder(dir_tl)
+        except Exception as ex:
+            aviso("%s: no se pudieron poner los overlays de luz (%s)" % (nombre, ex))
+        try:                                     # (17-nov) los gritos, aplausos y risas DE VERDAD de ese plano, bajo la musica
+            info["ambiente"] = _modulo("ambiente").poner(tl, mp, pool, puestos, fps, print)
+        except Exception as ex:
+            aviso("%s: no se pudo poner el ambiente real (%s)" % (nombre, ex))
+        try:                                     # (17-nov) el nombre DETRAS de la persona (recorte local, sin Mascara
+            pd_mod = _modulo("persona_delante")  # Magica): solo si tapa una parte de las letras; en 9:16 aun no
+            if pd_mod.activo() and not VERTICAL:
+                efe_pd = carpeta_raiz(mp, root, "EFECTOS")
+                dir_pd = next((x for x in efe_pd.GetSubFolderList() or [] if x.GetName() == "RECORTES"), None) or \
+                    mp.AddSubFolder(efe_pd, "RECORTES")
+                info["texto_detras"] = pd_mod.aplicar(resolve, project, tl, mp, dir_pd, print)
+                mp.SetCurrentFolder(dir_tl)
+                if resolve.GetCurrentPage() != "edit":       # el render del tramo deja a DaVinci en Entrega
+                    resolve.OpenPage("edit")
+                    time.sleep(1.0)
+                project.SetCurrentTimeline(tl)
+        except Exception as ex:
+            aviso("%s: no se pudo poner el texto detrás de la persona (%s)" % (nombre, ex))
         voces = []
         try:                                     # la palabra del pastor, brindis y discursos sobre la musica
             voces = poner_voces(tl, mp, pool, voces_plan, fps)

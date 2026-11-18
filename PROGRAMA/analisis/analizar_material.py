@@ -1362,13 +1362,177 @@ def _leer_cache():
         with open(_cache_ruta(), encoding="utf-8") as f:
             cache = json.load(f).get("cache", {})
     except Exception:
-        return {}
+        cache = {}
     viejo = {}                          # cache de versiones anteriores: "ruta completa|tamano|fecha"
     for k, v in cache.items():
         partes = k.split("|")
         nueva = "%s|%s" % (re.split(r"[\\/]", partes[0])[-1], partes[1]) if len(partes) == 3 else k
         viejo[nueva] = v
+    try:                                # (17-nov) lo que se alcanzo a analizar antes de un corte (punto de guardado)
+        if os.path.getmtime(_parcial_ruta()) > (os.path.getmtime(_cache_ruta()) if os.path.exists(_cache_ruta()) else 0):
+            with open(_parcial_ruta(), encoding="utf-8") as f:
+                viejo.update(json.load(f).get("cache", {}))
+    except Exception:
+        pass
     return viejo
+
+
+# ---- (17-nov, la persona: «por si se borra la caché del programa o se cierra inesperadamente y no tenga que analizar»)
+# Antes el analisis se guardaba UNA vez, al final: si el programa se cerraba a los 50 minutos, se perdia todo.
+#  - Punto de guardado: cada minuto, lo analizado hasta ahi (datos/analisis/material_parcial.json).
+#  - Ficha junto al material: al terminar, cada carpeta del evento se lleva su analisis en «.trailer/analisis.json»
+#    (carpeta oculta). Si se borra la cache del programa, se reinstala o se abre el evento en otra PC, se lee de ahi.
+FICHA = os.path.join(".trailer", "analisis.json")
+_ult_punto = [0.0]
+
+
+def _parcial_ruta():
+    return os.path.join(rutas.ANALISIS, "material_parcial.json")
+
+
+def _punto_de_guardado(cache, ya=False):
+    import time
+    if not ya and time.time() - _ult_punto[0] < 60.0:
+        return
+    _ult_punto[0] = time.time()
+    try:                                # otro hilo (el oido) puede estar escribiendo: si choca, se guarda en el siguiente
+        _guardar_json(_parcial_ruta(), {"version": VERSION, "cache": dict(cache)}, indent=None)
+    except Exception:
+        pass
+
+
+# ---- (17-nov, la persona: «cada video analizado, de una vez incrusta los metadatos») INCRUSTADO en el archivo, al
+# momento: el analisis de cada toma va en un flujo aparte del MISMO archivo («video.mp4:trailer», flujo alterno de NTFS).
+# No toca ni un byte del video ni de la foto (ni su tamaño ni su fecha, que se restaura): reescribir un MP4 para meterle
+# metadatos por dentro pondria en riesgo el original. Viaja con el archivo al moverlo o renombrarlo en discos NTFS; al
+# copiarlo a exFAT, a una Mac o a la nube se pierde, y ahi queda la ficha de la carpeta («.trailer/analisis.json»).
+FLUJO = ":trailer"
+
+
+def _incrustar(d):
+    """Deja en el archivo lo que se sabe de el. Solo Windows/NTFS; si no se puede, no pasa nada."""
+    ruta = (d or {}).get("ruta")
+    if os.name != "nt" or not ruta or d.get("error"):
+        return False
+    try:
+        st = os.stat(ruta)
+        with open(ruta + FLUJO, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False)
+        os.utime(ruta, ns=(st.st_atime_ns, st.st_mtime_ns))      # la fecha del archivo es la hora de la camara: intacta
+        return True
+    except Exception:
+        return False
+
+
+def _leer_incrustado(ruta):
+    if os.name != "nt":
+        return None
+    try:
+        with open(ruta + FLUJO, encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) and not d.get("error") else None
+    except Exception:
+        return None
+
+
+def _leer_incrustados(cache, lista):
+    """Completa la cache con lo incrustado en cada archivo. Devuelve cuantos recupero."""
+    n = 0
+    for _, r in lista:
+        try:
+            k = _clave(r)
+        except OSError:
+            continue
+        tengo = cache.get(k)
+        if tengo is not None and not tengo.get("error") and tengo.get("ia"):
+            continue
+        d = _leer_incrustado(r)
+        if d and (tengo is None or tengo.get("error") or tengo.get("v", 0) < d.get("v", 0)
+                  or (not tengo.get("ia") and d.get("ia"))):
+            d["ruta"] = r
+            cache[k] = d
+            n += 1
+    return n
+
+
+def _raices():
+    try:
+        return [r for r in rutas.fuentes() if os.path.isdir(r)]
+    except Exception:
+        return []
+
+
+def _leer_fichas(cache):
+    """Completa la cache con las fichas que viajan con el material. Devuelve cuantas tomas recupero."""
+    n = 0
+    for raiz in _raices():
+        try:
+            with open(os.path.join(raiz, FICHA), encoding="utf-8") as f:
+                ficha = json.load(f).get("cache", {})
+        except Exception:
+            continue
+        for k, v in ficha.items():
+            tengo = cache.get(k)
+            if not isinstance(v, dict) or v.get("error"):
+                continue
+            if tengo is None or tengo.get("error") or tengo.get("v", 0) < v.get("v", 0) or \
+                    (not tengo.get("ia") and v.get("ia")):
+                cache[k] = v
+                n += 1
+    return n
+
+
+def _guardar_archivo(cache):
+    """(17-nov) Tercera copia, y ARCHIVO de todos los eventos: datos/archivo/<evento>.json con lo que se sabe de cada
+    toma en pocas palabras (donde esta, momento, que pasa, etiquetas, belleza, personas). No se borra al empezar otro
+    evento: sirve para buscar en todo lo grabado (herramientas/buscar.py)."""
+    try:
+        import motor
+        evento = str(motor.leer_estado().get("evento") or "evento")
+    except Exception:
+        evento = "evento"
+    tomas = []
+    for v in cache.values():
+        if not isinstance(v, dict) or v.get("error") or not v.get("ruta"):
+            continue
+        ia = v.get("ia") or {}
+        inst = ia.get("instantes") or []
+        tomas.append({"nombre": v.get("nombre"), "ruta": v.get("ruta"), "tipo": v.get("tipo"),
+                      "momento": v.get("momento"), "dur": round(float(v.get("dur") or 0), 1), "fecha": v.get("fecha"),
+                      "escena": ia.get("escena", ""), "etiquetas": ia.get("etiquetas") or [],
+                      "belleza": ia.get("belleza"), "sirve": ia.get("util", True),
+                      "clave": sorted({e for x in inst for e in (x[1] or [])}),
+                      "caras": v.get("caras"), "prota": v.get("prota"), "vertical": not v.get("horizontal", True)})
+    if tomas:
+        limpio = re.sub(r'[\\/:*?"<>|]+', " ", evento).strip() or "evento"
+        _guardar_json(os.path.join(rutas.DATOS, "archivo", limpio + ".json"),
+                      {"evento": evento, "tomas": sorted(tomas, key=lambda t: t["nombre"] or "")}, indent=None)
+
+
+def _guardar_fichas(cache):
+    """Cada carpeta del evento guarda el analisis de SUS archivos (nombre + tamaño: sirve aunque se mueva la carpeta)."""
+    try:
+        _guardar_archivo(cache)
+    except Exception:
+        pass
+    for v in list(cache.values()):               # al terminar, cada archivo se lleva su analisis completo (con el oido)
+        if isinstance(v, dict) and v.get("ruta") and os.path.exists(v["ruta"]):
+            _incrustar(v)
+    for raiz in _raices():
+        base = os.path.normcase(os.path.abspath(raiz)) + os.sep
+        suyas = {k: v for k, v in cache.items() if isinstance(v, dict) and not v.get("error")
+                 and os.path.normcase(os.path.abspath(v.get("ruta") or "")).startswith(base)}
+        if not suyas:
+            continue
+        try:
+            d = os.path.join(raiz, os.path.dirname(FICHA))
+            os.makedirs(d, exist_ok=True)
+            _guardar_json(os.path.join(raiz, FICHA), {"version": VERSION, "cache": suyas}, indent=None)
+            if os.name == "nt":
+                import ctypes
+                ctypes.windll.kernel32.SetFileAttributesW(d, 2)      # oculta
+        except Exception:
+            pass                        # disco de solo lectura o lleno: el programa sigue con su cache
 
 
 PASO_AUDIO = 0.5             # s por muestra del nivel de audio («audio» de cada video)
@@ -1524,6 +1688,7 @@ def _ver_con_ia(cache, lista, log):
     if not falta:
         return _instantes_con_ia(cache, largos, log, vision_ia)
     import time
+    vision_ia.en_gpu()                           # (17-nov) si el modelo quedo cargado en el procesador, lo recarga en la GPU
     log("Viendo cada toma con la IA local (%s): %d archivos..." % (vision_ia.modelo(), len(falta)))
     t0 = time.time()
 
@@ -1535,8 +1700,21 @@ def _ver_con_ia(cache, lista, log):
     # cuadros con ffmpeg; si Ollama atiende varias a la vez (OLLAMA_NUM_PARALLEL), tambien se aprovecha
     with ThreadPoolExecutor(vision_ia.PARALELO) as ex:
         for n, (d, ia) in enumerate(ex.map(una, falta), 1):
+            if not ia and (d.get("ia") or {}).get("intentos", 0) >= 1:
+                # (17-nov) una toma que la IA no logra describir (respuesta rota) se reintentaba en CADA armado: al
+                # segundo fallo queda como «vista, sin datos» (sirve, momento por reloj) y ya no se repite
+                ia = dict({"modelo": vision_ia.modelo(), "momento": "OTRO", "escena": "", "etiquetas": [],
+                           "equipo": False, "belleza": None, "util": True}, **(d.get("ia") or {}))
+                ia.update(v=vision_ia.VERSION, sin_datos=True)       # lo que ya se sabia de una version anterior, queda
+            elif not ia:
+                d["ia"] = dict(d.get("ia") or {}, intentos=(d.get("ia") or {}).get("intentos", 0) + 1)
             if ia:
+                viejo = d.get("ia") or {}                # lo revisado cuadro por cuadro no se pierde al volver a ver la toma
+                if viejo.get("instantes") is not None:
+                    ia["instantes"], ia["instantes_v"] = viejo["instantes"], viejo.get("instantes_v", 0)
                 d["ia"] = ia
+                _incrustar(d)
+            _punto_de_guardado(cache)
             if n % 10 == 0 or n == len(falta):
                 log("  IA %d/%d  %s: %s" % (n, len(falta), d["nombre"], (ia or {}).get("escena", "?")))
     log("La IA local vio %d tomas en %.0f s." % (len(falta), time.time() - t0))
@@ -1628,6 +1806,8 @@ def _instantes_con_ia(cache, largos, log, vision_ia):
             if inst is not None:
                 d["ia"]["instantes"] = inst
                 d["ia"]["instantes_v"] = vision_ia.INSTANTES_V
+                _incrustar(d)
+            _punto_de_guardado(cache)
             if n % 10 == 0 or n == len(largos):
                 parte, motivo = vision_ia.parte_mala(d.get("ia"))
                 log("  IA revisión %d/%d  %s: %.0f%% no sirve%s" % (
@@ -1806,6 +1986,11 @@ def analizar(base=DEF_BASE, log=print, hilos=4):
         return {"fecha": None, "items": [], "huella": "", "clasificacion": {}, "avisos": [], "camaras": []}
     os.makedirs(rutas.ANALISIS, exist_ok=True)
     cache = _leer_cache()
+    recuperadas = _leer_fichas(cache)   # (17-nov) el analisis que viaja con el material («.trailer» en su carpeta)
+    recuperadas += _leer_incrustados(cache, lista)          # y el incrustado en cada archivo
+    if recuperadas:
+        log("Recuperé el análisis de %d archivos (va guardado junto al material): no se vuelven a analizar."
+            % recuperadas)
     for _, r in lista:                  # la ruta guardada sigue al archivo
         if _clave(r) in cache:
             cache[_clave(r)]["ruta"] = r
@@ -1837,11 +2022,15 @@ def analizar(base=DEF_BASE, log=print, hilos=4):
         with ThreadPoolExecutor(hilos) as ex:
             for r, d in ex.map(uno, fotos):
                 cache[_clave(r)] = d
+                _incrustar(d)
         # los videos pesan: 3 a la vez, o mas si la PC tiene nucleos de sobra (hasta 6: el disco y el decodificador de
         # la GPU tambien tienen limite)
         with ThreadPoolExecutor(max(3, min(6, (os.cpu_count() or 4) // 2))) as ex:
             for r, d in ex.map(uno, videos):
                 cache[_clave(r)] = d
+                _incrustar(d)                    # cada video, en cuanto se analiza
+                _punto_de_guardado(cache)
+        _punto_de_guardado(cache, True)
     _nombres_originales(cache)
     oir = _oir(cache, lista, log)               # (1.5.9) el oido (CPU) escucha mientras la IA local (GPU) mira
     _ver_con_ia(cache, lista, log)
@@ -1855,8 +2044,14 @@ def analizar(base=DEF_BASE, log=print, hilos=4):
         if oir.is_alive():
             log("El oído termina de escuchar...")
         oir.join()
+    _punto_de_guardado(cache, True)             # por si lo que sigue falla: lo analizado ya esta a salvo
     cache, res = _organizar(cache, lista, base, log)
     _guardar(cache, res)
+    _guardar_fichas(cache)
+    try:
+        os.remove(_parcial_ruta())
+    except OSError:
+        pass
     if res["items"]:
         _resumen_log(res["items"], log)
     return res

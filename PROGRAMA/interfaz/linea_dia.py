@@ -68,7 +68,7 @@ class LineaDia(QWidget):
         self._version = 0
         self._imagen = None
         self._destellos = []         # (1.6.0) [(pastilla, punto de la toma, punto de la pastilla)] de los momentos clave
-        self._reloj = QTimer(self, interval=50)
+        self._reloj = QTimer(self, interval=33)
         self._reloj.timeout.connect(self._tic)
         self._reloj.start()
         self.reescalar()

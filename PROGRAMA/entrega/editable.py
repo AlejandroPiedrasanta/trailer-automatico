@@ -111,6 +111,25 @@ def proxies_y_cache(project, log=print):
         if r and os.path.exists(r) and r.lower().endswith(EXT_VIDEO) and tipo.strip() != "audio" \
                 and not os.path.normcase(r).startswith(os.path.normcase(rutas.RECURSOS)):
             videos.setdefault(r, []).append(c)
+    # (17-nov) solo los videos que ESTAN en las lineas de los eventos (no las plantillas): en el XV del 8-nov eran 129
+    # proxies (mas de 20 min) para 58 tomas usadas. Lo que no esta en ninguna linea se edita igual, sin proxy.
+    try:
+        usados = set()
+        for i in range(1, project.GetTimelineCount() + 1):
+            tl = project.GetTimelineByIndex(i)
+            if tl is None or (tl.GetName() or "").upper().startswith("TRAILER "):
+                continue
+            for v in range(1, tl.GetTrackCount("video") + 1):
+                for it in tl.GetItemListInTrack("video", v) or []:
+                    m = it.GetMediaPoolItem()
+                    r = (m.GetClipProperty("File Path") or "") if m else ""
+                    if r:
+                        usados.add(os.path.normcase(r))
+        if usados:
+            videos = {r: c for r, c in videos.items()
+                      if os.path.normcase(r) in usados or os.path.exists(ruta_proxy(r))}
+    except Exception:
+        pass
     if videos:
         cod = _codificador()
         t0 = time.time()

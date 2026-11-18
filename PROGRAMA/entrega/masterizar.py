@@ -62,7 +62,25 @@ def masterizar(ruta, log=print):
         if os.path.exists(tmp):
             os.remove(tmp)
         return False
-    os.replace(tmp, ruta)
+    # (17-nov) si la persona ya esta VIENDO el video (reproductor abierto), Windows no deja reemplazarlo: se reintenta
+    # 20 s y, si sigue abierto, el masterizado queda al lado con otro nombre y el armado sigue (antes se caia aqui).
+    import time
+    for intento in range(10):
+        try:
+            os.replace(tmp, ruta)
+            break
+        except PermissionError:
+            time.sleep(2)
+    else:
+        base, ext = os.path.splitext(ruta)
+        aparte = base + " (AUDIO FINAL)" + ext
+        try:
+            os.replace(tmp, aparte)
+        except OSError:
+            aparte = tmp
+        log("AVISO: %s está abierto en un reproductor y no se pudo reemplazar: el audio masterizado quedó en %s. "
+            "Cierra el reproductor y usa ese." % (os.path.basename(ruta), os.path.basename(aparte)))
+        return False
     i, tp = medir(ruta)
     log("Audio masterizado: %s  (antes %s LUFS / %s dBTP -> ahora %.1f LUFS / %.1f dBTP)" % (
         os.path.basename(ruta), j["input_i"], j["input_tp"], i if i is not None else 0, tp if tp is not None else 0))

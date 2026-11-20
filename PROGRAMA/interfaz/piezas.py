@@ -2354,3 +2354,69 @@ class VistaTitulo(QWidget):
         p.setPen(QPen(QColor(255, 255, 255, 34), 1))
         p.setBrush(Qt.NoBrush)
         p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), px(22), px(22))
+
+
+# ---------------------------------------------------------------------------------------------------------------- (1.7.8)
+class GotaPestanas(QWidget):
+    """(1.7.8, la persona: «pule más la interfaz y las animaciones») La gota de VIDRIO verde de la pestaña activa: va
+    DETRAS de las pestañas (que la pintan transparente al estar marcadas) y se DESLIZA de una a otra en 280 ms, como el
+    selector segmentado de Apple, en vez de saltar. Solo se repinta su rectangulo (nunca la ventana). Al cambiar el
+    tamaño de la barra se coloca sin animar."""
+
+    def __init__(self, barra, grupo):
+        super().__init__(barra)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self._grupo = grupo
+        self._anim = QVariantAnimation(self, duration=280, easingCurve=QEasingCurve(QEasingCurve.OutCubic))
+        self._anim.valueChanged.connect(lambda r: self.setGeometry(r.toAlignedRect()))
+        grupo.buttonToggled.connect(lambda b, si: si and self.ir_a(b))
+        barra.installEventFilter(self)
+        self.lower()
+
+    def ir_a(self, boton, animar=True):
+        if boton is None or not boton.isVisible():
+            return
+        meta = QRectF(boton.geometry())
+        if not animar or not self.isVisible() or self.width() < 4:
+            self._anim.stop()
+            self.setGeometry(meta.toAlignedRect())
+            self.show()
+            self.lower()
+            return
+        self._anim.stop()
+        self._anim.setStartValue(QRectF(self.geometry()))
+        self._anim.setEndValue(meta)
+        self._anim.start()
+
+    def eventFilter(self, obj, ev):
+        if ev.type() in (ev.Type.Resize, ev.Type.LayoutRequest, ev.Type.Show):
+            QTimer.singleShot(0, lambda: self.ir_a(self._grupo.checkedButton(), animar=False))
+        return False
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        radio = r.height() / 2.0
+        camino = QPainterPath()
+        camino.addRoundedRect(r, radio, radio)
+        g = QLinearGradient(r.topLeft(), r.bottomLeft())          # la gota: brillo arriba, verde hondo abajo
+        g.setColorAt(0.00, QColor("#8CF5C6"))
+        g.setColorAt(0.18, QColor("#4FE0A0"))
+        g.setColorAt(0.55, QColor("#22C47E"))
+        g.setColorAt(1.00, QColor("#139A62"))
+        p.fillPath(camino, g)
+        brillo = QPainterPath()                                     # el reflejo curvo de la lente
+        rb = QRectF(r.left() + radio * 0.6, r.top() + 2, r.width() - radio * 1.2, r.height() * 0.38)
+        brillo.addRoundedRect(rb, rb.height() / 2.0, rb.height() / 2.0)
+        gb = QLinearGradient(rb.topLeft(), rb.bottomLeft())
+        gb.setColorAt(0.0, QColor(255, 255, 255, 105))
+        gb.setColorAt(1.0, QColor(255, 255, 255, 0))
+        p.fillPath(brillo, gb)
+        filo = QLinearGradient(r.topLeft(), r.bottomLeft())         # el filo de luz: fuerte arriba, vuelve abajo
+        filo.setColorAt(0.0, QColor(255, 255, 255, 240))
+        filo.setColorAt(0.4, QColor(255, 255, 255, 60))
+        filo.setColorAt(1.0, QColor(210, 255, 232, 170))
+        p.setPen(QPen(filo, 1.3))
+        p.drawPath(camino)

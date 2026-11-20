@@ -1,6 +1,9 @@
-// (1.7, parte 4) Pagina Plantillas: las plantillas de video (Reels, TikTok, CapCut) en tarjetas 9:16 con su portada;
-// clic = usarla o dejarla; soltar un video encima = convertirlo en plantilla. Python (PaginaQML) pone d = {lista:
-// [{nombre, portada, dur, planos}], marcadas, opciones: [{clave, texto, si}]} y hace accion("marcar"|"opcion"|"agregar").
+// (1.7, parte 4) Pagina Plantillas: las plantillas de video (Reels, TikTok, CapCut). (1.7.8, la persona: «aplica lo
+// mismo para Plantilla», como el carrusel de Tráilers) Las portadas 9:16 en CARRUSEL: la del centro es la que se mira
+// (clic en una de los lados, arrastrar o la rueda) y debajo dice su nombre, sus planos y «Usar en el tráiler» / «Usada».
+// Se pueden usar VARIAS (cada una sale como un video mas): las usadas llevan su palomita aunque esten a un lado.
+// Soltar un video encima = convertirlo en plantilla. Python (PaginaQML) pone d = {lista: [{nombre, portada, dur,
+// planos}], marcadas, opciones: [{clave, texto, si}]} y hace accion("marcar"|"opcion"|"agregar").
 import QtQuick
 
 Item {
@@ -10,7 +13,7 @@ Item {
     property var d: ({})
     signal accion(string nombre, var valor)
     signal soltado(var urls)
-    // las listas solo se renuevan si cambian (si no, el Repeater rehace las tarjetas y repite su entrada)
+    // las listas solo se renuevan si cambian (si no, el carrusel rehace las portadas)
     property var listaL: []
     property var opcionesL: []
     onDChanged: {
@@ -18,34 +21,39 @@ Item {
         if (JSON.stringify(d.opciones || []) !== JSON.stringify(opcionesL)) opcionesL = d.opciones || []
     }
     function px(v) { return Math.round(v * escala) }
-    function entrar() { opacity = 0; baja.y = px(30); entra.restart() }
+    function entrar(dx) { opacity = 0; baja.x = (dx || 0) * px(60); baja.y = dx ? 0 : px(14); entra.restart() }   // (1.7.8) dx: +1 entra desde la derecha (pestaña de mas adelante), -1 desde la izquierda
     transform: Translate { id: baja }
     ParallelAnimation { id: entra
-        NumberAnimation { target: raiz; property: "opacity"; to: 1; duration: 420; easing.type: Easing.OutCubic }
-        NumberAnimation { target: baja; property: "y"; to: 0; duration: 560; easing.type: Easing.OutBack; easing.overshoot: 1.05 } }
+        NumberAnimation { target: raiz; property: "opacity"; to: 1; duration: 200; easing.type: Easing.OutCubic }
+        NumberAnimation { target: baja; property: "y"; to: 0; duration: 280; easing.type: Easing.OutQuint }
+        NumberAnimation { target: baja; property: "x"; to: 0; duration: 300; easing.type: Easing.OutQuint } }
 
     readonly property var lista: listaL
     readonly property var marcadas: d.marcadas || []
-    implicitHeight: tarjeta.height + px(100)
+    function usada(i) { return i >= 0 && i < lista.length && marcadas.indexOf(lista[i].nombre) >= 0 }
+    function nombreBonito(n) { return (n || "").replace(/_/g, " ") }
+    implicitHeight: col.implicitHeight + px(60)
 
-    Tarjeta {
-        id: tarjeta
-        escala: raiz.escala; familia: raiz.familia
-        titulo: "Plantillas de video"; icono: "pelicula"
-        x: px(60); y: px(50)
-        width: raiz.width - px(120)
-        height: implicitHeight
+    Column {
+        id: col
+        width: Math.min(parent.width - px(120), px(1700))
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: px(36)
+        spacing: px(14)
 
-        // lo que hace y «Agregar plantilla»
+        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Plantillas de video"; color: "white"
+            font.family: raiz.familia; font.pixelSize: px(72); font.weight: Font.Bold }
+        Text { anchors.horizontalCenter: parent.horizontalCenter; color: "#9DB0B6"
+            text: raiz.lista.length
+                  ? "Opcional: cada plantilla que uses sale como un video más, con sus cortes y su música."
+                  : "Opcional: suelta aquí un Reel, TikTok o CapCut y sale un video más con sus cortes y su música."
+            font.family: raiz.familia; font.pixelSize: px(30) }
+        Item { width: 1; height: px(4) }
+
+        // el rotulo, las opciones y «Agregar plantilla»
         Item {
-            width: parent.width; height: agregar.height
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                width: parent.width - agregar.width - px(40)
-                wrapMode: Text.WordWrap
-                text: "Opcional: cada una sale como un video más, con sus cortes y su música."
-                color: "#9DB0B6"; font.family: raiz.familia; font.pixelSize: px(32)
-            }
+            width: col.width; height: agregar.height
+            Seccion { anchors.verticalCenter: parent.verticalCenter; texto: "Tus plantillas"; icono: "pelicula" }
             Boton {
                 id: agregar
                 anchors.right: parent.right
@@ -54,65 +62,154 @@ Item {
                 onClic: raiz.accion("agregar", 0)
             }
         }
-        // las opciones
         Flow {
-            width: parent.width
+            width: col.width
             spacing: px(40)
+            visible: raiz.lista.length > 0          // (auditoria) sin plantillas, las opciones aun no sirven
             Repeater {
                 model: raiz.opcionesL
                 Row {
                     spacing: px(18)
                     Text { anchors.verticalCenter: parent.verticalCenter; text: modelData.texto; color: "#F1F5F6"
-                        font.family: raiz.familia; font.pixelSize: px(34) }
+                        font.family: raiz.familia; font.pixelSize: px(32) }
                     Interruptor { anchors.verticalCenter: parent.verticalCenter; escala: raiz.escala; si: modelData.si
                         onCambiado: (si) => raiz.accion("opcion", { "clave": modelData.clave, "si": si }) }
                 }
             }
-            Text { text: "Todo apagado: la plantilla tal cual, con sus cortes y su música."; color: "#9DB0B6"
+            Text { text: "Todo apagado: la plantilla tal cual."; color: "#9DB0B6"
                 font.family: raiz.familia; font.pixelSize: px(28); height: px(52); verticalAlignment: Text.AlignVCenter }
         }
-        Item { width: 1; height: px(6) }
-        // las tarjetas 9:16 (o la invitacion a soltar un video)
-        Item {
-            width: parent.width
-            // el alto, calculado (el de la Flow no se actualizaba al llegar las tarjetas)
-            readonly property int porFila: Math.max(1, Math.floor((width + px(26)) / (px(250) + px(26))))
-            readonly property int filas: Math.ceil(raiz.lista.length / porFila)
-            height: raiz.lista.length ? filas * px(540) + (filas - 1) * px(26) : px(380)
-            Rectangle {
-                visible: raiz.lista.length === 0
-                anchors.fill: parent
-                radius: px(28); color: Qt.rgba(1, 1, 1, 0.02)
-                border.width: px(3); border.color: soltar.containsDrag ? "#3BEE9F" : Qt.rgba(1, 1, 1, 0.14)
-                Column {
-                    anchors.centerIn: parent
-                    spacing: px(20)
-                    Image { anchors.horizontalCenter: parent.horizontalCenter; width: px(90); height: width
-                        source: "image://icono/pelicula/9DB0B6/" + width; sourceSize: Qt.size(width * 4, height * 4)
-                        SequentialAnimation on y { loops: Animation.Infinite
-                            NumberAnimation { to: -px(8); duration: 1400; easing.type: Easing.InOutSine }
-                            NumberAnimation { to: 0; duration: 1400; easing.type: Easing.InOutSine } } }
-                    Text { anchors.horizontalCenter: parent.horizontalCenter; color: "#9DB0B6"
-                        text: "Suelta aquí un video (Reel, TikTok, CapCut) para convertirlo en plantilla: sus cortes y su música."
-                        font.family: raiz.familia; font.pixelSize: px(32) }
-                }
+
+        // ---------------------------------------------------------------- sin plantillas: la invitacion a soltar
+        Rectangle {
+            visible: raiz.lista.length === 0
+            width: col.width; height: px(520)
+            radius: px(32); color: Qt.rgba(1, 1, 1, 0.02)
+            border.width: px(3); border.color: soltar.containsDrag ? "#3BEE9F" : Qt.rgba(1, 1, 1, 0.16)
+            Behavior on border.color { ColorAnimation { duration: 200 } }
+            Column {
+                anchors.centerIn: parent
+                spacing: px(22)
+                Image { anchors.horizontalCenter: parent.horizontalCenter; width: px(100); height: width
+                    source: "image://icono/pelicula/9DB0B6/" + width; sourceSize: Qt.size(width * 4, height * 4)
+                    SequentialAnimation on y { loops: Animation.Infinite; running: (parent.visible) && (typeof quieto === "undefined" || !quieto)
+                        NumberAnimation { to: -px(8); duration: 1400; easing.type: Easing.InOutSine }
+                        NumberAnimation { to: 0; duration: 1400; easing.type: Easing.InOutSine } } }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; color: "#F1F5F6"
+                    text: "Suelta aquí un video"; font.family: raiz.familia; font.pixelSize: px(40); font.weight: Font.DemiBold }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; color: "#9DB0B6"
+                    text: "Reel, TikTok o CapCut: se copian sus cortes y su música"
+                    font.family: raiz.familia; font.pixelSize: px(30) }
             }
-            Flow {
-                id: rejilla
-                objectName: "rejilla"
-                width: parent.width
-                height: parent.height
-                spacing: px(26)
-                Repeater {
-                    model: raiz.lista
-                    Portada {
-                        dato: modelData
-                        elegida: raiz.marcadas.indexOf(modelData.nombre) >= 0
-                        retraso: index * 70
-                        onClic: raiz.accion("marcar", modelData.nombre)
+        }
+
+        // ---------------------------------------------------------------- el carrusel de portadas 9:16
+        PathView {
+            id: carrusel
+            visible: raiz.lista.length > 0
+            width: col.width; height: visible ? px(560) : 0
+            model: raiz.lista
+            pathItemCount: Math.min(5, Math.max(1, count))
+            preferredHighlightBegin: 0.5; preferredHighlightEnd: 0.5
+            highlightRangeMode: PathView.StrictlyEnforceRange
+            highlightMoveDuration: 320
+            interactive: count > 1
+            function ir(i) { if (i >= 0 && i < count && i !== currentIndex) currentIndex = i }
+            Keys.onLeftPressed: ir((currentIndex - 1 + count) % count)
+            Keys.onRightPressed: ir((currentIndex + 1) % count)
+
+            path: Path {
+                startX: 0; startY: carrusel.height / 2
+                PathAttribute { name: "esc"; value: 0.66 }
+                PathAttribute { name: "opa"; value: 0.35 }
+                PathAttribute { name: "capa"; value: 0 }
+                PathLine { x: carrusel.width / 2; y: carrusel.height / 2 }
+                PathAttribute { name: "esc"; value: 1.0 }
+                PathAttribute { name: "opa"; value: 1.0 }
+                PathAttribute { name: "capa"; value: 10 }
+                PathLine { x: carrusel.width; y: carrusel.height / 2 }
+                PathAttribute { name: "esc"; value: 0.66 }
+                PathAttribute { name: "opa"; value: 0.35 }
+                PathAttribute { name: "capa"; value: 0 }
+            }
+            delegate: Portada {
+                dato: modelData
+                centro: PathView.isCurrentItem
+                usada: raiz.marcadas.indexOf(modelData.nombre) >= 0
+                scale: PathView.esc === undefined ? 1 : PathView.esc
+                opacity: PathView.opa === undefined ? 1 : PathView.opa
+                z: PathView.capa === undefined ? 0 : PathView.capa
+                onTocar: { if (centro) raiz.accion("marcar", modelData.nombre); else carrusel.ir(index) }
+            }
+        }
+
+        // lo de la del centro: nombre, planos y usarla o dejarla
+        Item {
+            visible: raiz.lista.length > 0
+            id: infoCentro
+            width: col.width; height: visible ? px(120) : 0
+            readonly property var actual: raiz.lista[carrusel.currentIndex] || ({})
+            Column {
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: px(8)
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: px(26)
+                    Column {
+                        anchors.verticalCenter: parent.verticalCenter
+                        Text { text: raiz.nombreBonito(infoCentro.actual.nombre); color: "white"
+                            font.family: raiz.familia; font.pixelSize: px(40); font.weight: Font.Bold
+                            font.capitalization: Font.Capitalize; elide: Text.ElideRight; width: Math.min(implicitWidth, col.width * 0.5) }
+                        Text { text: (infoCentro.actual.planos || 0) + " planos · "
+                                     + Math.round(infoCentro.actual.dur || 0) + " s"
+                            color: "#9DB0B6"; font.family: raiz.familia; font.pixelSize: px(28) }
+                    }
+                    Boton {
+                        anchors.verticalCenter: parent.verticalCenter
+                        escala: raiz.escala; familia: raiz.familia
+                        principal: raiz.usada(carrusel.currentIndex)
+                        icono: raiz.usada(carrusel.currentIndex) ? "palomita" : "check"
+                        texto: raiz.usada(carrusel.currentIndex) ? "Usada en el tráiler" : "Usar en el tráiler"
+                        onClic: raiz.accion("marcar", (raiz.lista[carrusel.currentIndex] || {}).nombre || "")
                     }
                 }
             }
+        }
+
+        // los puntos: donde esta la del centro (y en verde las usadas)
+        Row {
+            visible: raiz.lista.length > 1
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: px(12)
+            Repeater {
+                model: carrusel.count
+                Rectangle {
+                    height: px(12); radius: height / 2
+                    width: index === carrusel.currentIndex ? px(44) : px(12)
+                    color: index === carrusel.currentIndex ? "#3BEE9F"
+                         : (raiz.usada(index) ? Qt.rgba(59 / 255, 238 / 255, 159 / 255, 0.55) : Qt.rgba(1, 1, 1, 0.25))
+                    Behavior on width { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                    Behavior on color { ColorAnimation { duration: 220 } }
+                    MouseArea { anchors.fill: parent; anchors.margins: -px(8); cursorShape: Qt.PointingHandCursor
+                        onClicked: carrusel.ir(index) }
+                }
+            }
+        }
+    }
+
+    // la rueda, sobre el carrusel (solo la rueda: el arrastre y los clics siguen llegando a las portadas)
+    MouseArea {
+        visible: carrusel.visible
+        x: col.x + carrusel.x; y: col.y + carrusel.y
+        width: carrusel.width; height: carrusel.height
+        acceptedButtons: Qt.NoButton
+        property real _acum: 0
+        onWheel: function(ev) {
+            _acum += ev.angleDelta.y !== 0 ? ev.angleDelta.y : -ev.angleDelta.x
+            if (Math.abs(_acum) < 120) return
+            var paso = _acum > 0 ? -1 : 1
+            _acum = 0
+            carrusel.ir((carrusel.currentIndex + paso + carrusel.count) % carrusel.count)
         }
     }
 
@@ -132,68 +229,111 @@ Item {
             font.family: raiz.familia; font.pixelSize: px(48); font.weight: Font.Bold }
     }
 
-    // una plantilla: portada 9:16, nombre y planos; la elegida con filo verde y palomita
+    component Seccion: Row {
+        property string texto: ""
+        property string icono: ""
+        spacing: px(18)
+        Image { anchors.verticalCenter: parent.verticalCenter; width: px(34); height: width
+            source: "image://icono/" + parent.icono + "/E2B04F/" + width; sourceSize: Qt.size(width * 4, height * 4) }
+        Text { anchors.verticalCenter: parent.verticalCenter; text: parent.texto; color: "#E2B04F"
+            font.family: raiz.familia; font.pixelSize: px(30); font.weight: Font.DemiBold
+            font.capitalization: Font.AllUppercase; font.letterSpacing: px(4) }
+    }
+
+    // ------------------------------------------------------------------ una plantilla: portada 9:16
     component Portada: Item {
         id: c
         property var dato: ({})
-        property bool elegida: false
-        property int retraso: 0
-        signal clic()
-        width: px(250); height: px(444) + px(96)
-        opacity: 0
-        Component.onCompleted: aparece.start()
-        SequentialAnimation { id: aparece
-            PauseAnimation { duration: c.retraso }
-            ParallelAnimation {
-                NumberAnimation { target: c; property: "opacity"; to: 1; duration: 380 }
-                NumberAnimation { target: sube; property: "y"; from: px(30); to: 0; duration: 480; easing.type: Easing.OutBack } } }
-        transform: Translate { id: sube }
+        property bool centro: false
+        property bool usada: false
+        signal tocar()
+        width: px(290); height: px(516)
+        HoverHandler { id: hvP }
 
-        Rectangle {
-            id: marco
-            width: parent.width; height: px(444)
-            y: zona.containsMouse ? -px(8) : 0
-            Behavior on y { SpringAnimation { spring: 4; damping: 0.3 } }
-            radius: px(24)
-            color: "#0B1A1F"
-            border.width: c.elegida ? px(5) : 1
-            border.color: c.elegida ? "#3BEE9F" : (zona.containsMouse ? "#E2B04F" : Qt.rgba(1, 1, 1, 0.14))
-            Behavior on border.color { ColorAnimation { duration: 200 } }
-            clip: true
-            Image {
-                anchors.fill: parent; anchors.margins: parent.border.width
-                source: c.dato.portada || ""
-                fillMode: Image.PreserveAspectCrop
-                asynchronous: true
-                scale: zona.containsMouse ? 1.05 : 1
-                Behavior on scale { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
-            }
+        Item {
+            anchors.fill: parent
+            // (1.7.8) se inclina hacia el raton (perspectiva) y vuelve suave al salir
+            property real _ry: hvP.hovered && !_quieto ? (hvP.point.position.x / Math.max(1, width) - 0.5) * -14 : 0
+            property real _rx: hvP.hovered && !_quieto ? (hvP.point.position.y / Math.max(1, height) - 0.5) * 10 : 0
+            readonly property bool _quieto: typeof quieto !== "undefined" && quieto
+            Behavior on _ry { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            Behavior on _rx { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            transform: [
+                Rotation { origin.x: width / 2; origin.y: height / 2; axis { x: 0; y: 1; z: 0 } angle: _ry },
+                Rotation { origin.x: width / 2; origin.y: height / 2; axis { x: 1; y: 0; z: 0 } angle: _rx }
+            ]
+            y: zona.containsMouse && !c.centro ? -px(8) : 0
+            Behavior on y { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+            scale: zona.pressed ? 0.98 : 1
+            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+
+            // el halo de la del centro (verde si se usa, dorado si solo se mira)
+            Rectangle { anchors.fill: parent; anchors.margins: -px(14); radius: px(40); color: "transparent"
+                border.width: px(14); border.color: c.usada ? "#22C47E" : "#E2B04F"
+                opacity: c.centro ? 0.20 : 0; Behavior on opacity { NumberAnimation { duration: 240 } } }
+
             Rectangle {
-                anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
-                height: parent.height * 0.4
-                gradient: Gradient { GradientStop { position: 0; color: "transparent" } GradientStop { position: 1; color: Qt.rgba(0, 0, 0, 0.75) } }
+                anchors.fill: parent
+                radius: px(28)
+                color: "#0B1A1F"
+                clip: true
+                border.width: c.usada ? px(5) : (c.centro ? px(3) : 1)
+                border.color: c.usada ? "#3BEE9F" : (c.centro ? "#E2B04F" : Qt.rgba(1, 1, 1, 0.16))
+                Behavior on border.color { ColorAnimation { duration: 200 } }
+                Image {
+                    anchors.fill: parent; anchors.margins: parent.border.width
+                    source: c.dato.portada || ""
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    // la del centro se acerca muy despacio (como si corriera el video)
+                    scale: c.centro ? 1.06 : 1
+                    Behavior on scale { NumberAnimation { duration: 6000; easing.type: Easing.InOutSine } }
+                }
+                // (1.7.8) el reflejo que cruza la portada siguiendo al cursor
+                Rectangle {
+                    width: parent.width * 0.5; height: parent.height * 2
+                    y: -parent.height * 0.5; rotation: 22
+                    x: (hvP.hovered ? hvP.point.position.x : -parent.width) - width / 2
+                    Behavior on x { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+                    opacity: hvP.hovered ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: 220 } }
+                    gradient: Gradient { orientation: Gradient.Horizontal
+                        GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0) }
+                        GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.16) }
+                        GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0) } }
+                }
+                // sin portada: el icono
+                Image {
+                    visible: !c.dato.portada
+                    anchors.centerIn: parent; width: px(90); height: width
+                    source: "image://icono/pelicula/9DB0B6/" + width; sourceSize: Qt.size(width * 4, height * 4)
+                }
+                Rectangle {
+                    anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+                    height: parent.height * 0.35
+                    gradient: Gradient { GradientStop { position: 0; color: "transparent" } GradientStop { position: 1; color: Qt.rgba(0, 0, 0, 0.7) } }
+                }
+                Text {
+                    x: px(24); width: parent.width - px(48)
+                    anchors.bottom: parent.bottom; anchors.bottomMargin: px(22)
+                    text: raiz.nombreBonito(c.dato.nombre); elide: Text.ElideRight; color: "white"
+                    font.family: raiz.familia; font.pixelSize: px(30); font.weight: Font.DemiBold; font.capitalization: Font.Capitalize
+                    opacity: c.centro ? 0 : 1              // en la del centro el nombre va debajo, en grande
+                    Behavior on opacity { NumberAnimation { duration: 200 } }
+                }
             }
+            // la palomita de las usadas (tambien a los lados)
             Rectangle {
-                x: parent.width - width - px(16); y: px(16)
+                x: parent.width - width - px(18); y: px(18)
                 width: px(52); height: width; radius: width / 2
-                color: "#22C47E"
-                scale: c.elegida ? 1 : 0
-                Behavior on scale { SpringAnimation { spring: 3.5; damping: 0.24 } }
+                color: "#22C47E"; border.width: px(3); border.color: "#04150D"
+                scale: c.usada ? 1 : 0.6; opacity: c.usada ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 120 } }
+                Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.6 } }
                 Image { anchors.centerIn: parent; width: px(32); height: width
-                    source: "image://icono/palomita/FFFFFF/" + width; sourceSize: Qt.size(width * 4, height * 4) }
+                    source: "image://icono/palomita/04150D/" + width; sourceSize: Qt.size(width * 4, height * 4) }
             }
         }
-        Text {
-            y: px(444) + px(18); width: parent.width
-            text: (c.dato.nombre || "").replace(/_/g, " ")
-            elide: Text.ElideRight; color: "white"
-            font.family: raiz.familia; font.pixelSize: px(32); font.weight: Font.DemiBold; font.capitalization: Font.Capitalize
-        }
-        Text {
-            y: px(444) + px(60); width: parent.width
-            text: (c.dato.planos || 0) + " planos · " + Math.round(c.dato.dur || 0) + " s"
-            color: "#9DB0B6"; font.family: raiz.familia; font.pixelSize: px(26)
-        }
-        MouseArea { id: zona; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: c.clic() }
+        MouseArea { id: zona; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: c.tocar() }
     }
 }

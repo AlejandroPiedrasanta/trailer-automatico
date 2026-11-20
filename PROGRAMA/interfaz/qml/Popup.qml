@@ -31,7 +31,8 @@ Item {
     function abrir() {
         cerrando = false
         resultado = JSON.parse(JSON.stringify(datos || {}))
-        velo.opacity = 0; tarjeta.opacity = 0; baja.y = px(54)
+        velo.opacity = 0; tarjeta.opacity = 0; baja.y = px(24)
+        sale.stop()                 // (1.7.8) si aun se estaba cerrando, no pelean por las mismas propiedades
         entra.restart()
         foco.forceActiveFocus()
     }
@@ -39,6 +40,7 @@ Item {
         if (cerrando) return
         cerrando = true
         elegido = i
+        entra.stop()                // (1.7.8) Esc a media entrada: sale desde donde estaba
         sale.restart()
     }
     property int elegido: -1
@@ -47,14 +49,14 @@ Item {
         id: entra
         NumberAnimation { target: velo; property: "opacity"; to: 1; duration: 240; easing.type: Easing.OutCubic }
         NumberAnimation { target: tarjeta; property: "opacity"; to: 1; duration: 240; easing.type: Easing.OutCubic }
-        NumberAnimation { target: baja; property: "y"; to: 0; duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.2 }
+        NumberAnimation { target: baja; property: "y"; to: 0; duration: 260; easing.type: Easing.OutQuint }
     }
     SequentialAnimation {
         id: sale
         ParallelAnimation {
             NumberAnimation { target: velo; property: "opacity"; to: 0; duration: 160 }
             NumberAnimation { target: tarjeta; property: "opacity"; to: 0; duration: 140 }
-            NumberAnimation { target: baja; property: "y"; to: px(24); duration: 160; easing.type: Easing.InCubic }
+            NumberAnimation { target: baja; property: "y"; to: px(24); duration: 140; easing.type: Easing.OutCubic }
         }
         ScriptAction { script: raiz.respuesta(raiz.elegido, JSON.stringify(raiz.resultado)) }
     }
@@ -99,7 +101,7 @@ Item {
             }
         }
         QtObject { id: respira; property real v: 1.0
-            SequentialAnimation on v { loops: Animation.Infinite
+            SequentialAnimation on v { running: (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite
                 NumberAnimation { to: 1.6; duration: 1600; easing.type: Easing.InOutSine }
                 NumberAnimation { to: 0.8; duration: 1600; easing.type: Easing.InOutSine } } }
 
@@ -132,7 +134,7 @@ Item {
                 }
                 Shape {
                     anchors.fill: parent
-                    RotationAnimation on rotation { loops: Animation.Infinite; from: 0; to: 360; duration: 2600 }
+                    RotationAnimation on rotation { running: (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite; from: 0; to: 360; duration: 2600 }
                     ShapePath {
                         strokeColor: Qt.rgba(1, 0.93, 0.75, 0.95); strokeWidth: px(4); fillColor: "transparent"
                         capStyle: ShapePath.RoundCap
@@ -144,7 +146,7 @@ Item {
                 Item {
                     id: simbolo
                     anchors.fill: parent
-                    scale: tarjeta.opacity
+                    scale: 0.6 + 0.4 * tarjeta.opacity
                     readonly property color col: "#" + raiz.colorEmblema
                     readonly property real s: width
                     Text {
@@ -247,13 +249,10 @@ Item {
         width: implicitWidth; height: implicitHeight
         radius: chica ? px(30) : px(46)
         scale: zona.pressed ? 0.96 : 1
-        Behavior on scale { SpringAnimation { spring: 5; damping: 0.3 } }
+        Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
         clip: true
-        color: (principal || marcada) ? "transparent" : (zona.containsMouse ? Qt.rgba(217 / 255, 177 / 255, 92 / 255, 0.16) : Qt.rgba(1, 1, 1, 0.04))
-        Behavior on color { ColorAnimation { duration: 160 } }
-        border.width: Math.max(1, px(2))
-        border.color: (principal || marcada) ? Qt.rgba(1, 1, 1, 0.28) : (zona.containsMouse ? "#F1CB7A" : Qt.rgba(217 / 255, 177 / 255, 92 / 255, 0.75))
-        gradient: (principal || marcada) ? verdeG : null
+        color: "transparent"          // (1.7.8) vidrio liquido: verde el principal y las marcadas, claro los demas
+        Vidrio { anchors.fill: parent; radio: parent.radius; tinte: (p.principal || p.marcada) ? "#22C47E" : "white"; tinteA: (p.principal || p.marcada) ? 0.85 : 0.06; brillo: "#22C47E"; brilloA: p.principal ? 0.5 : (p.marcada ? 0.3 : 0); filo: (p.principal || p.marcada) ? 1.0 : 0.8; encima: zona.containsMouse; apretado: zona.pressed }
         Gradient {
             id: verdeG
             GradientStop { position: 0; color: zona.containsMouse ? "#3BE3A0" : "#2BD08C" }
@@ -266,7 +265,7 @@ Item {
                 GradientStop { position: 0; color: Qt.rgba(1, 1, 1, 0) }
                 GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.32) }
                 GradientStop { position: 1; color: Qt.rgba(1, 1, 1, 0) } }
-            SequentialAnimation on x { running: p.principal; loops: Animation.Infinite
+            SequentialAnimation on x { running: (p.principal) && (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite
                 PauseAnimation { duration: 900 }
                 NumberAnimation { from: -p.height * 1.5; to: p.width + p.height; duration: 1100; easing.type: Easing.InOutQuad }
                 PauseAnimation { duration: 1800 } }
@@ -278,14 +277,14 @@ Item {
                 visible: p.marcada && !p.principal
                 anchors.verticalCenter: parent.verticalCenter
                 width: px(30); height: width
-                source: "image://icono/palomita/FFFFFF/" + width
+                source: "image://icono/palomita/04150D/" + width
                 sourceSize: Qt.size(width * 4, height * 4)
             }
             Text {
                 id: t
                 anchors.verticalCenter: parent.verticalCenter
                 text: p.texto
-                color: "white"
+                color: (p.principal || p.marcada) ? "#04150D" : "white"      // (1.7.8) oscuro sobre el vidrio verde
                 font.family: raiz.familia; font.pixelSize: p.chica ? px(30) : px(34)
                 font.weight: (p.principal || p.marcada) ? Font.ExtraBold : Font.DemiBold
             }

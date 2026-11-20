@@ -339,7 +339,7 @@ def app():
     QLabel#aviso_i[tipo="error"] { background: #F07A6A; }
     QLabel#hora { color: %(m)s; }
     QLabel#titulo { font-size: 40px; font-weight: 800; letter-spacing: 0.5px; }
-    QLabel#sub { color: #F2B84B; font-weight: 600; font-size: 15px; }
+    QLabel#sub { color: #EBCB8F; font-weight: 500; font-size: 15px; }
     QLabel#sub[tipo="ok"] { color: #7CF2C0; }
     QLabel#sub[tipo="error"] { color: #F07A6A; }
     QPushButton#pill { background: rgba(14, 30, 38, 0.80); border: 1px solid rgba(255,255,255,0.14);
@@ -445,19 +445,29 @@ def app():
         """(1.6.0) El estilo de las maquetas de Higgsfield, con sus medidas (piezas.px: px de la maqueta de 2048 de
         ancho por la escala de la ventana). Va despues del estilo de siempre: lo que repite, manda."""
         p = piezas.px
-        verde = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2BD08C, stop:1 #118A57)"
+        # (1.7.8, auditoria) el verde de la marca, vivo, con el texto de la pestaña activa OSCURO (blanco era ~2,3:1)
+        # (1.7.8, la persona: «botones Liquid Glass») vidrio en QSS: luz arriba (degradado), filo mas brillante arriba
+        # que abajo y la pestaña activa como una gota de vidrio verde (brillo arriba, verde profundo abajo)
+        verde = ("qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #8CF5C6, stop:0.18 #4FE0A0, stop:0.55 #22C47E, "
+                 "stop:1 #139A62)")
+        vidrio = ("qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255,255,255,0.13), stop:0.45 rgba(14,30,36,0.80), "
+                  "stop:1 rgba(10,22,28,0.84))")
         return """
     QLabel#marca {{ font-size: {a}px; font-weight: 600; letter-spacing: 1px; color: #FFFFFF; }}
-    QFrame#nav {{ background: rgba(10, 22, 28, 0.80); border: 1px solid rgba(150, 195, 195, 0.32);
+    QFrame#nav {{ background: {vidrio}; border: 1px solid rgba(255, 255, 255, 0.22);
+                 border-top-color: rgba(255, 255, 255, 0.55); border-bottom-color: rgba(255, 255, 255, 0.30);
                  border-radius: {nav_r}px; }}
     QPushButton#tab {{ font-size: {b}px; font-weight: 500; color: #DCE6E8; padding: {tab_v}px {tab_h}px;
                       border-radius: {tab_r}px; border: 1px solid transparent; }}
-    QPushButton#tab:hover {{ background: rgba(255,255,255,0.06); color: #FFFFFF; }}
-    QPushButton#tab:checked {{ background: {verde}; color: #FFFFFF; border: 1px solid rgba(120, 245, 180, 0.75);
+    QPushButton#tab:hover {{ background: rgba(255,255,255,0.08); color: #FFFFFF; border-color: rgba(255,255,255,0.14);
+                            border-top-color: rgba(255,255,255,0.35); }}
+    QPushButton#tab:checked {{ background: transparent; color: #04150D; border: 1px solid transparent;
                               font-weight: 600; }}
+    QPushButton#tab:checked:hover {{ background: transparent; border-color: transparent; }}
     QPushButton#estado {{ font-size: {c}px; font-weight: 500; padding: {e_v}px {e_h}px; border-radius: {e_r}px;
-                         background: rgba(8, 20, 26, 0.78); border: 1px solid rgba(34, 196, 126, 0.75); }}
-    QPushButton#estado[tipo="oro"] {{ border-color: rgba(226, 176, 79, 0.85); }}
+                         background: {vidrio}; border: 1px solid rgba(34, 196, 126, 0.75);
+                         border-top-color: rgba(160, 255, 210, 0.95); }}
+    QPushButton#estado[tipo="oro"] {{ border-color: rgba(226, 176, 79, 0.85); border-top-color: rgba(255, 228, 160, 0.95); }}
     QFrame#ventanita {{ background: transparent; border: none; }}
     QPushButton#ctrl, QPushButton#cerrar {{ background: transparent; border: none; border-radius: {ctl_r}px; }}
     QPushButton#ctrl:hover {{ background: rgba(255,255,255,0.08); }}
@@ -549,7 +559,7 @@ def app():
     QSlider::handle:horizontal {{ background: #FFFFFF; border: {sl_b}px solid #22C47E; width: {sl_h}px;
                                  margin: -{sl_m}px 0; border-radius: {sl_hr}px; }}
     """.format(
-            verde=verde, a=p(32), b=p(30), c=p(28), d=p(30), g=p(36), h1=p(56),
+            verde=verde, vidrio=vidrio, a=p(32), b=p(30), c=p(28), d=p(30), g=p(36), h1=p(56),
             nav_r=p(34), tab_v=p(12), tab_h=p(40), tab_r=p(30), e_v=p(12), e_h=p(26), e_r=p(28), ctl_r=p(10),
             # (18-nov, la persona: «botones con dos diseños») TODOS los botones de esquina con el mismo radio (14)
             dock_r=p(40), ch_v=p(22), ch_h=p(30), ch_r=p(14), ch_e=p(36), seg_r=p(16), sb_v=p(16), sb_h=p(26),
@@ -864,6 +874,12 @@ def app():
             if not self._nebulosa:
                 return
             c = 0 if not ver else (30 if self.window().isActiveWindow() else 10)
+            try:                                # (1.7.8) «menos movimiento» de Windows: el cielo quieto
+                import barra_qml
+                if barra_qml.movimiento_reducido():
+                    c = 0
+            except Exception:
+                pass
             if c != getattr(self, "_cuadros_nebulosa", None):
                 self._cuadros_nebulosa = c
                 try:
@@ -1081,6 +1097,8 @@ def app():
             self.tabs["Material"].hide()
             self.tabs["Textos"].hide()
             self.tabs["Inicio"].setChecked(True)
+            # (1.7.8) la gota de vidrio verde de la pestaña activa: se desliza de una pestaña a otra
+            self.gota_tabs = piezas.GotaPestanas(nav, self.grupo_tabs)
             self.punto = QLabel("●")
             self.punto.setStyleSheet("color:%s; font-size:16px; padding: 0 10px;" % TENUE)
             self.punto.setToolTip("DaVinci Resolve")
@@ -1451,7 +1469,8 @@ def app():
                     except Exception as ex:
                         registro.info("La página %s en QML no cargó (queda la de siempre): %s" % (archivo, ex))
                 self.paginas.currentChanged.connect(
-                    lambda i: self.paginas_qml[i].entrar() if i in self.paginas_qml else None)
+                    lambda i: self.paginas_qml[i].entrar(self._direccion_pagina(i)) if i in self.paginas_qml
+                    else self._direccion_pagina(i))
 
         # ---- (1.7) lo que muestran las paginas QML y lo que piden (las piezas de siempre, sin verse, mandan)
         def _datos_trailers(self):
@@ -3072,9 +3091,29 @@ def app():
             self.tabs[nombre].setChecked(True)
             self._cambiar_pagina(list(self.tabs).index(nombre))
 
+        ORDEN_VISTA = ("Inicio", "Tráilers", "Plantillas", "Ajustes")
+
+        def _direccion_pagina(self, i):
+            """(1.7.8) +1 si la pagina nueva esta a la derecha de la anterior en la barra de pestañas, -1 si a la
+            izquierda (la pagina entra deslizandose desde ese lado), 0 si no se sabe."""
+            nombres = list(self.tabs)
+            antes = getattr(self, "_pagina_vista", 0)
+            self._pagina_vista = i
+            try:
+                a = self.ORDEN_VISTA.index(nombres[antes])
+                b = self.ORDEN_VISTA.index(nombres[i])
+            except (ValueError, IndexError):
+                return 0
+            return (b > a) - (b < a)
+
         def _cambiar_pagina(self, i):
             """(1.6.0) Cambio de pestaña con fundido: la foto de la pagina de antes se desvanece sobre la nueva."""
             if i == self.paginas.currentIndex():
+                return
+            # (1.7.8, auditoria de animaciones) una pagina QML entra sola (entrar(): fundido y subida en la tarjeta):
+            # con la foto encima se veian DOS fundidos a la vez y el de la foto repintaba toda la zona con el procesador
+            if i in (getattr(self, "paginas_qml", None) or {}):
+                self.paginas.setCurrentIndex(i)
                 return
             foto = self.paginas.currentWidget().grab() if self.isVisible() and not self.isMinimized() else None
             self.paginas.setCurrentIndex(i)

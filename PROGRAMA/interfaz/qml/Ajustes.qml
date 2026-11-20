@@ -19,11 +19,12 @@ Item {
         if (JSON.stringify(d.voz || []) !== JSON.stringify(vozL)) vozL = d.voz || []
     }
     function px(v) { return Math.round(v * escala) }
-    function entrar() { opacity = 0; baja.y = px(30); entra.restart() }
+    function entrar(dx) { opacity = 0; baja.x = (dx || 0) * px(60); baja.y = dx ? 0 : px(14); entra.restart() }   // (1.7.8) dx: +1 entra desde la derecha (pestaña de mas adelante), -1 desde la izquierda
     transform: Translate { id: baja }
     ParallelAnimation { id: entra
-        NumberAnimation { target: raiz; property: "opacity"; to: 1; duration: 420; easing.type: Easing.OutCubic }
-        NumberAnimation { target: baja; property: "y"; to: 0; duration: 560; easing.type: Easing.OutBack; easing.overshoot: 1.05 } }
+        NumberAnimation { target: raiz; property: "opacity"; to: 1; duration: 200; easing.type: Easing.OutCubic }
+        NumberAnimation { target: baja; property: "y"; to: 0; duration: 280; easing.type: Easing.OutQuint }
+        NumberAnimation { target: baja; property: "x"; to: 0; duration: 300; easing.type: Easing.OutQuint } }
 
     readonly property real sep: px(30)
     readonly property real col6: (width - 5 * sep) / 6
@@ -77,14 +78,18 @@ Item {
                         Rectangle {
                             id: pv
                             property bool v: modelData.si
-                            width: (voz.width - voz.px(88) - px(200) - px(24) - px(18)) / 4; height: px(72); radius: px(14)
-                            color: v ? "#22C47E" : (zv.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(1, 1, 1, 0.03))
-                            border.width: 1; border.color: v ? "#44D894" : Qt.rgba(1, 1, 1, 0.18)
+                            width: (voz.width - voz.px(88) - px(200) - px(24) - px(18)) / 4; height: px(72); radius: height / 2
+                            color: "transparent"      // (1.7.8) vidrio liquido
+                            Vidrio { anchors.fill: parent; radio: parent.radius; tinte: pv.v ? "#22C47E" : "white"; tinteA: pv.v ? 0.85 : 0.05; brillo: "#22C47E"; brilloA: pv.v ? 0.35 : 0; filo: pv.v ? 1.0 : 0.7; encima: zv.containsMouse; apretado: zv.pressed }
                             Behavior on color { ColorAnimation { duration: 180 } }
                             scale: zv.pressed ? 0.95 : 1
-                            Behavior on scale { SpringAnimation { spring: 5; damping: 0.3 } }
-                            Text { id: tv; anchors.centerIn: parent; text: modelData.texto; color: "white"
-                                font.family: raiz.familia; font.pixelSize: px(32); font.weight: pv.v ? Font.DemiBold : Font.Normal }
+                            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                            // (1.7.8, auditoria) blanco sobre verde claro era 2,3:1: texto oscuro (y el mismo peso,
+                            // para que la pastilla no cambie de ancho al marcarla)
+                            Text { id: tv; anchors.centerIn: parent; text: modelData.texto
+                                color: pv.v ? "#04150D" : "white"
+                                Behavior on color { ColorAnimation { duration: 180 } }
+                                font.family: raiz.familia; font.pixelSize: px(28); font.weight: Font.DemiBold }
                             MouseArea { id: zv; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                                 onClicked: { pv.v = !pv.v; raiz.accion("voz", { "clave": modelData.clave, "si": pv.v }) } }
                         }
@@ -168,7 +173,9 @@ Item {
                 width: parent.width; height: px(26); radius: height / 2
                 color: Qt.rgba(1, 1, 1, 0.08); clip: true
                 Rectangle {
+                    id: lleno
                     height: parent.height; radius: height / 2
+                    clip: true                          // (1.7.8) el brillo no se sale de la parte llena
                     width: Math.max(height, parent.width * Math.min(1, ((raiz.d.cache || {}).frac || 0)))
                     Behavior on width { NumberAnimation { duration: 900; easing.type: Easing.OutCubic } }
                     gradient: Gradient { orientation: Gradient.Horizontal
@@ -178,7 +185,7 @@ Item {
                             GradientStop { position: 0; color: Qt.rgba(1, 1, 1, 0) }
                             GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.45) }
                             GradientStop { position: 1; color: Qt.rgba(1, 1, 1, 0) } }
-                        NumberAnimation on x { loops: Animation.Infinite; from: -px(80); to: px(400); duration: 2400 } }
+                        NumberAnimation on x { running: lleno.visible && !((raiz.d.cache || {}).texto); loops: Animation.Infinite; from: -lleno.height * 3; to: lleno.width; duration: 2400 } }
                 }
             }
             Boton { width: parent.width; escala: raiz.escala; familia: raiz.familia; texto: "Borrar caché"; icono: "papelera"
@@ -209,7 +216,7 @@ Item {
             x: px(26); anchors.verticalCenter: parent.verticalCenter
             width: px(18); height: width; radius: width / 2
             color: e.dato.ok ? "#22C47E" : "#F2B84B"
-            SequentialAnimation on opacity { loops: Animation.Infinite
+            SequentialAnimation on opacity { running: (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite
                 NumberAnimation { to: 0.45; duration: 900; easing.type: Easing.InOutSine }
                 NumberAnimation { to: 1.0; duration: 900; easing.type: Easing.InOutSine } }
         }

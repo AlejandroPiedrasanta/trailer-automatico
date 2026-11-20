@@ -17,18 +17,33 @@ Item {
     signal cancelarClic()
     function px(v) { return Math.round(v * escala) }
 
+    // (1.7.8, auditoria de animaciones) Python manda una lista NUEVA en cada aviso: con la lista directa como modelo el Repeater
+    // rehacia todas las filas y nada se animaba (la barra saltaba, el brillo y el arco volvian a 0, la palomita no
+    // aparecia). Ahora las filas se ACTUALIZAN en su sitio (ListModel.set) y solo se rehacen si cambia cuantas son.
+    // Cada fila lleva siempre todos los campos (ListModel guarda el valor viejo si falta uno).
+    ListModel { id: mPasos }
+    ListModel { id: mVers }
+    function _norm(o, campos) { var r = {}; for (var k in campos) r[k] = (o && o[k] !== undefined && o[k] !== null) ? o[k] : campos[k]; return r }
+    function _sync(m, l, campos) {
+        l = l || []
+        if (m.count !== l.length) { m.clear(); for (var i = 0; i < l.length; i++) m.append(_norm(l[i], campos)) }
+        else for (var j = 0; j < l.length; j++) m.set(j, _norm(l[j], campos))
+    }
+    onPasosChanged: _sync(mPasos, pasos, { "clave": "", "nombre": "", "estado": "pendiente" })
+    onVersionesChanged: _sync(mVers, versiones, { "etq": "", "estado": "cola", "texto": "", "pct": 0.0, "detalle": "" })
+
     readonly property color oro: "#E2B04F"
     readonly property color verde: "#22C47E"
     readonly property color tenue: "#9DB0B6"
     implicitHeight: filaPasos.height + px(40) + tarjeta.height
 
     // al empezar a trabajar: los pasos y las versiones aparecen subiendo (Python llama entrar())
-    function entrar() { raiz.opacity = 0; baja.y = px(30); entra.restart() }
+    function entrar() { raiz.opacity = 0; baja.y = px(14); entra.restart() }
     transform: Translate { id: baja; y: 0 }
     ParallelAnimation {
         id: entra
-        NumberAnimation { target: raiz; property: "opacity"; to: 1; duration: 450; easing.type: Easing.OutCubic }
-        NumberAnimation { target: baja; property: "y"; to: 0; duration: 600; easing.type: Easing.OutBack; easing.overshoot: 1.05 }
+        NumberAnimation { target: raiz; property: "opacity"; to: 1; duration: 200; easing.type: Easing.OutCubic }
+        NumberAnimation { target: baja; property: "y"; to: 0; duration: 280; easing.type: Easing.OutQuint }
     }
 
     // ------------------------------------------------------------------ la fila de pasos
@@ -76,7 +91,7 @@ Item {
                         GradientStop { position: 1; color: Qt.rgba(1, 0.95, 0.8, 0) }
                     }
                     NumberAnimation on x {
-                        running: visible; loops: Animation.Infinite
+                        running: (visible) && (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite
                         from: -px(15); to: parent.width - px(15); duration: 1400; easing.type: Easing.InOutSine
                     }
                 }
@@ -85,10 +100,10 @@ Item {
 
         // los circulos
         Repeater {
-            model: raiz.pasos
+            model: mPasos
             Item {
                 id: paso
-                readonly property string e: modelData.estado
+                readonly property string e: model.estado
                 x: filaPasos.xDe(index) - width / 2
                 y: 0
                 width: px(200); height: filaPasos.height
@@ -166,7 +181,7 @@ Item {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: filaPasos.r * 2 + px(22)
-                    text: modelData.nombre
+                    text: model.nombre
                     font.family: raiz.familia; font.pixelSize: px(32); font.weight: Font.Medium
                     color: paso.e === "activo" ? "#F3D58C" : paso.e === "hecho" ? "#E6EEF0"
                          : paso.e === "error" ? "#FF8A80" : raiz.tenue
@@ -194,8 +209,8 @@ Item {
             x: px(44); y: px(16)
             width: parent.width - px(84)
             Repeater {
-                model: raiz.versiones
-                Fila { width: columna.width; dato: modelData; ultima: index === raiz.versiones.length - 1 }
+                model: mVers
+                Fila { width: columna.width; dato: model; ultima: index === mVers.count - 1 }
             }
             Rectangle { width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.10) }
             Item {
@@ -220,13 +235,12 @@ Item {
                         id: botonCancelar
                         anchors.verticalCenter: parent.verticalCenter
                         width: textoCancelar.implicitWidth + px(80); height: px(84)
-                        radius: px(14)
-                        color: zonaC.containsMouse && raiz.cancelarActivo ? Qt.rgba(226 / 255, 176 / 255, 79 / 255, 0.16) : Qt.rgba(1, 1, 1, 0.04)
-                        border.width: 1
-                        border.color: Qt.rgba(226 / 255, 176 / 255, 79 / 255, raiz.cancelarActivo ? 0.75 : 0.25)
+                        radius: height / 2
+                        color: "transparent"      // (1.7.8) vidrio liquido
+                        Vidrio { anchors.fill: parent; radio: parent.radius; tinteA: 0.07; encima: zonaC.containsMouse && raiz.cancelarActivo; apretado: zonaC.pressed }
                         opacity: raiz.cancelarActivo ? 1 : 0.55
                         scale: zonaC.pressed ? 0.96 : 1
-                        Behavior on scale { SpringAnimation { spring: 5; damping: 0.3 } }
+                        Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
                         Behavior on color { ColorAnimation { duration: 180 } }
                         Text { id: textoCancelar; anchors.centerIn: parent; text: raiz.cancelarTexto
                             color: "#F1F5F6"; font.family: raiz.familia; font.pixelSize: px(32); font.weight: Font.DemiBold }
@@ -266,7 +280,9 @@ Item {
             readonly property string nombre: /\dmin$/.test(dato.etq || "") ? (dato.etq || "").replace("min", " min").replace("VERTICAL", "Vertical") : (dato.etq || "").charAt(0) + (dato.etq || "").slice(1).toLowerCase()
             readonly property string colorEstado: (e === "listo" || e === "armada") ? "#4ADE9A" : e === "error" ? "#FF8A80"
                                                   : e === "armando" ? "#E2B04F" : e === "render" ? "#FFFFFF" : "#8FB3C4"
-            text: nombre + "  ·  <font color='" + colorEstado + "'>" + (e === "render" ? "<b>" + dato.texto + "</b>" : dato.texto)
+            // (1.7.8) el porcentaje CUENTA con la barra (va con «visto», que se mueve suave) en vez de saltar
+            function contar(s) { return (s || "").replace(/(\d+)(\s*%)/, function(m, n, sp) { return Math.round(fila.visto * 100) + sp }) }
+            text: nombre + "  ·  <font color='" + colorEstado + "'>" + (e === "render" ? "<b>" + contar(dato.texto) + "</b>" : dato.texto)
                   + "</font>" + (e === "render" && dato.detalle ? "  ·  <font color='#8FB3C4'>" + dato.detalle + "</font>" : "")
         }
         // la barra
@@ -316,7 +332,7 @@ Item {
             source: fila.e === "error" ? "image://icono/x/FF8A80/" + width : "image://icono/check/2FD98F/" + width
             sourceSize: Qt.size(width * 4, height * 4)
             scale: (fila.e === "listo" || fila.e === "error") ? 1 : 0
-            Behavior on scale { SpringAnimation { spring: 3.5; damping: 0.22 } }
+            Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.6 } }
         }
         Rectangle {
             visible: !fila.ultima

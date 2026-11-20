@@ -4,6 +4,7 @@
 // señales nombreClic / plantillasClic / trailerClic.
 import QtQuick
 import QtQuick.Shapes
+import QtQuick.Effects
 
 Item {
     id: raiz
@@ -24,7 +25,7 @@ Item {
     ParallelAnimation {
         id: entrada
         NumberAnimation { target: raiz; property: "opacity"; to: 1; duration: 420; easing.type: Easing.OutCubic }
-        NumberAnimation { target: subir; property: "y"; to: 0; duration: 520; easing.type: Easing.OutBack; easing.overshoot: 1.1 }
+        NumberAnimation { target: subir; property: "y"; to: 0; duration: 320; easing.type: Easing.OutQuint }
     }
 
     // el vidrio de la barra (igual al panel de antes: degradado verde noche y filo claro)
@@ -39,6 +40,8 @@ Item {
             GradientStop { position: 1.0; color: Qt.rgba(10 / 255, 28 / 255, 34 / 255, 0.92) }
         }
     }
+    // (1.7.8, Liquid Glass) el mismo color de siempre, con la luz y el filo del cristal encima
+    Vidrio { anchors.fill: parent; radio: raiz.radio; tinteA: 0; filo: 0.7 }
 
     Row {
         anchors.fill: parent
@@ -56,7 +59,7 @@ Item {
         Rectangle { width: 1; height: raiz.height; color: Qt.rgba(140 / 255, 215 / 255, 200 / 255, 0.30) }
         Segmento {
             width: raiz.width * 0.28 - 1; height: raiz.height
-            lado: "der"; texto: "Tráiler"; iconoNombre: "play"; iconoColor: "FFFFFF"; verde: true
+            lado: "der"; texto: "Tráiler"; iconoNombre: "play"; iconoColor: "04150D"; verde: true   // (1.7.8) oscuro: se lee
             onClic: raiz.trailerClic()
         }
     }
@@ -79,11 +82,11 @@ Item {
             width: seg.width + (seg.lado === "medio" ? 2 * raiz.radio : raiz.radio)
             height: seg.height
 
-            Rectangle {      // el verde del Tráiler
+            Rectangle {      // el verde del Tráiler (1.7.8: ahora es la pastilla de vidrio de abajo)
                 anchors.fill: parent
                 anchors.margins: 1
                 radius: raiz.radio - 1
-                visible: seg.verde
+                visible: false
                 gradient: Gradient {
                     GradientStop { position: 0.0; color: zona.containsMouse ? "#4FE6A1" : "#44D894" }
                     GradientStop { position: 1.0; color: zona.containsMouse ? "#22B97A" : "#1FA971" }
@@ -97,6 +100,48 @@ Item {
                 opacity: zona.containsMouse ? (seg.verde ? 0.0 : 0.045) : 0.0
                 Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
             }
+        }
+
+        // (1.7.8, Liquid Glass) el Tráiler: una pastilla de VIDRIO verde dentro de la barra, con su resplandor y el
+        // destello que la cruza cada pocos segundos (recortado a la pastilla)
+        Item {
+            id: pastillaT
+            visible: seg.verde
+            anchors.fill: parent
+            anchors.margins: Math.round(seg.height * 0.11)
+            Vidrio {
+                anchors.fill: parent
+                radio: height / 2
+                tinte: "#22C47E"; tinteA: 0.86
+                brillo: "#22C47E"; brilloA: 0.55
+                filo: 1.0
+                encima: zona.containsMouse
+                apretado: zona.pressed
+            }
+            Item {
+                anchors.fill: parent
+                layer.enabled: true
+                layer.effect: MultiEffect { maskEnabled: true; maskSource: mascaraT }
+                Rectangle {
+                    width: pastillaT.height * 0.9; height: pastillaT.height * 2.2
+                    y: -pastillaT.height * 0.6
+                    rotation: 18
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0) }
+                        GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.38) }
+                        GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0) }
+                    }
+                    SequentialAnimation on x {
+                        running: seg.verde && seg.visible
+                        loops: Animation.Infinite
+                        NumberAnimation { from: -pastillaT.height * 1.5; to: pastillaT.width + pastillaT.height; duration: 1400; easing.type: Easing.InOutQuad }
+                        PauseAnimation { duration: 2600 }
+                    }
+                }
+            }
+            Item { id: mascaraT; anchors.fill: parent; layer.enabled: true; visible: false
+                Rectangle { anchors.fill: parent; radius: height / 2 } }
         }
 
         // el foco de luz que sigue al raton
@@ -117,10 +162,10 @@ Item {
             }
         }
 
-        // el brillo que cruza el boton verde cada pocos segundos
+        // el brillo que cruza el boton verde cada pocos segundos (1.7.8: ahora va dentro de la pastilla de vidrio)
         Rectangle {
             id: brillo
-            visible: seg.verde
+            visible: false
             width: seg.height * 0.9; height: seg.height * 2.2
             y: -seg.height * 0.6
             rotation: 18
@@ -131,7 +176,7 @@ Item {
                 GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0) }
             }
             SequentialAnimation on x {
-                running: seg.verde && seg.visible
+                running: (seg.verde && seg.visible) && (typeof quieto === "undefined" || !quieto)
                 loops: Animation.Infinite
                 NumberAnimation { from: -seg.height * 1.5; to: seg.width + seg.height; duration: 1400; easing.type: Easing.InOutQuad }
                 PauseAnimation { duration: 2600 }
@@ -144,7 +189,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             x: seg.alinear === "izq" ? raiz.tam * 2 : (seg.width - width) / 2
             scale: zona.pressed ? 0.96 : 1.0
-            Behavior on scale { SpringAnimation { spring: 5; damping: 0.28 } }
+            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
             Image {
                 anchors.verticalCenter: parent.verticalCenter
                 width: raiz.icono; height: raiz.icono
@@ -153,14 +198,17 @@ Item {
                 smooth: true
                 // el icono da un pasito al pasar el raton
                 transform: Translate { x: zona.containsMouse ? (seg.verde ? 3 : 0) : 0
-                    Behavior on x { SpringAnimation { spring: 4; damping: 0.3 } } }
+                    Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } } }
             }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: seg.texto
-                color: "#F1F5F6"
+                // (1.7.8, auditoria) en verde, texto oscuro; «Pon el nombre» vacio se ve como invitacion (apagado),
+                // y ya puesto, como dato
+                readonly property bool invita: seg.lado === "izq" && seg.texto.indexOf("Pon ") === 0
+                color: seg.verde ? "#04150D" : (invita ? "#8FA3A8" : "#F1F5F6")
                 font.family: raiz.familia; font.pixelSize: raiz.tam
-                font.weight: seg.verde ? Font.DemiBold : Font.Normal
+                font.weight: seg.verde || (seg.lado === "izq" && !invita) ? Font.DemiBold : Font.Normal
                 elide: Text.ElideRight
                 width: Math.min(implicitWidth, seg.width - raiz.icono - raiz.tam * 4)
             }

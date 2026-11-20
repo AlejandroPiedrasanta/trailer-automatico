@@ -48,9 +48,34 @@ def _proveedor():
     return Iconos()
 
 
+_QUIETO = []
+
+
+def movimiento_reducido():
+    """(1.7.8) ¿La persona pidio menos movimiento? Windows: «Mostrar animaciones» apagado (Configuración >
+    Accesibilidad > Efectos visuales; SPI_GETCLIENTAREAANIMATION, una llamada que no pesa). TRAILER_QUIETO=1/0 lo
+    fuerza (pruebas). Con menos movimiento se paran los adornos que se repiten; lo que informa sigue."""
+    if not _QUIETO:
+        v = os.environ.get("TRAILER_QUIETO")
+        if v is not None:
+            _QUIETO.append(v == "1")
+        elif sys.platform == "win32":
+            try:
+                import ctypes
+                si = ctypes.c_int(1)
+                ctypes.windll.user32.SystemParametersInfoW(0x1042, 0, ctypes.byref(si), 0)
+                _QUIETO.append(not bool(si.value))
+            except Exception:
+                _QUIETO.append(False)
+        else:
+            _QUIETO.append(False)
+    return _QUIETO[0]
+
+
 def _pieza_qml(archivo, padre, proveedores=None):
     from PySide6.QtQuickWidgets import QQuickWidget
     q = QQuickWidget(padre)
+    q.rootContext().setContextProperty("quieto", movimiento_reducido())
     q.engine().addImageProvider("icono", _proveedor())
     for nombre, prov in (proveedores or {}).items():
         q.engine().addImageProvider(nombre, prov)
@@ -366,9 +391,10 @@ class PaginaQML:
             self._ultimo = txt
             self.raiz.setProperty("d", d)
 
-    def entrar(self):
+    def entrar(self, dx=0):
+        """dx: (1.7.8) +1 la pagina entra desde la derecha (pestaña de mas adelante), -1 desde la izquierda."""
         self.sincronizar(forzar=True)
-        self.raiz.entrar()
+        self.raiz.entrar(dx)
         QTimer.singleShot(0, self._alto)
 
     def _alto(self):

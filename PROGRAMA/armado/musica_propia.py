@@ -61,7 +61,9 @@ def estilo_elegido(tipo=None):
     if not quiero:
         try:
             import motor
-            quiero = motor.leer_estado().get("musica_estilo", "")
+            est = motor.leer_estado()
+            # (1.8.5, la persona) de fabrica EMOTIVO, hasta que se elija otro en Ajustes / Tráilers
+            quiero = est.get("musica_estilo", "") if est.get("musica_estilo_persona") else "EMOTIVO"
         except Exception:
             quiero = ""
     q = str(quiero).strip().upper()

@@ -27,6 +27,7 @@ Item {
     // (1.8.4) con movimiento reducido entra solo fundiendose (sin deslizar); «entro» avisa a las piezas que
     // escalonan su entrada (antes se animaban al crearse la pagina, escondida, y nunca se veia)
     signal entro()
+    onEntro: if (carrusel.visible) carrusel.forceActiveFocus()     // (1.8.5) las flechas mueven el carrusel
     function entrar(dx) { var q = typeof quieto !== "undefined" && quieto
         opacity = 0; baja.x = q ? 0 : (dx || 0) * px(60); baja.y = (q || dx) ? 0 : px(14); entra.restart(); entro() }   // (1.7.8) dx: +1 entra desde la derecha (pestaña de mas adelante), -1 desde la izquierda
     transform: Translate { id: baja }
@@ -39,14 +40,14 @@ Item {
     readonly property var marcadas: d.marcadas || []
     function usada(i) { return i >= 0 && i < lista.length && marcadas.indexOf(lista[i].nombre) >= 0 }
     function nombreBonito(n) { return (n || "").replace(/_/g, " ") }
-    implicitHeight: col.implicitHeight + px(60)
+    implicitHeight: col.implicitHeight + px(30)
 
     Column {
         id: col
         width: Math.min(parent.width - px(120), px(1700))
         anchors.horizontalCenter: parent.horizontalCenter
-        y: px(36)
-        spacing: px(14)
+        y: px(24)
+        spacing: px(12)
 
         Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Plantillas de video"; color: "white"
             font.family: raiz.familia; font.pixelSize: px(72); font.weight: Font.Bold }
@@ -55,8 +56,6 @@ Item {
                   ? "Opcional: cada plantilla que uses sale como un video más, con sus cortes y su música."
                   : "Opcional: suelta aquí un Reel, TikTok o CapCut y sale un video más con sus cortes y su música."
             font.family: raiz.familia; font.pixelSize: px(30) }
-        Item { width: 1; height: px(4) }
-
         // el rotulo, las opciones y «Agregar plantilla»
         Item {
             width: col.width; height: agregar.height
@@ -124,32 +123,46 @@ Item {
         }
 
         // ---------------------------------------------------------------- el carrusel de portadas 9:16
+        // (1.8.5, la persona: «el slider más grande») portadas de 350 x 622 (antes 290 x 516; mas grandes ya no cabe
+        // la pagina en la ventana de 1240 x 860 y salia barra de desplazamiento) y las de los lados
+        // mas presentes; las flechas del teclado ya llegan (el carrusel toma el foco al tocarlo o al entrar)
         PathView {
             id: carrusel
+            objectName: "carrusel"
             visible: raiz.lista.length > 0
-            width: col.width; height: visible ? px(560) : 0
+            width: col.width; height: visible ? px(650) : 0
+            focus: true
+            activeFocusOnTab: true
             model: raiz.lista
-            pathItemCount: Math.min(5, Math.max(1, count))
+            // (1.8.5) siempre un numero impar a la vista: con 4, la del centro y una a cada lado (con 4 a la vista
+            // quedaba chueco: dos a la izquierda, una a la derecha)
+            pathItemCount: count >= 5 ? 5 : (count === 4 ? 3 : Math.max(1, count))
             preferredHighlightBegin: 0.5; preferredHighlightEnd: 0.5
             highlightRangeMode: PathView.StrictlyEnforceRange
             highlightMoveDuration: 320
             interactive: count > 1
-            function ir(i) { if (i >= 0 && i < count && i !== currentIndex) currentIndex = i }
+            function ir(i) { forceActiveFocus(); if (i >= 0 && i < count && i !== currentIndex) currentIndex = i }
             Keys.onLeftPressed: ir((currentIndex - 1 + count) % count)
             Keys.onRightPressed: ir((currentIndex + 1) % count)
+            // (1.8.5) Enter o espacio: usar / dejar la del centro
+            Keys.onReturnPressed: raiz.accion("marcar", (raiz.lista[currentIndex] || {}).nombre || "")
+            Keys.onEnterPressed: raiz.accion("marcar", (raiz.lista[currentIndex] || {}).nombre || "")
+            Keys.onSpacePressed: raiz.accion("marcar", (raiz.lista[currentIndex] || {}).nombre || "")
 
+            // (1.8.5) con 3 a la vista, el camino mas corto: las de los lados junto a la del centro (no en las orillas)
+            readonly property real orilla: pathItemCount >= 5 ? 0 : width * 0.16
             path: Path {
-                startX: 0; startY: carrusel.height / 2
-                PathAttribute { name: "esc"; value: 0.66 }
-                PathAttribute { name: "opa"; value: 0.35 }
+                startX: carrusel.orilla; startY: carrusel.height / 2
+                PathAttribute { name: "esc"; value: 0.70 }
+                PathAttribute { name: "opa"; value: 0.42 }
                 PathAttribute { name: "capa"; value: 0 }
                 PathLine { x: carrusel.width / 2; y: carrusel.height / 2 }
                 PathAttribute { name: "esc"; value: 1.0 }
                 PathAttribute { name: "opa"; value: 1.0 }
                 PathAttribute { name: "capa"; value: 10 }
-                PathLine { x: carrusel.width; y: carrusel.height / 2 }
-                PathAttribute { name: "esc"; value: 0.66 }
-                PathAttribute { name: "opa"; value: 0.35 }
+                PathLine { x: carrusel.width - carrusel.orilla; y: carrusel.height / 2 }
+                PathAttribute { name: "esc"; value: 0.70 }
+                PathAttribute { name: "opa"; value: 0.42 }
                 PathAttribute { name: "capa"; value: 0 }
             }
             delegate: Portada {
@@ -159,7 +172,7 @@ Item {
                 scale: PathView.esc === undefined ? 1 : PathView.esc
                 opacity: PathView.opa === undefined ? 1 : PathView.opa
                 z: PathView.capa === undefined ? 0 : PathView.capa
-                onTocar: { if (centro) raiz.accion("marcar", modelData.nombre); else carrusel.ir(index) }
+                onTocar: { carrusel.forceActiveFocus(); if (centro) raiz.accion("marcar", modelData.nombre); else carrusel.ir(index) }
             }
         }
 
@@ -267,7 +280,7 @@ Item {
         property bool centro: false
         property bool usada: false
         signal tocar()
-        width: px(290); height: px(516)
+        width: px(350); height: px(622)
         HoverHandler { id: hvP }
 
         Item {
@@ -308,7 +321,7 @@ Item {
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
                     // la del centro se acerca muy despacio (como si corriera el video)
-                    scale: c.centro ? 1.06 : 1
+                    scale: c.centro && !incl._quieto ? 1.06 : 1     // (1.8.5) con movimiento reducido, quieta
                     Behavior on scale { NumberAnimation { duration: 6000; easing.type: Easing.InOutSine } }
                 }
                 // (1.7.8) el reflejo que cruza la portada siguiendo al cursor

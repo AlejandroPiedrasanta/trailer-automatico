@@ -26,6 +26,7 @@ Item {
     // (1.8.4) con movimiento reducido entra solo fundiendose (sin deslizar); «entro» avisa a las piezas que
     // escalonan su entrada (antes se animaban al crearse la pagina, escondida, y nunca se veia)
     signal entro()
+    onEntro: carrusel.alDato()          // (1.8.5) al mostrarse, la elegida al centro
     function entrar(dx) { var q = typeof quieto !== "undefined" && quieto
         opacity = 0; baja.x = q ? 0 : (dx || 0) * px(60); baja.y = (q || dx) ? 0 : px(14); entra.restart(); entro() }   // (1.7.8) dx: +1 entra desde la derecha (pestaña de mas adelante), -1 desde la izquierda
     transform: Translate { id: baja }
@@ -90,7 +91,9 @@ Item {
                 if (i !== currentIndex) currentIndex = i
                 if (i !== raiz.d.estilo) raiz.accion("estilo", i)
             }
-            onCountChanged: alDato()
+            // (1.8.5) despues de que el PathView asiente el modelo nuevo (al cargarlo volvia a la primera, «Auto»,
+            // y la elegida —Emotivo de fabrica— no quedaba al centro)
+            onCountChanged: Qt.callLater(alDato)
             onMovementEnded: elegir(currentIndex)          // al soltar un arrastre: la que quedo al centro
             Keys.onLeftPressed: elegir((currentIndex - 1 + count) % count)
             Keys.onRightPressed: elegir((currentIndex + 1) % count)

@@ -70,6 +70,9 @@ def _fecha_bonita(iso):
     return "%s %d de %s" % (dias[f.weekday()], f.day, meses[f.month - 1])
 
 
+ESTILO_DEFECTO = "EMOTIVO"       # (1.8.5) la musica de fabrica, hasta que la persona elija otra
+
+
 def versiones_guardadas(est):
     """(horizontales, verticales): las versiones elegidas en Inicio para cada formato. Sin elegir nunca, todas las
     horizontales y ninguna vertical; siempre queda al menos una."""
@@ -2608,6 +2611,7 @@ def app():
             """Guarda al momento lo elegido en Ajustes > Sonido (música e intro): el armado lo lee del estado."""
             est = motor.leer_estado()
             est["musica_estilo"] = self.est["musica_estilo"] = self._estilo_musica()
+            est["musica_estilo_persona"] = self.est["musica_estilo_persona"] = True   # (1.8.5) ya eligio
             est["intro_tipo"] = self.est["intro_tipo"] = self._intro_tipo()
             motor.guardar_estado(est)
 
@@ -2717,7 +2721,8 @@ def app():
                 l_mus.setToolTip("Música original del programa, hecha a la medida de los videos (sin dueño: no la "
                                  "bloquean en redes). Cada estilo trae su intro, romántica, fiesta y épica. "
                                  "«Plantilla» deja las canciones que trae la plantilla de DaVinci.")
-                quiero = str(self.est.get("musica_estilo", "")).upper()
+                # (1.8.5, la persona: «deja por default el estilo emotivo») mientras no elija otro: EMOTIVO
+                quiero = str(self.est.get("musica_estilo", "")).upper() if self.est.get("musica_estilo_persona")                     else ESTILO_DEFECTO
                 actual = next((i + 1 for i, n in enumerate(self.estilos_musica) if quiero and quiero in n.upper()),
                               len(self.estilos_musica) + 1 if quiero == "PLANTILLA" else 0)
                 self.seg_musica = piezas.Segmentado(

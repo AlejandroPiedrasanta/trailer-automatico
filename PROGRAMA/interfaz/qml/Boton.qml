@@ -15,7 +15,7 @@ Item {
     signal clic()
     function px(v) { return Math.round(v * escala) }
     // (1.7.8) del ancho NATURAL del texto (no del de la fila: el texto se acorta con el boton y eso era un circulo)
-    implicitWidth: (ic.visible ? ic.width + fila.spacing : 0) + txt.implicitWidth + px(76)
+    implicitWidth: (ic.visible ? ic.width + fila.spacing : 0) + txt.implicitWidth + px(64)
     implicitHeight: px(84)
     opacity: activo ? 1 : 0.5
     scale: zona.pressed ? 0.97 : 1
@@ -48,8 +48,11 @@ Item {
             id: txt
             anchors.verticalCenter: parent.verticalCenter
             // (1.7.8) nunca mas ancho que el boton: «Buscar actualizaciones» tocaba el borde
-            width: Math.min(implicitWidth, b.width - b.px(76) - (ic.visible ? ic.width + fila.spacing : 0))
-            elide: Text.ElideRight
+            width: Math.min(implicitWidth, b.width - b.px(64) - (ic.visible ? ic.width + fila.spacing : 0))
+            // (1.7.9) si no cabe, primero se achica la letra (hasta px(26)); solo despues se corta con «…»
+            fontSizeMode: Text.HorizontalFit
+            minimumPixelSize: b.px(24)
+            elide: Text.ElideNone           // (con «…» el corte ganaba al achicado)
             text: b.texto; color: b.principal ? "#04150D" : "#F1F5F6"
             font.family: b.familia; font.pixelSize: b.px(34); font.weight: b.principal ? Font.Bold : Font.DemiBold
         }

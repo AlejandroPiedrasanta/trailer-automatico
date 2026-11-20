@@ -57,7 +57,8 @@ Item {
             font.family: raiz.familia; font.pixelSize: px(30) }
         Item { width: 1; height: px(4) }
 
-        Seccion { texto: "Música"; icono: "nota" }
+        Item { width: col.width; height: px(84)      // (1.7.9) misma altura que «TUS PLANTILLAS»
+            Seccion { anchors.verticalCenter: parent.verticalCenter; texto: "Música"; icono: "nota" } }
 
         // ---------------------------------------------------------------- el carrusel de portadas
         PathView {
@@ -103,6 +104,7 @@ Item {
             }
             delegate: Portada {
                 nombre: modelData
+                lado: { var n = carrusel.count; var d = (index - carrusel.currentIndex + n) % n; return d === 0 ? 0 : (d <= n / 2 ? 1 : -1) }
                 elegida: PathView.isCurrentItem
                 scale: PathView.esc === undefined ? 1 : PathView.esc
                 opacity: PathView.opa === undefined ? 1 : PathView.opa
@@ -183,6 +185,7 @@ Item {
     component Portada: Item {
         id: p
         property string nombre: ""
+        property int lado: 0              // (1.7.9) -1 a la izquierda del centro, 1 a la derecha
         property bool elegida: false
         signal tocar()
         signal oir()
@@ -274,6 +277,7 @@ Item {
                     x: px(40); width: parent.width - px(80)
                     anchors.bottom: desc.top; anchors.bottomMargin: px(6)
                     text: p.nombre; color: "white"; elide: Text.ElideRight
+                    horizontalAlignment: p.lado > 0 ? Text.AlignRight : Text.AlignLeft   // (1.7.9) lejos de la del centro
                     font.family: raiz.familia; font.pixelSize: px(52); font.weight: Font.Bold
                 }
                 Text {
@@ -289,8 +293,8 @@ Item {
             // la palomita de la elegida
             Rectangle {
                 x: parent.width - width - px(24); y: px(24)
-                width: px(50); height: width; radius: width / 2
-                color: "#22C47E"; border.width: px(3); border.color: "#04150D"
+                width: px(52); height: width; radius: width / 2      // (1.7.9) blanca: verde sobre verde no se veia
+                color: "#FFFFFF"; border.width: 0
                 scale: p.elegida ? 1 : 0.6; opacity: p.elegida ? 1 : 0
                 Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.6 } }
                 Behavior on opacity { NumberAnimation { duration: 120 } }

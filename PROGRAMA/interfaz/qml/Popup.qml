@@ -4,6 +4,7 @@
 // Python (barra_qml.PopupQML) llama abrir(...) y espera la señal respuesta(boton, json de la forma).
 import QtQuick
 import QtQuick.Shapes
+import QtQuick.Effects
 
 Item {
     id: raiz
@@ -204,7 +205,7 @@ Item {
                 width: parent.width
                 horizontalAlignment: raiz.texto.indexOf("•") >= 0 ? Text.AlignLeft : Text.AlignHCenter
                 wrapMode: Text.WordWrap
-                text: raiz.texto
+                text: raiz.texto.replace(/(\d+) (min|s|%|MB|GB)/g, "\u00a0")      // (1.7.9) «3 min» no se parte
                 color: "#B9C6C9"
                 font.family: raiz.familia; font.pixelSize: px(34)
                 lineHeight: 1.15
@@ -250,14 +251,18 @@ Item {
         radius: chica ? px(30) : px(46)
         scale: zona.pressed ? 0.96 : 1
         Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-        clip: true
-        color: "transparent"          // (1.7.8) vidrio liquido: verde el principal y las marcadas, claro los demas
+        color: "transparent"          // (1.7.9: sin clip: recortaba el resplandor en rectangulo) (1.7.8) vidrio liquido: verde el principal y las marcadas, claro los demas
         Vidrio { anchors.fill: parent; radio: parent.radius; tinte: (p.principal || p.marcada) ? "#22C47E" : "white"; tinteA: (p.principal || p.marcada) ? 0.85 : 0.06; brillo: "#22C47E"; brilloA: p.principal ? 0.5 : (p.marcada ? 0.3 : 0); filo: (p.principal || p.marcada) ? 1.0 : 0.8; encima: zona.containsMouse; apretado: zona.pressed }
         Gradient {
             id: verdeG
             GradientStop { position: 0; color: zona.containsMouse ? "#3BE3A0" : "#2BD08C" }
             GradientStop { position: 1; color: zona.containsMouse ? "#16A068" : "#118A57" }
         }
+        Item {             // (1.7.9) el destello, recortado a la forma de la pastilla
+            anchors.fill: parent
+            visible: p.principal
+            layer.enabled: p.principal
+            layer.effect: MultiEffect { maskEnabled: true; maskSource: formaP }
         Rectangle {        // el destello que cruza el boton principal
             visible: p.principal
             width: p.height * 0.9; height: p.height * 2.4; y: -p.height * 0.7; rotation: 20
@@ -270,6 +275,9 @@ Item {
                 NumberAnimation { from: -p.height * 1.5; to: p.width + p.height; duration: 1100; easing.type: Easing.InOutQuad }
                 PauseAnimation { duration: 1800 } }
         }
+        }
+        Item { id: formaP; anchors.fill: parent; layer.enabled: true; visible: false
+            Rectangle { anchors.fill: parent; radius: p.radius } }
         Row {
             anchors.centerIn: parent
             spacing: px(14)

@@ -461,8 +461,9 @@ def app():
                       border-radius: {tab_r}px; border: 1px solid transparent; }}
     QPushButton#tab:hover {{ background: rgba(255,255,255,0.08); color: #FFFFFF; border-color: rgba(255,255,255,0.14);
                             border-top-color: rgba(255,255,255,0.35); }}
-    QPushButton#tab:checked {{ background: transparent; color: #04150D; border: 1px solid transparent;
+    QPushButton#tab:checked {{ background: transparent; color: #FFFFFF; border: 1px solid transparent;
                               font-weight: 600; }}
+    QPushButton#tab:checked[llego="true"] {{ color: #04150D; }}
     QPushButton#tab:checked:hover {{ background: transparent; border-color: transparent; }}
     QPushButton#estado {{ font-size: {c}px; font-weight: 500; padding: {e_v}px {e_h}px; border-radius: {e_r}px;
                          background: {vidrio}; border: 1px solid rgba(34, 196, 126, 0.75);
@@ -953,6 +954,10 @@ def app():
             super().resizeEvent(e)
             if self._nebulosa:
                 self._nebulosa.setGeometry(self.rect())
+            agarre = getattr(self.window(), "agarre", None)        # (1.7.9) siempre en la esquina de abajo
+            if agarre is not None:
+                agarre.move(self.width() - agarre.width(), self.height() - agarre.height())
+                agarre.raise_()
             if getattr(self, "al_cambiar", None):
                 self.al_cambiar()
             if self._peli is not None:
@@ -1097,6 +1102,10 @@ def app():
             self.tabs["Material"].hide()
             self.tabs["Textos"].hide()
             self.tabs["Inicio"].setChecked(True)
+            # (1.7.9, revision de pulido) las 4 pestañas del MISMO ancho: separacion pareja y la gota no cambia de
+            # tamaño al viajar
+            self._igualar_tabs()
+            QTimer.singleShot(0, self._igualar_tabs)          # ya con el estilo puesto
             # (1.7.8) la gota de vidrio verde de la pestaña activa: se desliza de una pestaña a otra
             self.gota_tabs = piezas.GotaPestanas(nav, self.grupo_tabs)
             self.punto = QLabel("●")
@@ -1192,10 +1201,14 @@ def app():
             QTimer.singleShot(0, self._brillos)
             _tiempo("  escena")
 
-            pie = QHBoxLayout()
-            pie.addStretch(1)
-            pie.addWidget(QSizeGrip(self))
-            raiz.addLayout(pie)
+            # (1.7.9, revision de pulido) el agarre para cambiar el tamaño, INVISIBLE en la esquina (sus puntitos se
+            # veian en todas las paginas y su fila comia ~28 px abajo); los bordes de la ventana tambien la estiran
+            from PySide6.QtWidgets import QGraphicsOpacityEffect
+            self.agarre = QSizeGrip(self.cielo)
+            self.agarre.setFixedSize(18, 18)
+            efecto = QGraphicsOpacityEffect(self.agarre)
+            efecto.setOpacity(0.0)
+            self.agarre.setGraphicsEffect(efecto)
 
             # --- vigilancia de carpetas y chequeo
             self.vigia = QFileSystemWatcher([d for d in rutas.CARPETAS.values() if os.path.isdir(d)], self)
@@ -3093,6 +3106,21 @@ def app():
 
         ORDEN_VISTA = ("Inicio", "Tráilers", "Plantillas", "Ajustes")
 
+        def _igualar_tabs(self):
+            """(1.7.9) Las 4 pestañas del mismo ancho (el de la mas ancha, en negrita): separacion pareja y la gota no
+            cambia de tamaño al viajar. Se rehace al cambiar la escala de la ventana (cambia la letra)."""
+            visibles = [self.tabs[t] for t in self.ORDEN_VISTA if t in self.tabs]
+            for b in visibles:
+                b.setMinimumWidth(0)
+                b.setMaximumWidth(16777215)
+            negrita = QFont(visibles[0].font())
+            negrita.setWeight(QFont.DemiBold)
+            from PySide6.QtGui import QFontMetrics
+            extra = max(0, max(b.sizeHint().width() - b.fontMetrics().horizontalAdvance(b.text()) for b in visibles))
+            ancho = max(QFontMetrics(negrita).horizontalAdvance(b.text()) for b in visibles) + extra
+            for b in visibles:
+                b.setFixedWidth(ancho)
+
         def _direccion_pagina(self, i):
             """(1.7.8) +1 si la pagina nueva esta a la derecha de la anterior en la barra de pestañas, -1 si a la
             izquierda (la pagina entra deslizandose desde ese lado), 0 si no se sabe."""
@@ -4184,6 +4212,8 @@ def app():
             self.boton.poner_lado(int(max(160, min(libre, pag.width() * 0.42))))     # (1.6.0) el astrolabio
             self._centrar_boton()
             self._escalar_luego()
+            if hasattr(self, "gota_tabs"):           # (1.7.9) la gota, en su pestaña ya acomodada
+                QTimer.singleShot(0, self.gota_tabs._recolocar)
 
         def _centrar_boton(self):
             h = self.hueco_boton
@@ -4228,6 +4258,8 @@ def app():
         def _sin_recorte(self):
             """(1.6.1) Pestañas y pastillas con sitio para su texto en negrita (piezas.sin_recorte)."""
             piezas.sin_recorte(list(self.tabs.values()))
+            if hasattr(self, "gota_tabs"):
+                self._igualar_tabs()                 # (1.7.9) y las 4 del mismo ancho
             for p in self.findChildren(piezas.Pastillas):
                 piezas.sin_recorte(p.botones)
 

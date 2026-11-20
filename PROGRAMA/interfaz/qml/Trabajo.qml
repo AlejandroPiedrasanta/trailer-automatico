@@ -90,9 +90,13 @@ Item {
                         GradientStop { position: 0.5; color: Qt.rgba(1, 0.95, 0.8, 0.95) }
                         GradientStop { position: 1; color: Qt.rgba(1, 0.95, 0.8, 0) }
                     }
-                    NumberAnimation on x {
+                    // (1.7.9) por FRACCION del tramo: con «to: parent.width» el recorrido se fijaba al empezar y, si la
+                    // ventana cambiaba de tamaño, la luz se salia de la linea (quedaba una media luna junto a «Listo»)
+                    property real f: 0
+                    x: -px(15) + f * parent.width
+                    NumberAnimation on f {
                         running: (visible) && (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite
-                        from: -px(15); to: parent.width - px(15); duration: 1400; easing.type: Easing.InOutSine
+                        from: 0; to: 1; duration: 1400; easing.type: Easing.InOutSine
                     }
                 }
             }
@@ -227,7 +231,7 @@ Item {
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        width: pie.width - px(46) - botonCancelar.width - px(60)
+                        width: pie.width - px(46) - botonCancelar.width - px(40)      // (1.7.9) «Cancelar» al mismo borde que las palomitas
                         text: raiz.eta; textFormat: Text.RichText
                         color: "#F1F5F6"; font.family: raiz.familia; font.pixelSize: px(36)
                     }
@@ -265,8 +269,8 @@ Item {
         height: raiz.versiones.length > 4 ? px(66) : px(82)     // (19-nov) con muchas (tráileres + plantillas) caben
 
         Image {
-            x: px(26 - 44 + 26); anchors.verticalCenter: parent.verticalCenter
-            width: px(50); height: width
+            x: 0; anchors.verticalCenter: parent.verticalCenter      // (1.7.9) mismo borde que el reloj del pie
+            width: px(46); height: width
             source: "image://icono/claqueta/C9D6DA/" + width
             sourceSize: Qt.size(width * 4, height * 4)
         }
@@ -297,9 +301,11 @@ Item {
                 visible: fila.visto > 0.001
                 height: parent.height; radius: height / 2
                 width: Math.max(height, parent.width * fila.visto)
+                // (1.7.9) del color de su estado: dorada mientras arma (como su texto), verde al renderizar y lista
+                readonly property bool oro: fila.e === "armando"
                 gradient: Gradient {
-                    GradientStop { position: 0; color: "#3BEE9F" }
-                    GradientStop { position: 1; color: "#16B06E" }
+                    GradientStop { position: 0; color: llena.oro ? "#F6D27A" : "#3BEE9F" }
+                    GradientStop { position: 1; color: llena.oro ? "#C9952E" : "#16B06E" }
                 }
                 Rectangle {
                     visible: fila.e === "render" || fila.e === "armando"
@@ -308,8 +314,10 @@ Item {
                         GradientStop { position: 0; color: Qt.rgba(1, 1, 1, 0) }
                         GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.47) }
                         GradientStop { position: 1; color: Qt.rgba(1, 1, 1, 0) } }
-                    NumberAnimation on x { running: parent.visible; loops: Animation.Infinite
-                        from: -width; to: llena.width + width; duration: 1800 }
+                    // (1.7.9) por fraccion: sigue a la barra aunque crezca (antes el recorrido quedaba fijo al empezar)
+                    property real f: 0
+                    x: -width + f * (llena.width + 2 * width)
+                    NumberAnimation on f { running: parent.visible; loops: Animation.Infinite; from: 0; to: 1; duration: 1800 }
                 }
             }
             Rectangle {               // «Armando…» sin porcentaje: una luz dorada que va y viene
@@ -319,15 +327,17 @@ Item {
                     GradientStop { position: 0; color: Qt.rgba(226 / 255, 176 / 255, 79 / 255, 0) }
                     GradientStop { position: 0.5; color: Qt.rgba(246 / 255, 210 / 255, 122 / 255, 0.9) }
                     GradientStop { position: 1; color: Qt.rgba(226 / 255, 176 / 255, 79 / 255, 0) } }
-                SequentialAnimation on x { running: parent.visible; loops: Animation.Infinite
-                    NumberAnimation { from: 0; to: barra.width * 0.78; duration: 1300; easing.type: Easing.InOutSine }
-                    NumberAnimation { from: barra.width * 0.78; to: 0; duration: 1300; easing.type: Easing.InOutSine } }
+                property real f: 0
+                x: f * barra.width * 0.78
+                SequentialAnimation on f { running: parent.visible; loops: Animation.Infinite
+                    NumberAnimation { from: 0; to: 1; duration: 1300; easing.type: Easing.InOutSine }
+                    NumberAnimation { from: 1; to: 0; duration: 1300; easing.type: Easing.InOutSine } }
             }
         }
         // la palomita aparece con un rebote; el error, una cruz roja
         Image {
             id: palomita
-            x: fila.width - px(80 - 40); anchors.verticalCenter: parent.verticalCenter
+            x: fila.width - width; anchors.verticalCenter: parent.verticalCenter      // (1.7.9) no se sale de la columna
             width: px(44); height: width
             source: fila.e === "error" ? "image://icono/x/FF8A80/" + width : "image://icono/check/2FD98F/" + width
             sourceSize: Qt.size(width * 4, height * 4)

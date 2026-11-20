@@ -54,8 +54,11 @@ Item {
                 visible: (raiz.d.proxies_ruta || "") !== ""
                 width: video.width - video.px(88)
                 elide: Text.ElideMiddle
-                text: "Van en Videos › " + (raiz.d.proxies_ruta || "").split(/[\\/]/).pop() + "  (abrir)"
-                color: zp.containsMouse ? "#6CF2B4" : "#9DB0B6"
+                // (1.7.9) el enlace se ve enlace: «Abrir» en verde, como «Instalar el modelo»
+                textFormat: Text.StyledText
+                text: "Van en Videos › " + (raiz.d.proxies_ruta || "").split(/[\\/]/).pop()
+                      + "  ·  <font color='" + (zp.containsMouse ? "#6CF2B4" : "#3BEE9F") + "'><b>Abrir</b></font>"
+                color: "#9DB0B6"
                 font.family: raiz.familia; font.pixelSize: px(26); font.underline: zp.containsMouse
                 Behavior on color { ColorAnimation { duration: 150 } }
                 MouseArea { id: zp; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
@@ -198,6 +201,8 @@ Item {
             Text { text: raiz.d.version || ""; color: "#F1F5F6"; font.family: raiz.familia; font.pixelSize: px(34) }
             Text { visible: (raiz.d.act || "") !== ""; width: parent.width; wrapMode: Text.WordWrap
                 text: raiz.d.act || ""; color: "#9DB0B6"; font.family: raiz.familia; font.pixelSize: px(28) }
+            // (1.7.9) sin aviso de actualizacion, el mismo hueco que la barra de Disco: los dos botones a la misma altura
+            Item { visible: (raiz.d.act || "") === ""; width: 1; height: px(26) }
             Boton { width: parent.width; escala: raiz.escala; familia: raiz.familia; texto: "Buscar actualizaciones"
                 icono: "refrescar"; girar: true; onClic: raiz.accion("buscar", 0) }
         }

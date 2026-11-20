@@ -262,8 +262,11 @@ def _dibujar(p, tipo, col, s, grosor=None):
 
 _MASCARAS = {}                       # (1.6.0) tipo -> QImage de recursos/iconos (Higgsfield) o None
 _ICONOS = {}                         # (tipo, color, lado, grosor) -> QPixmap ya hecho (se piden en cada pintada)
-# los de controles (palomita, x, play...) quedan dibujados: son geometria simple y se ven mejor exactos
-SOLO_DIBUJADOS = {"palomita", "check", "check_lleno", "cancelar", "min", "max", "x", "play", "punto", "refrescar"}
+# (1.7.8, la persona: «librería de iconos modernas, busca y aplícalo») Los iconos son de LUCIDE (ISC, recursos/iconos/
+# lucide/LICENSE.txt; v0.468.0): linea redondeada de 2 px, como los SF Symbols de Apple. Los SVG se pasaron a mascaras
+# PNG de 256 px (asi no hace falta QtSvg en el instalador) y se tiñen del color pedido igual que antes. Quedan
+# dibujados solo el check relleno y el punto. Si falta uno de Lucide, el de Higgsfield y si no, el dibujo de siempre.
+SOLO_DIBUJADOS = {"check_lleno", "punto"}
 
 
 def _mascara(tipo):
@@ -273,7 +276,9 @@ def _mascara(tipo):
             try:
                 import rutas
                 archivo = {"globo": "fiesta"}.get(tipo, tipo)
-                ruta = os.path.join(rutas.RECURSOS, "iconos", archivo + ".png")
+                ruta = os.path.join(rutas.RECURSOS, "iconos", "lucide", archivo + ".png")
+                if not os.path.isfile(ruta):
+                    ruta = os.path.join(rutas.RECURSOS, "iconos", archivo + ".png")
                 if os.path.isfile(ruta):
                     img = QImage(ruta).convertToFormat(QImage.Format_ARGB32_Premultiplied)
                     img = None if img.isNull() else img
@@ -2370,28 +2375,71 @@ class GotaPestanas(QWidget):
         self._grupo = grupo
         self._anim = QVariantAnimation(self, duration=280, easingCurve=QEasingCurve(QEasingCurve.OutCubic))
         self._anim.valueChanged.connect(lambda r: self.setGeometry(r.toAlignedRect()))
+        self._anim.finished.connect(self._llego)
         grupo.buttonToggled.connect(lambda b, si: si and self.ir_a(b))
-        barra.installEventFilter(self)
-        self.lower()
+        self._destino = None
 
-    def ir_a(self, boton, animar=True):
-        if boton is None or not boton.isVisible():
+    def _marcar(self, boton, si):
+        """(1.7.9) La pestaña lleva texto OSCURO solo cuando la gota esta debajo (QSS [llego="true"]): antes se
+        oscurecia al instante y, mientras la gota viajaba, quedaba oscura sobre el fondo oscuro."""
+        if boton is not None and bool(boton.property("llego")) != si:
+            boton.setProperty("llego", si)
+            boton.style().unpolish(boton)
+            boton.style().polish(boton)
+            boton.update()
+        self.lower()                        # la gota siempre DEBAJO de las pestañas (el texto encima)
+
+    def _llego(self):
+        self._marcar(self._destino, True)
+        barra.installEventFilter(self)
+        for b in grupo.buttons():           # (1.7.9) tambien si un boton se mueve o cambia (la gota quedaba corrida)
+            b.installEventFilter(self)
+        self.lower()
+        self.hide()                         # hasta saber donde va (no se ve en la esquina mientras tanto)
+        # (1.7.9, medido) al abrir, los botones ya «se ven» pero aun tienen el sitio provisional (0, 0): la gota lo
+        # copiaba y se quedaba en la esquina tapando «Inicio». Se vuelve a colocar varias veces mientras todo se acomoda
+        for ms in (0, 150, 400, 900, 1600, 3000):
+            QTimer.singleShot(ms, self._recolocar)
+
+    def _recolocar(self):
+        if self._anim.state() != QVariantAnimation.State.Running:
+            self.ir_a(self._grupo.checkedButton(), animar=False)
+
+    def ir_a(self, boton, animar=True, _intento=0):
+        if boton is None:
             return
+        if not boton.isVisible():
+            # (1.7.9) al abrir, las pestañas aun no se ven: se reintenta (antes se quedaba arriba a la izquierda,
+            # tapando «Inicio», hasta el primer cambio de pestaña)
+            if _intento < 40:
+                QTimer.singleShot(50, lambda: self.ir_a(self._grupo.checkedButton(), False, _intento + 1))
+            return
+        for b in self._grupo.buttons():
+            if b is not boton:
+                self._marcar(b, False)
+        self._destino = boton
         meta = QRectF(boton.geometry())
+        if meta.x() < 1 and meta.y() < 1 and _intento < 40:       # sitio provisional: aun no se acomodo
+            QTimer.singleShot(50, lambda: self.ir_a(self._grupo.checkedButton(), False, _intento + 1))
+            return
         if not animar or not self.isVisible() or self.width() < 4:
             self._anim.stop()
             self.setGeometry(meta.toAlignedRect())
             self.show()
             self.lower()
+            self._marcar(boton, True)
             return
+        self._marcar(boton, False)
+        self.lower()
         self._anim.stop()
         self._anim.setStartValue(QRectF(self.geometry()))
         self._anim.setEndValue(meta)
         self._anim.start()
 
     def eventFilter(self, obj, ev):
-        if ev.type() in (ev.Type.Resize, ev.Type.LayoutRequest, ev.Type.Show):
-            QTimer.singleShot(0, lambda: self.ir_a(self._grupo.checkedButton(), animar=False))
+        if ev.type() in (ev.Type.Resize, ev.Type.LayoutRequest, ev.Type.Show, ev.Type.Move):
+            if not self._anim.state() == QVariantAnimation.State.Running:
+                QTimer.singleShot(0, lambda: self.ir_a(self._grupo.checkedButton(), animar=False))
         return False
 
     def paintEvent(self, _):

@@ -34,7 +34,7 @@ Item {
             GradientStop { position: 1.0; color: "#DCE4E7" }
         }
         scale: zona.pressed ? 0.9 : 1
-        Behavior on scale { NumberAnimation { duration: 120 } }
+        Behavior on scale { NumberAnimation { duration: zona.pressed ? 90 : 300; easing.type: zona.pressed || (typeof quieto !== "undefined" && quieto) ? Easing.OutQuad : Easing.OutBack; easing.overshoot: 2.2 } }
         layer.enabled: true
         layer.effect: MultiEffect { shadowEnabled: true; shadowBlur: 0.5; shadowOpacity: 0.4; shadowVerticalOffset: 2 }
     }

@@ -8,6 +8,9 @@ import QtQuick
 
 Item {
     id: raiz
+    // (1.8.4, auditoria) la pagina se ve (barra_qml.PaginaQML.sincronizar): sin esto sus animaciones infinitas
+    // seguian con la pestaña escondida
+    property bool activa: true
     property real escala: 0.6
     property string familia: "Segoe UI"
     property var d: ({})
@@ -21,7 +24,11 @@ Item {
         if (JSON.stringify(d.opciones || []) !== JSON.stringify(opcionesL)) opcionesL = d.opciones || []
     }
     function px(v) { return Math.round(v * escala) }
-    function entrar(dx) { opacity = 0; baja.x = (dx || 0) * px(60); baja.y = dx ? 0 : px(14); entra.restart() }   // (1.7.8) dx: +1 entra desde la derecha (pestaña de mas adelante), -1 desde la izquierda
+    // (1.8.4) con movimiento reducido entra solo fundiendose (sin deslizar); «entro» avisa a las piezas que
+    // escalonan su entrada (antes se animaban al crearse la pagina, escondida, y nunca se veia)
+    signal entro()
+    function entrar(dx) { var q = typeof quieto !== "undefined" && quieto
+        opacity = 0; baja.x = q ? 0 : (dx || 0) * px(60); baja.y = (q || dx) ? 0 : px(14); entra.restart(); entro() }   // (1.7.8) dx: +1 entra desde la derecha (pestaña de mas adelante), -1 desde la izquierda
     transform: Translate { id: baja }
     ParallelAnimation { id: entra
         NumberAnimation { target: raiz; property: "opacity"; to: 1; duration: 200; easing.type: Easing.OutCubic }
@@ -82,19 +89,32 @@ Item {
 
         // ---------------------------------------------------------------- sin plantillas: la invitacion a soltar
         Rectangle {
+            id: zonaVacia
             visible: raiz.lista.length === 0
             width: col.width; height: px(520)
-            radius: px(32); color: Qt.rgba(1, 1, 1, 0.02)
-            border.width: px(3); border.color: soltar.containsDrag ? "#3BEE9F" : Qt.rgba(1, 1, 1, 0.16)
+            radius: px(32); color: soltar.containsDrag ? Qt.rgba(59 / 255, 238 / 255, 159 / 255, 0.06) : Qt.rgba(1, 1, 1, 0.02)
+            Behavior on color { ColorAnimation { duration: 220 } }
+            border.width: px(3); border.color: soltar.containsDrag ? "#3BEE9F" : Qt.rgba(1, 1, 1, 0.10 + 0.08 * zonaVacia.resp)
             Behavior on border.color { ColorAnimation { duration: 200 } }
+            // (1.8.4) el borde respira despacio mientras espera; al arrastrar un video encima, la zona crece con resorte
+            readonly property bool _quieto: typeof quieto !== "undefined" && quieto
+            property real resp: 0
+            SequentialAnimation on resp { loops: Animation.Infinite; running: raiz.activa && zonaVacia.visible && !zonaVacia._quieto
+                NumberAnimation { to: 1; duration: 1800; easing.type: Easing.InOutSine }
+                NumberAnimation { to: 0; duration: 1800; easing.type: Easing.InOutSine } }
+            scale: soltar.containsDrag && !_quieto ? 1.015 : 1
+            Behavior on scale { SpringAnimation { spring: 3.5; damping: 0.32; epsilon: 0.0005 } }
             Column {
                 anchors.centerIn: parent
                 spacing: px(22)
                 Image { anchors.horizontalCenter: parent.horizontalCenter; width: px(100); height: width
-                    source: "image://icono/pelicula/9DB0B6/" + width; sourceSize: Qt.size(width * 4, height * 4)
-                    SequentialAnimation on y { loops: Animation.Infinite; running: (parent && parent.visible) && (typeof quieto === "undefined" || !quieto)
-                        NumberAnimation { to: -px(8); duration: 1400; easing.type: Easing.InOutSine }
-                        NumberAnimation { to: 0; duration: 1400; easing.type: Easing.InOutSine } } }
+                    source: "image://icono/pelicula/" + (soltar.containsDrag ? "3BEE9F" : "9DB0B6") + "/" + width
+                    sourceSize: Qt.size(width * 4, height * 4)
+                    // (1.8.4) flota con Translate: animar «y» dentro de una Column choca con la Column (se quedaba quieta)
+                    transform: Translate { id: flota; y: 0 }
+                    SequentialAnimation { loops: Animation.Infinite; running: raiz.activa && zonaVacia.visible && !zonaVacia._quieto
+                        NumberAnimation { target: flota; property: "y"; to: -px(10); duration: 1400; easing.type: Easing.InOutSine }
+                        NumberAnimation { target: flota; property: "y"; to: 0; duration: 1400; easing.type: Easing.InOutSine } } }
                 Text { anchors.horizontalCenter: parent.horizontalCenter; color: "#F1F5F6"
                     text: "Suelta aquí un video"; font.family: raiz.familia; font.pixelSize: px(40); font.weight: Font.DemiBold }
                 Text { anchors.horizontalCenter: parent.horizontalCenter; color: "#9DB0B6"
@@ -224,7 +244,7 @@ Item {
         radius: px(40); color: Qt.rgba(34 / 255, 196 / 255, 126 / 255, 0.10)
         border.width: px(4); border.color: "#3BEE9F"
         opacity: soltar.containsDrag ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 200 } }
+        Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
         Text { anchors.centerIn: parent; text: "Suelta para convertirlo en plantilla"; color: "white"
             font.family: raiz.familia; font.pixelSize: px(48); font.weight: Font.Bold }
     }
@@ -267,12 +287,12 @@ Item {
             y: zona.containsMouse && !c.centro ? -px(8) : 0
             Behavior on y { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
             scale: zona.pressed ? 0.98 : 1
-            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: zona.pressed ? 90 : 300; easing.type: zona.pressed || (typeof quieto !== "undefined" && quieto) ? Easing.OutQuad : Easing.OutBack; easing.overshoot: 2.2 } }
 
             // el halo de la del centro (verde si se usa, dorado si solo se mira)
             Rectangle { anchors.fill: parent; anchors.margins: -px(14); radius: px(40); color: "transparent"
                 border.width: px(14); border.color: c.usada ? "#22C47E" : "#E2B04F"
-                opacity: c.centro ? 0.20 : 0; Behavior on opacity { NumberAnimation { duration: 240 } } }
+                opacity: c.centro ? 0.20 : 0; Behavior on opacity { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } } }
 
             Rectangle {
                 anchors.fill: parent
@@ -298,7 +318,7 @@ Item {
                     x: (hvP.hovered ? hvP.point.position.x : -parent.width) - width / 2
                     Behavior on x { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
                     opacity: hvP.hovered ? 1 : 0
-                    Behavior on opacity { NumberAnimation { duration: 220 } }
+                    Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                     gradient: Gradient { orientation: Gradient.Horizontal
                         GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0) }
                         GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.16) }
@@ -321,7 +341,7 @@ Item {
                     text: raiz.nombreBonito(c.dato.nombre); elide: Text.ElideRight; color: "white"
                     font.family: raiz.familia; font.pixelSize: px(30); font.weight: Font.DemiBold; font.capitalization: Font.Capitalize
                     opacity: c.centro ? 0 : 1              // en la del centro el nombre va debajo, en grande
-                    Behavior on opacity { NumberAnimation { duration: 200 } }
+                    Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                 }
             }
             // la palomita de las usadas (tambien a los lados)
@@ -330,7 +350,7 @@ Item {
                 width: px(52); height: width; radius: width / 2
                 color: "#22C47E"; border.width: px(3); border.color: "#04150D"
                 scale: c.usada ? 1 : 0.6; opacity: c.usada ? 1 : 0
-                Behavior on opacity { NumberAnimation { duration: 120 } }
+                Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
                 Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.6 } }
                 Image { anchors.centerIn: parent; width: px(32); height: width
                     source: "image://icono/palomita/04150D/" + width; sourceSize: Qt.size(width * 4, height * 4) }

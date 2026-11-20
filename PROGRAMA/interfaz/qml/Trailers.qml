@@ -6,6 +6,9 @@ import QtQuick
 
 Item {
     id: raiz
+    // (1.8.4, auditoria) la pagina se ve (barra_qml.PaginaQML.sincronizar): sin esto sus animaciones infinitas
+    // seguian con la pestaña escondida
+    property bool activa: true
     property real escala: 0.6
     property string familia: "Segoe UI"
     property var d: ({})
@@ -20,7 +23,11 @@ Item {
         carrusel.alDato()
     }
     function px(v) { return Math.round(v * escala) }
-    function entrar(dx) { opacity = 0; baja.x = (dx || 0) * px(60); baja.y = dx ? 0 : px(14); entra.restart() }   // (1.7.8) dx: +1 entra desde la derecha (pestaña de mas adelante), -1 desde la izquierda
+    // (1.8.4) con movimiento reducido entra solo fundiendose (sin deslizar); «entro» avisa a las piezas que
+    // escalonan su entrada (antes se animaban al crearse la pagina, escondida, y nunca se veia)
+    signal entro()
+    function entrar(dx) { var q = typeof quieto !== "undefined" && quieto
+        opacity = 0; baja.x = q ? 0 : (dx || 0) * px(60); baja.y = (q || dx) ? 0 : px(14); entra.restart(); entro() }   // (1.7.8) dx: +1 entra desde la derecha (pestaña de mas adelante), -1 desde la izquierda
     transform: Translate { id: baja }
     ParallelAnimation { id: entra
         NumberAnimation { target: raiz; property: "opacity"; to: 1; duration: 200; easing.type: Easing.OutCubic }
@@ -146,7 +153,7 @@ Item {
                     titulo: modelData; descripcion: raiz.textosIntro[clave] || ""
                     elegida: raiz.d.intro === index
                     ritmo: raiz.ritmos[clave] || [5, 5, 5, 5, 5, 5, 5, 5]
-                    retraso: 200 + Math.min(index, 6) * 40
+                    retraso: Math.min(index, 4) * 40
                     onElegir: raiz.accion("intro", index)
                     onVer: raiz.accion("ver_intro", index)
                 }
@@ -210,12 +217,12 @@ Item {
             y: zona.containsMouse && !p.elegida ? -px(8) : 0
             Behavior on y { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
             scale: zona.pressed ? 0.98 : 1
-            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: zona.pressed ? 90 : 300; easing.type: zona.pressed || (typeof quieto !== "undefined" && quieto) ? Easing.OutQuad : Easing.OutBack; easing.overshoot: 2.2 } }
 
             // el halo verde de la elegida
             Rectangle { anchors.fill: parent; anchors.margins: -px(14); radius: px(46); color: "transparent"
                 border.width: px(14); border.color: "#22C47E"
-                opacity: p.elegida ? 0.20 : 0; Behavior on opacity { NumberAnimation { duration: 240 } } }
+                opacity: p.elegida ? 0.20 : 0; Behavior on opacity { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } } }
 
             Rectangle {
                 id: tapa
@@ -242,7 +249,7 @@ Item {
                         color: p.dato[2] }
                     Rectangle { x: parent.width * 0.5 - width / 2; y: parent.height * 0.18; width: px(10); height: parent.height * 0.12
                         radius: width / 2; color: Qt.rgba(1, 1, 1, 0.6) }
-                    RotationAnimation on rotation { running: (p.elegida && p.visible) && (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite
+                    RotationAnimation on rotation { running: raiz.activa && (p.elegida && p.visible) && (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite
                         from: 0; to: 360; duration: 14000 }
                 }
                 // el icono grande del estilo
@@ -259,7 +266,7 @@ Item {
                     x: (hvP.hovered ? hvP.point.position.x : -parent.width) - width / 2
                     Behavior on x { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
                     opacity: hvP.hovered ? 1 : 0
-                    Behavior on opacity { NumberAnimation { duration: 220 } }
+                    Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                     gradient: Gradient { orientation: Gradient.Horizontal
                         GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0) }
                         GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.16) }
@@ -288,7 +295,7 @@ Item {
                     text: p.dato[1]; color: "#F2F2F2"; elide: Text.ElideRight; wrapMode: Text.WordWrap; maximumLineCount: 2
                     font.family: raiz.familia; font.pixelSize: px(28)
                     opacity: p.elegida ? 1 : 0
-                    Behavior on opacity { NumberAnimation { duration: 200 } }
+                    Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                 }
             }
             // la palomita de la elegida
@@ -298,7 +305,7 @@ Item {
                 color: "#FFFFFF"; border.width: 0
                 scale: p.elegida ? 1 : 0.6; opacity: p.elegida ? 1 : 0
                 Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.6 } }
-                Behavior on opacity { NumberAnimation { duration: 120 } }
+                Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
                 Image { anchors.centerIn: parent; width: px(30); height: width
                     source: "image://icono/palomita/04150D/" + width; sourceSize: Qt.size(width * 4, height * 4) }
             }
@@ -320,9 +327,9 @@ Item {
             Vidrio { anchors.fill: parent; radio: parent.radius; tinte: "#22C47E"; tinteA: 0.85; brillo: "#22C47E"; brilloA: 0.55; filo: 1.0; encima: zonaOir.containsMouse; apretado: zonaOir.pressed }
             visible: opacity > 0
             opacity: p.elegida ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: 200 } }
+            Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
             scale: zonaOir.pressed ? 0.9 : 1
-            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: zonaOir.pressed ? 90 : 300; easing.type: zonaOir.pressed || (typeof quieto !== "undefined" && quieto) ? Easing.OutQuad : Easing.OutBack; easing.overshoot: 2.2 } }
             Image { anchors.centerIn: parent; anchors.horizontalCenterOffset: px(3); width: px(36); height: width
                 source: "image://icono/play/04150D/" + width; sourceSize: Qt.size(width * 4, height * 4) }
             MouseArea { id: zonaOir; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
@@ -343,16 +350,23 @@ Item {
 
         opacity: 0
         Component.onCompleted: aparece.start()
+        // (1.8.4, auditoria) escalonadas CADA vez que se entra a la pagina (antes solo al crearse, escondida)
+        transform: Translate { id: subeP; y: 0 }
+        Connections { target: raiz; function onEntro() {
+            var q = typeof quieto !== "undefined" && quieto
+            o.opacity = 0; subeP.y = q ? 0 : px(10); aparece.restart() } }
         SequentialAnimation { id: aparece
             PauseAnimation { duration: o.retraso }
-            NumberAnimation { target: o; property: "opacity"; to: 1; duration: 240; easing.type: Easing.OutCubic } }
+            ParallelAnimation {
+                NumberAnimation { target: o; property: "opacity"; to: 1; duration: 220; easing.type: Easing.OutCubic }
+                NumberAnimation { target: subeP; property: "y"; to: 0; duration: 260; easing.type: Easing.OutQuint } } }
 
         Rectangle {
             id: caja
             anchors.fill: parent
             radius: px(28)
             scale: zona.pressed ? 0.98 : 1
-            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: zona.pressed ? 90 : 300; easing.type: zona.pressed || (typeof quieto !== "undefined" && quieto) ? Easing.OutQuad : Easing.OutBack; easing.overshoot: 2.2 } }
             border.width: o.elegida ? px(4) : 1
             border.color: o.elegida ? "#3BEE9F" : (zona.containsMouse ? Qt.rgba(226 / 255, 176 / 255, 79 / 255, 0.6) : Qt.rgba(1, 1, 1, 0.12))
             Behavior on border.color { ColorAnimation { duration: 200 } }
@@ -371,11 +385,11 @@ Item {
                         width: px(20); height: px(36); radius: px(5)
                         color: index === fotos.foco ? (o.elegida ? "#3BEE9F" : "#E2B04F") : Qt.rgba(1, 1, 1, 0.14)
                         scale: index === fotos.foco ? 1.18 : 1
-                        Behavior on scale { NumberAnimation { duration: 90 } }
+                        Behavior on scale { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
                     }
                 }
                 Timer {
-                    running: o.ritmo.length > 0 && o.visible && (o.elegida || zona.containsMouse)
+                    running: raiz.activa && o.ritmo.length > 0 && o.visible && (o.elegida || zona.containsMouse)   // (1.8.4) para escondida
                     repeat: true
                     interval: Math.max(60, (o.ritmo[fotos.foco] || 5) * 1000 / 24 * 2)
                     onTriggered: fotos.foco = (fotos.foco + 1) % 8
@@ -410,10 +424,10 @@ Item {
             color: "transparent"      // (1.7.8) vidrio liquido
             Vidrio { anchors.fill: parent; radio: parent.radius; tinte: zonaVer.containsMouse ? "#22C47E" : "white"; tinteA: zonaVer.containsMouse ? 0.85 : 0.08; brillo: "#22C47E"; brilloA: zonaVer.containsMouse ? 0.45 : 0; encima: zonaVer.containsMouse; apretado: zonaVer.pressed }
             opacity: zona.containsMouse || zonaVer.containsMouse || o.elegida ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: 200 } }
+            Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
             Behavior on color { ColorAnimation { duration: 150 } }
             scale: zonaVer.pressed ? 0.9 : 1
-            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: zonaVer.pressed ? 90 : 300; easing.type: zonaVer.pressed || (typeof quieto !== "undefined" && quieto) ? Easing.OutQuad : Easing.OutBack; easing.overshoot: 2.2 } }
             Image { anchors.centerIn: parent; anchors.horizontalCenterOffset: px(2); width: px(26); height: width
                 source: "image://icono/play/FFFFFF/" + width; sourceSize: Qt.size(width * 4, height * 4) }
             MouseArea { id: zonaVer; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor

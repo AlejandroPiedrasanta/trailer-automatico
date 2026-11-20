@@ -24,7 +24,7 @@ Item {
     Component.onCompleted: entrada.start()
     ParallelAnimation {
         id: entrada
-        NumberAnimation { target: raiz; property: "opacity"; to: 1; duration: 420; easing.type: Easing.OutCubic }
+        NumberAnimation { target: raiz; property: "opacity"; to: 1; duration: 240; easing.type: Easing.OutCubic }   // (1.8.4) 420 -> 240
         NumberAnimation { target: subir; property: "y"; to: 0; duration: 320; easing.type: Easing.OutQuint }
     }
 
@@ -41,7 +41,8 @@ Item {
         }
     }
     // (1.7.8, Liquid Glass) el mismo color de siempre, con la luz y el filo del cristal encima
-    Vidrio { anchors.fill: parent; radio: raiz.radio; tinteA: 0; filo: 0.7 }
+    // (1.8.4) sin la luz que sigue al raton: la barra ya tiene su foco y un disco desenfocado de su tamaño era caro
+    Vidrio { anchors.fill: parent; radio: raiz.radio; tinteA: 0; filo: 0.7; luz: false }
 
     Row {
         anchors.fill: parent
@@ -133,7 +134,7 @@ Item {
                         GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0) }
                     }
                     SequentialAnimation on x {
-                        running: seg.verde && seg.visible
+                        running: seg.verde && seg.visible && (typeof quieto === "undefined" || !quieto)   // (1.8.4)
                         loops: Animation.Infinite
                         NumberAnimation { from: -pastillaT.height * 1.5; to: pastillaT.width + pastillaT.height; duration: 1400; easing.type: Easing.InOutQuad }
                         PauseAnimation { duration: 2600 }
@@ -148,7 +149,7 @@ Item {
         Shape {
             anchors.fill: parent
             opacity: zona.containsMouse ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: 260 } }
+            Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
             ShapePath {
                 strokeWidth: 0
                 fillGradient: RadialGradient {
@@ -162,34 +163,13 @@ Item {
             }
         }
 
-        // el brillo que cruza el boton verde cada pocos segundos (1.7.8: ahora va dentro de la pastilla de vidrio)
-        Rectangle {
-            id: brillo
-            visible: false
-            width: seg.height * 0.9; height: seg.height * 2.2
-            y: -seg.height * 0.6
-            rotation: 18
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0) }
-                GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.30) }
-                GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0) }
-            }
-            SequentialAnimation on x {
-                running: (seg.verde && seg.visible) && (typeof quieto === "undefined" || !quieto)
-                loops: Animation.Infinite
-                NumberAnimation { from: -seg.height * 1.5; to: seg.width + seg.height; duration: 1400; easing.type: Easing.InOutQuad }
-                PauseAnimation { duration: 2600 }
-            }
-        }
-
         Row {
             id: contenido
             spacing: raiz.tam * 0.7
             anchors.verticalCenter: parent.verticalCenter
             x: seg.alinear === "izq" ? raiz.tam * 2 : (seg.width - width) / 2
             scale: zona.pressed ? 0.96 : 1.0
-            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: zona.pressed ? 90 : 300; easing.type: zona.pressed || (typeof quieto !== "undefined" && quieto) ? Easing.OutQuad : Easing.OutBack; easing.overshoot: 2.2 } }
             Image {
                 anchors.verticalCenter: parent.verticalCenter
                 width: raiz.icono; height: raiz.icono

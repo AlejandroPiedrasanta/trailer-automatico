@@ -12,14 +12,39 @@ Item {
     property bool principal: false
     property bool girar: false
     property bool activo: true
+    property bool ocupado: false        // (1.8.4) trabajando: no responde y el cristal se ve esmerilado con su luz
     signal clic()
     function px(v) { return Math.round(v * escala) }
     // (1.7.8) del ancho NATURAL del texto (no del de la fila: el texto se acorta con el boton y eso era un circulo)
     implicitWidth: (ic.visible ? ic.width + fila.spacing : 0) + txt.implicitWidth + px(64)
     implicitHeight: px(84)
-    opacity: activo ? 1 : 0.5
-    scale: zona.pressed ? 0.97 : 1
-    Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+    opacity: !activo ? 0.5 : ocupado ? 0.78 : 1
+    Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+    // (1.8.4, la persona: «pule más los botones y la fluidez») se hunde rapido al apretar y VUELVE con un rebote suave;
+    // con el raton encima se levanta un poco (Translate: no mueve el resto de la fila)
+    readonly property bool _quieto: typeof quieto !== "undefined" && quieto
+    scale: zona.pressed ? 0.95 : 1
+    Behavior on scale { NumberAnimation { duration: zona.pressed ? 90 : 320
+                                          easing.type: zona.pressed || b._quieto ? Easing.OutQuad : Easing.OutBack
+                                          easing.overshoot: 2.4 } }
+    transform: Translate { y: zona.containsMouse && !zona.pressed && !b._quieto ? -b.px(3) : 0
+                           Behavior on y { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } } }
+    // teclado: Tab llega aqui, Enter o Espacio lo pulsan
+    activeFocusOnTab: true
+    Keys.onReturnPressed: if (b.activo && !b.ocupado) { if (b.girar) vuelta.restart(); b.clic() }
+    Keys.onEnterPressed: if (b.activo && !b.ocupado) { if (b.girar) vuelta.restart(); b.clic() }
+    Keys.onSpacePressed: if (b.activo && !b.ocupado) { if (b.girar) vuelta.restart(); b.clic() }
+
+    // anillo de foco (solo con el teclado: al hacer clic no se pinta)
+    Rectangle {
+        anchors.fill: parent; anchors.margins: -b.px(6)
+        radius: height / 2; color: "transparent"
+        border.width: b.px(3); border.color: "#9FE1CB"
+        opacity: b.activeFocus && !zona.containsPress && b._teclado ? 0.9 : 0
+        Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+    }
+    property bool _teclado: false
+    onActiveFocusChanged: _teclado = activeFocus && !zona.pressed
 
     Vidrio {
         anchors.fill: parent
@@ -30,6 +55,7 @@ Item {
         filo: b.principal ? 1.0 : 0.8
         encima: zona.containsMouse
         apretado: zona.pressed
+        ocupado: b.ocupado
     }
     Row {
         id: fila
@@ -57,7 +83,8 @@ Item {
             font.family: b.familia; font.pixelSize: b.px(34); font.weight: b.principal ? Font.Bold : Font.DemiBold
         }
     }
-    MouseArea { id: zona; anchors.fill: parent; hoverEnabled: true; enabled: b.activo
-        cursorShape: Qt.PointingHandCursor
+    MouseArea { id: zona; anchors.fill: parent; hoverEnabled: true; enabled: b.activo && !b.ocupado
+        cursorShape: b.ocupado ? Qt.BusyCursor : Qt.PointingHandCursor
+        onPressed: b._teclado = false
         onClicked: { if (b.girar) vuelta.restart(); b.clic() } }
 }

@@ -380,7 +380,15 @@ class PaginaQML:
             pass
 
     def sincronizar(self, forzar=False):
-        if not forzar and not self.widget.isVisible():
+        # (1.8.4, auditoria) la pagina sabe si se ve: con el QQuickWidget escondido, para QML todo sigue «visible» y
+        # sus animaciones infinitas (vinilo, puntos, brillos) corrian 60 veces por segundo en las 4 pestañas
+        vis = self.widget.isVisible()
+        try:
+            if self.raiz.property("activa") is not None and bool(self.raiz.property("activa")) != vis:
+                self.raiz.setProperty("activa", vis)
+        except Exception:
+            pass
+        if not forzar and not vis:
             return
         try:
             d = self.leer()

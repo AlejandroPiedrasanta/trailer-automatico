@@ -29,10 +29,16 @@ Item {
     // el resultado de la forma (lo llenan los formularios)
     property var resultado: ({})
 
+    // (1.8.4, auditoria) las animaciones que respiran (resplandor, aro, destello) solo con el aviso ABIERTO: el
+    // QQuickWidget escondido sigue «visible» para QML y corrian 60 veces por segundo desde que arrancaba el programa
+    property bool abierto: false
+    readonly property bool _quieto: typeof quieto !== "undefined" && quieto
     function abrir() {
         cerrando = false
+        abierto = true
         resultado = JSON.parse(JSON.stringify(datos || {}))
-        velo.opacity = 0; tarjeta.opacity = 0; baja.y = px(24)
+        velo.opacity = 0; tarjeta.opacity = 0; baja.y = _quieto ? 0 : px(24)
+        tarjeta.scale = _quieto ? 1 : 0.96            // (1.8.4) entra creciendo un poco, como los avisos de Apple
         sale.stop()                 // (1.7.8) si aun se estaba cerrando, no pelean por las mismas propiedades
         entra.restart()
         foco.forceActiveFocus()
@@ -51,15 +57,17 @@ Item {
         NumberAnimation { target: velo; property: "opacity"; to: 1; duration: 240; easing.type: Easing.OutCubic }
         NumberAnimation { target: tarjeta; property: "opacity"; to: 1; duration: 240; easing.type: Easing.OutCubic }
         NumberAnimation { target: baja; property: "y"; to: 0; duration: 260; easing.type: Easing.OutQuint }
+        NumberAnimation { target: tarjeta; property: "scale"; to: 1; duration: 260; easing.type: Easing.OutQuint }
     }
     SequentialAnimation {
         id: sale
         ParallelAnimation {
-            NumberAnimation { target: velo; property: "opacity"; to: 0; duration: 160 }
-            NumberAnimation { target: tarjeta; property: "opacity"; to: 0; duration: 140 }
-            NumberAnimation { target: baja; property: "y"; to: px(24); duration: 140; easing.type: Easing.OutCubic }
+            NumberAnimation { target: velo; property: "opacity"; to: 0; duration: 160; easing.type: Easing.OutQuad }
+            NumberAnimation { target: tarjeta; property: "opacity"; to: 0; duration: 140; easing.type: Easing.OutQuad }
+            NumberAnimation { target: baja; property: "y"; to: raiz._quieto ? 0 : px(24); duration: 140; easing.type: Easing.OutCubic }
+            NumberAnimation { target: tarjeta; property: "scale"; to: raiz._quieto ? 1 : 0.98; duration: 140; easing.type: Easing.OutCubic }
         }
-        ScriptAction { script: raiz.respuesta(raiz.elegido, JSON.stringify(raiz.resultado)) }
+        ScriptAction { script: { raiz.abierto = false; raiz.respuesta(raiz.elegido, JSON.stringify(raiz.resultado)) } }
     }
 
     // lo de atras: la ventana borrosa y oscura
@@ -102,7 +110,7 @@ Item {
             }
         }
         QtObject { id: respira; property real v: 1.0
-            SequentialAnimation on v { running: (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite
+            SequentialAnimation on v { running: raiz.abierto && (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite
                 NumberAnimation { to: 1.6; duration: 1600; easing.type: Easing.InOutSine }
                 NumberAnimation { to: 0.8; duration: 1600; easing.type: Easing.InOutSine } } }
 
@@ -135,7 +143,7 @@ Item {
                 }
                 Shape {
                     anchors.fill: parent
-                    RotationAnimation on rotation { running: (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite; from: 0; to: 360; duration: 2600 }
+                    RotationAnimation on rotation { running: raiz.abierto && (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite; from: 0; to: 360; duration: 2600 }
                     ShapePath {
                         strokeColor: Qt.rgba(1, 0.93, 0.75, 0.95); strokeWidth: px(4); fillColor: "transparent"
                         capStyle: ShapePath.RoundCap
@@ -205,7 +213,7 @@ Item {
                 width: parent.width
                 horizontalAlignment: raiz.texto.indexOf("•") >= 0 ? Text.AlignLeft : Text.AlignHCenter
                 wrapMode: Text.WordWrap
-                text: raiz.texto.replace(/(\d+) (min|s|%|MB|GB)/g, "\u00a0")      // (1.7.9) «3 min» no se parte
+                text: raiz.texto.replace(/(\d+) (min|s|%|MB|GB)/g, "$1\u00a0$2")      // (1.7.9) «3 min» no se parte
                 color: "#B9C6C9"
                 font.family: raiz.familia; font.pixelSize: px(34)
                 lineHeight: 1.15
@@ -250,7 +258,7 @@ Item {
         width: implicitWidth; height: implicitHeight
         radius: chica ? px(30) : px(46)
         scale: zona.pressed ? 0.96 : 1
-        Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        Behavior on scale { NumberAnimation { duration: zona.pressed ? 90 : 300; easing.type: zona.pressed || (typeof quieto !== "undefined" && quieto) ? Easing.OutQuad : Easing.OutBack; easing.overshoot: 2.2 } }
         color: "transparent"          // (1.7.9: sin clip: recortaba el resplandor en rectangulo) (1.7.8) vidrio liquido: verde el principal y las marcadas, claro los demas
         Vidrio { anchors.fill: parent; radio: parent.radius; tinte: (p.principal || p.marcada) ? "#22C47E" : "white"; tinteA: (p.principal || p.marcada) ? 0.85 : 0.06; brillo: "#22C47E"; brilloA: p.principal ? 0.5 : (p.marcada ? 0.3 : 0); filo: (p.principal || p.marcada) ? 1.0 : 0.8; encima: zona.containsMouse; apretado: zona.pressed }
         Gradient {
@@ -270,7 +278,7 @@ Item {
                 GradientStop { position: 0; color: Qt.rgba(1, 1, 1, 0) }
                 GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.32) }
                 GradientStop { position: 1; color: Qt.rgba(1, 1, 1, 0) } }
-            SequentialAnimation on x { running: (p.principal) && (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite
+            SequentialAnimation on x { running: raiz.abierto && (p.principal) && (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite
                 PauseAnimation { duration: 900 }
                 NumberAnimation { from: -p.height * 1.5; to: p.width + p.height; duration: 1100; easing.type: Easing.InOutQuad }
                 PauseAnimation { duration: 1800 } }

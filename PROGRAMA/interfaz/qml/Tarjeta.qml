@@ -21,6 +21,22 @@ Rectangle {
     }
     implicitHeight: px(40) + cab.height + px(28) + cuerpo.implicitHeight + px(40)
 
+    // (1.8.4) entrada escalonada: la pagina llama entrar(i) al mostrarse; cada tarjeta sube y aparece 45 ms despues
+    // de la anterior (con movimiento reducido no se mueve)
+    transform: Translate { id: sube }
+    function entrar(i) {
+        if (typeof quieto !== "undefined" && quieto) return
+        llega.stop(); opacity = 0; sube.y = px(22); espera.duration = 60 + i * 45; llega.start()
+    }
+    SequentialAnimation {
+        id: llega
+        PauseAnimation { id: espera; duration: 60 }
+        ParallelAnimation {
+            NumberAnimation { target: t; property: "opacity"; to: 1; duration: 300; easing.type: Easing.OutCubic }
+            NumberAnimation { target: sube; property: "y"; to: 0; duration: 420; easing.type: Easing.OutQuint }
+        }
+    }
+
     MouseArea { id: zona; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
 
     Row {

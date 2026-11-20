@@ -257,7 +257,8 @@
    "(17-nov) «Hazlo 100% igual»: el Inicio ya no es la escena GO de CineCaptions (escena_go queda oculta y sin uso): es el astrolabio de la maqueta (piezas.Astrolabio, vivo: tema animaciones). Los pasos van en piezas.Pasos (PASOS_VISTA / ETAPAS_VISTA) y el avance de cada version en piezas.Versiones (lee el registro: «VIDEO FINAL 1 MIN lista» y «1min Rendering 45%»).",
    "Medidas: todo en px() de la maqueta (2048 x 1360) por piezas.ESCALA; _escalar re-aplica qss_diseno() al cambiar de tamaño y llama reescalar() de cada pieza. Ajustes: el bodegon recortado (recursos/ajustes_bodegon.png) sobre el cielo; fondo_ajustes.jpg e ilustracion_ajustes.jpg ya no se usan (guardados en docs/capturas).",
    "Iconos (17-nov, la persona: «usa Higgsfield para los iconos»): hojas de 4x4 iconos de trazo dorado sobre negro (gpt_image_2_6) -> herramientas/preparar_iconos.py -> recursos/iconos/<tipo>.png (blanco con alfa, 256 px). piezas.icono los pinta del color pedido con un degradado sutil y los guarda hechos (_ICONOS); los de controles (palomita, x, play, min, max, punto) siguen dibujados (SOLO_DIBUJADOS) y si falta un png, el dibujo de siempre.",
-   "(1.8.0) La inclinacion 3D de las portadas (Trailers.qml / Plantillas.qml) nunca funciono: dentro de Rotation `_ry` a secas da ReferenceError; ahora con el id (cuerpo._ry / incl._ry)."
+   "(1.8.0) La inclinacion 3D de las portadas (Trailers.qml / Plantillas.qml) nunca funciono: dentro de Rotation `_ry` a secas da ReferenceError; ahora con el id (cuerpo._ry / incl._ry).",
+   "(1.8.4, 20-nov, la persona: «pule más los botones en general y la fluidez»; propuestas A-D, aplicadas A + D) Vidrio.qml: sombra interior abajo (el grosor del cristal), estado `ocupado` (franja de luz que cruza por fraccion, 1,6 s) y la capa con mascara + desenfoque de la luz del raton y la onda SOLO mientras hace falta (_luz: encima, onda u ocupado; antes cada boton tenia su textura fuera de pantalla siempre). Boton.qml: se hunde a 0,95 en 90 ms y vuelve con rebote (OutBack 2,4, 320 ms); con el raton encima sube 3 px (Translate, no mueve la fila); Tab / Enter / Espacio y anillo de foco solo con teclado; `ocupado` (no responde, 78 %, cursor de espera): Buscar actualizaciones y Guardar el del clip actual. El mismo rebote al soltar en Ajustes, BarraInicio, Interruptor, Plantillas, Popup, Trabajo y Trailers (sin rebote con movimiento reducido). MEDIDO en la ventana real: CPU 28-31 % igual que antes, cuadro medio 16,7-17,5 ms; los «tirones» de 260-390 ms eran el w.grab() de la prueba, no de la ventana."
   ]
  },
  {
@@ -280,7 +281,9 @@
    "PROGRAMA/interfaz/piezas.py",
    "PROGRAMA/interfaz/trailer_xv.py",
    "PROGRAMA/interfaz/linea_dia.py",
-   "PROGRAMA/herramientas/preparar_animaciones.py"
+   "PROGRAMA/herramientas/preparar_animaciones.py",
+   "PROGRAMA/interfaz/qml/Tarjeta.qml",
+   "PROGRAMA/interfaz/qml/Vidrio.qml"
   ],
   "simbolos": [
    "Pelicula",
@@ -319,7 +322,8 @@
    "Reproduccion: animacion.Pelicula = ffmpeg en su proceso (decodifica, escala y une el alfa) -> tubo -> hilo -> ultimo cuadro (QImage). Arranca 1,2-1,5 s despues de verse la ventana (regla de arranque); en pausa si no se ve o esta minimizada; a media velocidad con la ventana atras. Sin ffmpeg o sin los videos: las imagenes quietas de antes.",
    "Astrolabio: poner_estado encadena despertar -> trabajo (el arco y el % encima solo en el bucle de trabajo), hecho (celebracion dorada) y dormir -> reposo. Los pasos (no bucles) no se cortan al cambiar de tamaño (_retomar: el layout cambia justo al empezar y al terminar). Fundido de 0,32 s entre videos; al apretar, onda y chispas.",
    "CPU (1240x860, Inicio): ~30 % de un nucleo la ventana + ~10-20 % ffmpeg; el cielo a 8 cuadros/s (1/3 de su velocidad). Los relojes de las piezas solo pintan mientras se ven.",
-   "Prueba: scratchpad prueba_anim.py (Inicio -> Material -> GO -> despertar -> trabajo -> hecho -> dormir, con CPU) y prueba_anim2.py (luz del titulo forzando piezas.brillo_fase, pasos y versiones a mitad)."
+   "Prueba: scratchpad prueba_anim.py (Inicio -> Material -> GO -> despertar -> trabajo -> hecho -> dormir, con CPU) y prueba_anim2.py (luz del titulo forzando piezas.brillo_fase, pasos y versiones a mitad).",
+   "1.8.4 (QML): las paginas tienen `activa` (barra_qml la pone con isVisible) y `signal entro()` desde entrar(dx); todo bucle infinito corre solo con activa/visible y sin `quieto` (movimiento reducido: entrar sin deslizar, sin brillos de adorno; el indicador de «Armando…» sin % se queda). Ajustes: tarjetas entran escalonadas (Tarjeta.entrar(i), 60+45*i ms, 420 ms OutQuint). Vidrio: capa de luz solo con raton/onda/ocupado. Rebote al soltar OutBack 2.2-2.4. Medido: cuadro medio ~17 ms; los huecos de ~300 ms en el arnes son grab()."
   ]
  },
  {

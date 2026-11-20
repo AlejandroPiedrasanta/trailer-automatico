@@ -38,7 +38,7 @@ Item {
     implicitHeight: filaPasos.height + px(40) + tarjeta.height
 
     // al empezar a trabajar: los pasos y las versiones aparecen subiendo (Python llama entrar())
-    function entrar() { raiz.opacity = 0; baja.y = px(14); entra.restart() }
+    function entrar() { raiz.opacity = 0; baja.y = (typeof quieto !== "undefined" && quieto) ? 0 : px(14); entra.restart() }
     transform: Translate { id: baja; y: 0 }
     ParallelAnimation {
         id: entra
@@ -118,9 +118,17 @@ Item {
                     width: filaPasos.r * 3.4; height: width; radius: width / 2
                     x: (paso.width - width) / 2; y: filaPasos.r + px(4) - height / 2
                     color: paso.e === "activo" ? raiz.oro : paso.e === "hecho" ? raiz.verde : "transparent"
+                    Behavior on color { ColorAnimation { duration: 300; easing.type: Easing.OutCubic } }
                     opacity: paso.e === "activo" ? 0.22 : paso.e === "hecho" ? 0.14 : 0
-                    SequentialAnimation on scale {
-                        running: paso.e === "activo"; loops: Animation.Infinite
+                    Behavior on opacity { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+                    // (1.8.4, auditoria) el latido va en «pulso»: al dejar de estar activo el halo VUELVE a 1 suave
+                    // (antes se quedaba congelado a mitad del latido, p. ej. en 1,13, y el color saltaba de golpe)
+                    readonly property bool _quieto: typeof quieto !== "undefined" && quieto
+                    property real pulso: 1
+                    scale: paso.e === "activo" && !_quieto ? pulso : 1
+                    Behavior on scale { enabled: paso.e !== "activo"; NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                    SequentialAnimation on pulso {
+                        running: paso.e === "activo" && !halo._quieto; loops: Animation.Infinite
                         NumberAnimation { to: 1.15; duration: 780; easing.type: Easing.InOutSine }
                         NumberAnimation { to: 0.92; duration: 780; easing.type: Easing.InOutSine }
                     }
@@ -135,10 +143,10 @@ Item {
                     ParallelAnimation {
                         id: ondaAnim
                         NumberAnimation { target: onda; property: "scale"; from: 1; to: 2.3; duration: 700; easing.type: Easing.OutCubic }
-                        NumberAnimation { target: onda; property: "opacity"; from: 0.85; to: 0; duration: 700 }
+                        NumberAnimation { target: onda; property: "opacity"; from: 0.85; to: 0; duration: 700; easing.type: Easing.OutQuad }
                     }
                 }
-                onEChanged: if (e === "hecho") { ondaAnim.restart(); pop.restart() }
+                onEChanged: if (e === "hecho" && !(typeof quieto !== "undefined" && quieto)) { ondaAnim.restart(); pop.restart() }
 
                 // el circulo
                 Rectangle {
@@ -154,7 +162,8 @@ Item {
                     SequentialAnimation on scale {
                         id: pop; running: false
                         NumberAnimation { to: 1.25; duration: 160; easing.type: Easing.OutQuad }
-                        SpringAnimation { to: 1.0; spring: 4; damping: 0.25 }
+                        // (1.8.4) asienta en 260 ms como los botones (el resorte tardaba mas de 1 s)
+                        NumberAnimation { to: 1.0; duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.6 }
                     }
                     Image {
                         anchors.centerIn: parent
@@ -171,10 +180,12 @@ Item {
                 }
                 // el arco que gira alrededor del activo
                 Shape {
-                    visible: paso.e === "activo"
+                    opacity: paso.e === "activo" ? 1 : 0           // (1.8.4) aparece y se va fundiendose
+                    Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                    visible: opacity > 0.01
                     width: filaPasos.r * 2.8; height: width
                     x: (paso.width - width) / 2; y: filaPasos.r + px(4) - height / 2
-                    RotationAnimation on rotation { running: paso.e === "activo"; loops: Animation.Infinite; from: 0; to: 360; duration: 1600 }
+                    RotationAnimation on rotation { running: paso.e === "activo" && !(typeof quieto !== "undefined" && quieto); loops: Animation.Infinite; from: 0; to: 360; duration: 1600 }
                     ShapePath {
                         strokeColor: Qt.rgba(1, 0.92, 0.7, 0.9); strokeWidth: px(3); fillColor: "transparent"
                         capStyle: ShapePath.RoundCap
@@ -244,7 +255,7 @@ Item {
                         Vidrio { anchors.fill: parent; radio: parent.radius; tinteA: 0.07; encima: zonaC.containsMouse && raiz.cancelarActivo; apretado: zonaC.pressed }
                         opacity: raiz.cancelarActivo ? 1 : 0.55
                         scale: zonaC.pressed ? 0.96 : 1
-                        Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                        Behavior on scale { NumberAnimation { duration: zonaC.pressed ? 90 : 300; easing.type: zonaC.pressed || (typeof quieto !== "undefined" && quieto) ? Easing.OutQuad : Easing.OutBack; easing.overshoot: 2.2 } }
                         Behavior on color { ColorAnimation { duration: 180 } }
                         Text { id: textoCancelar; anchors.centerIn: parent; text: raiz.cancelarTexto
                             color: "#F1F5F6"; font.family: raiz.familia; font.pixelSize: px(32); font.weight: Font.DemiBold }
@@ -317,7 +328,7 @@ Item {
                     // (1.7.9) por fraccion: sigue a la barra aunque crezca (antes el recorrido quedaba fijo al empezar)
                     property real f: 0
                     x: -width + f * (llena.width + 2 * width)
-                    NumberAnimation on f { running: parent.visible; loops: Animation.Infinite; from: 0; to: 1; duration: 1800 }
+                    NumberAnimation on f { running: parent.visible && (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite; from: 0; to: 1; duration: 1800 }   // (1.8.4) brillo de adorno: fuera con movimiento reducido
                 }
             }
             Rectangle {               // «Armando…» sin porcentaje: una luz dorada que va y viene

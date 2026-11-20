@@ -1562,7 +1562,8 @@ def app():
                     "oido": {"texto": oido, "ok": "Listo" in oido,
                              "boton": "" if self.b_oido.isHidden() else self.b_oido.text()},
                     "cache": {"texto": self.l_cache.text(), "frac": round(float(self.barra_cache.frac), 3)},
-                    "version": self.l_version.text(), "act": "" if self.l_act.isHidden() else self.l_act.text()}
+                    "version": self.l_version.text(), "act": "" if self.l_act.isHidden() else self.l_act.text(),
+                    "buscando": not self.b_buscar.isEnabled()}          # (1.8.4) el boton de vidrio, «ocupado»
 
         def _acciones_ajustes(self):
             ch = {"render": self.ch_render, "igualar": self.ch_igualar, "vert": self.ch_vert, "liberar": self.ch_liberar,

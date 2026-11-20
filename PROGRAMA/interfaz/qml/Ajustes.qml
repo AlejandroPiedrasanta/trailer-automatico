@@ -6,6 +6,9 @@ import QtQuick
 
 Item {
     id: raiz
+    // (1.8.4, auditoria) la pagina se ve (barra_qml.PaginaQML.sincronizar): sin esto sus animaciones infinitas
+    // seguian con la pestaña escondida
+    property bool activa: true
     property real escala: 0.6
     property string familia: "Segoe UI"
     property var d: ({})
@@ -19,7 +22,12 @@ Item {
         if (JSON.stringify(d.voz || []) !== JSON.stringify(vozL)) vozL = d.voz || []
     }
     function px(v) { return Math.round(v * escala) }
-    function entrar(dx) { opacity = 0; baja.x = (dx || 0) * px(60); baja.y = dx ? 0 : px(14); entra.restart() }   // (1.7.8) dx: +1 entra desde la derecha (pestaña de mas adelante), -1 desde la izquierda
+    // (1.8.4) con movimiento reducido entra solo fundiendose (sin deslizar); «entro» avisa a las piezas que
+    // escalonan su entrada (antes se animaban al crearse la pagina, escondida, y nunca se veia)
+    signal entro()
+    onEntro: { video.entrar(0); voz.entrar(1); intel.entrar(2); disco.entrar(3); prog.entrar(4) }
+    function entrar(dx) { var q = typeof quieto !== "undefined" && quieto
+        opacity = 0; baja.x = q ? 0 : (dx || 0) * px(60); baja.y = (q || dx) ? 0 : px(14); entra.restart(); entro() }   // (1.7.8) dx: +1 entra desde la derecha (pestaña de mas adelante), -1 desde la izquierda
     transform: Translate { id: baja }
     ParallelAnimation { id: entra
         NumberAnimation { target: raiz; property: "opacity"; to: 1; duration: 200; easing.type: Easing.OutCubic }
@@ -86,7 +94,7 @@ Item {
                             Vidrio { anchors.fill: parent; radio: parent.radius; tinte: pv.v ? "#22C47E" : "white"; tinteA: pv.v ? 0.85 : 0.05; brillo: "#22C47E"; brilloA: pv.v ? 0.35 : 0; filo: pv.v ? 1.0 : 0.7; encima: zv.containsMouse; apretado: zv.pressed }
                             Behavior on color { ColorAnimation { duration: 180 } }
                             scale: zv.pressed ? 0.95 : 1
-                            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                            Behavior on scale { NumberAnimation { duration: zv.pressed ? 90 : 300; easing.type: zv.pressed || (typeof quieto !== "undefined" && quieto) ? Easing.OutQuad : Easing.OutBack; easing.overshoot: 2.2 } }
                             // (1.7.8, auditoria) blanco sobre verde claro era 2,3:1: texto oscuro (y el mismo peso,
                             // para que la pastilla no cambie de ancho al marcarla)
                             Text { id: tv; anchors.centerIn: parent; text: modelData.texto
@@ -122,7 +130,7 @@ Item {
                         x: (parent.width - width) * desl.visto / 100
                         color: "white"; border.width: px(4); border.color: "#22C47E"
                         scale: arrastre.pressed ? 1.2 : 1
-                        Behavior on scale { NumberAnimation { duration: 120 } }
+                        Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
                     }
                     MouseArea {
                         id: arrastre
@@ -147,7 +155,7 @@ Item {
             Row {
                 spacing: px(16)
                 Boton { escala: raiz.escala; familia: raiz.familia; texto: "Guardar el del clip actual"; icono: "onda"
-                    activo: !(raiz.d.ruido_dv || {}).ocupado; onClic: raiz.accion("ruido_dv_guardar", 0) }
+                    ocupado: !!(raiz.d.ruido_dv || {}).ocupado; onClic: raiz.accion("ruido_dv_guardar", 0) }
                 Boton { visible: (raiz.d.ruido_dv || {}).hay === true; escala: raiz.escala; familia: raiz.familia
                     texto: "Quitar"; onClic: raiz.accion("ruido_dv_quitar", 0) }
             }
@@ -183,12 +191,18 @@ Item {
                     Behavior on width { NumberAnimation { duration: 900; easing.type: Easing.OutCubic } }
                     gradient: Gradient { orientation: Gradient.Horizontal
                         GradientStop { position: 0; color: "#E2B04F" } GradientStop { position: 1; color: "#F6D27A" } }
-                    Rectangle { width: parent.height * 3; height: parent.height
+                    // (1.8.4, auditoria) por FRACCION: con «to: lleno.width» el recorrido quedaba fijo al empezar
+                    // mientras el ancho crecia 900 ms; ahora sigue al ancho, respeta «quieto» y para escondida
+                    Rectangle { id: brilloCache; width: parent.height * 3; height: parent.height
+                        property real f: 0
+                        x: -width + f * (lleno.width + width)
                         gradient: Gradient { orientation: Gradient.Horizontal
                             GradientStop { position: 0; color: Qt.rgba(1, 1, 1, 0) }
                             GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.45) }
                             GradientStop { position: 1; color: Qt.rgba(1, 1, 1, 0) } }
-                        NumberAnimation on x { running: lleno.visible && !((raiz.d.cache || {}).texto); loops: Animation.Infinite; from: -lleno.height * 3; to: lleno.width; duration: 2400 } }
+                        NumberAnimation on f { running: raiz.activa && lleno.visible && !((raiz.d.cache || {}).texto)
+                            && (typeof quieto === "undefined" || !quieto)
+                            loops: Animation.Infinite; from: 0; to: 1; duration: 1800; easing.type: Easing.InOutSine } }
                 }
             }
             Boton { width: parent.width; escala: raiz.escala; familia: raiz.familia; texto: "Borrar caché"; icono: "papelera"
@@ -204,7 +218,7 @@ Item {
             // (1.7.9) sin aviso de actualizacion, el mismo hueco que la barra de Disco: los dos botones a la misma altura
             Item { visible: (raiz.d.act || "") === ""; width: 1; height: px(26) }
             Boton { width: parent.width; escala: raiz.escala; familia: raiz.familia; texto: "Buscar actualizaciones"
-                icono: "refrescar"; girar: true; onClic: raiz.accion("buscar", 0) }
+                icono: "refrescar"; girar: true; ocupado: !!raiz.d.buscando; onClic: raiz.accion("buscar", 0) }
         }
     }
 
@@ -221,7 +235,8 @@ Item {
             x: px(26); anchors.verticalCenter: parent.verticalCenter
             width: px(18); height: width; radius: width / 2
             color: e.dato.ok ? "#22C47E" : "#F2B84B"
-            SequentialAnimation on opacity { running: (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite
+            Behavior on color { ColorAnimation { duration: 300; easing.type: Easing.OutCubic } }   // (1.8.4) ámbar -> verde suave
+            SequentialAnimation on opacity { running: raiz.activa && (typeof quieto === "undefined" || !quieto); loops: Animation.Infinite
                 NumberAnimation { to: 0.45; duration: 900; easing.type: Easing.InOutSine }
                 NumberAnimation { to: 1.0; duration: 900; easing.type: Easing.InOutSine } }
         }

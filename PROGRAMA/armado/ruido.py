@@ -333,7 +333,9 @@ def aplicar(item, intensidad, medida=None, drx=None):
             return "davinci"
     n = nivel_para(medida, intensidad)
     ok = g.SetLUT(1, ruta_resolve(n))
-    g.SetNodeLabel(1, "REDUCCION DE RUIDO" + (" N%d" % n if n else ""))
+    # (1.8.1) el nombre dice el ORDEN de la cadena: 1 base del grupo -> 2 este nodo (balance/exposicion del CDL y el
+    # ruido de la toma) -> 3 look del grupo
+    g.SetNodeLabel(1, "2 BALANCE Y EXPOSICION + RUIDO" + (" N%d" % n if n else ""))
     g.SetNodeEnabled(1, True)
     return n if ok else None
 

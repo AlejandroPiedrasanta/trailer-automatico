@@ -32,9 +32,37 @@ ALTO_PROXY = 540
 PARALELO = 4                 # (18-nov) con la tarjeta leyendo y comprimiendo, 4 a la vez
 EXT_VIDEO = (".mp4", ".mov", ".mxf", ".mts", ".m2ts", ".avi", ".mkv", ".m4v")
 
+_MEMO = {}
+
+
+def _por_archivo(f):
+    """(1.8.0, MEDIDO en DaVinci: las 8 plantillas del XV pasaban 57 s en «proxies» volviendo a preguntarle a ffprobe
+    por los MISMOS videos en cada una) Recuerda lo que dijo ffprobe de un archivo mientras no cambie (fecha y tamaño):
+    si un proxy se rehace o se arregla, cambia y se vuelve a medir."""
+    def envuelta(ruta, *a):
+        try:
+            st = os.stat(ruta)
+            clave = (f.__name__, os.path.normcase(ruta), st.st_mtime_ns, st.st_size) + a
+        except OSError:
+            return f(ruta, *a)
+        if clave not in _MEMO:
+            r = f(ruta, *a)
+            if r in (0, 0.0, (False, 0, 0)):          # ffprobe fallo (disco dormido): no se recuerda
+                return r
+            _MEMO[clave] = r
+        return _MEMO[clave]
+    envuelta.__name__, envuelta.__doc__ = f.__name__, f.__doc__
+    return envuelta
+
 
 def _codificador():
-    """El codificador H.264 por GPU que haya (NVENC / VideoToolbox / AMF / QSV), o x264."""
+    """El codificador H.264 por GPU que haya (NVENC / VideoToolbox / AMF / QSV), o x264. (1.8.0) Una vez por sesion."""
+    if "codificador" not in _MEMO:
+        _MEMO["codificador"] = _codificador_buscar()
+    return _MEMO["codificador"]
+
+
+def _codificador_buscar():
     try:
         r = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True, timeout=30,
                            creationflags=rutas.SIN_VENTANA)
@@ -177,6 +205,7 @@ def _tc_para(original, start_tc=None):
     return tc
 
 
+@_por_archivo
 def _fps(ruta):
     """Cuadros por segundo (r_frame_rate) del archivo, o 0."""
     try:
@@ -300,6 +329,7 @@ def seguir_renombrado(hechos):
 _REHECHOS = set()                   # proxies rehechos en esta sesion (hay que volver a enlazarlos aunque la ruta sea igual)
 
 
+@_por_archivo
 def _girado(ruta):
     """True si el video lleva rotacion de 90/270 (celular en vertical: 3840x2160 con rotation -90)."""
     try:
@@ -739,6 +769,101 @@ def proyecto_por_video(resolve, evento, lineas, log=print, desde=None):
     return hechos + (_proyecto_por_video(resolve, evento, lineas, log) if lineas else [])
 
 
+def _carpetas_del_pool(mp, evento):
+    """(1.8.0, la persona: «necesito que sea mas ordenada») {ruta: ([carpetas desde la raiz], color)} de cada clip del
+    media pool del proyecto principal (01 PLANTILLAS .. 06 EFECTOS, por momento y fuente). El nivel del evento
+    («XV 2026-11-08») se salta: en el proyecto de un video no hay otro evento."""
+    out = {}
+    quitar = {evento, rutas.limpiar_nombre(evento)}
+
+    def recorrer(f, camino):
+        for c in f.GetClipList() or []:
+            try:
+                r = c.GetClipProperty("File Path")
+            except Exception:
+                r = ""
+            if r:
+                out.setdefault(os.path.normcase(r), (camino, c.GetClipColor() or ""))
+        for s in f.GetSubFolderList() or []:
+            nombre = s.GetName()
+            recorrer(s, camino if nombre in quitar else camino + [nombre])
+    recorrer(mp.GetRootFolder(), [])
+    return out
+
+
+def _ordenar_pool(mp, mapa):
+    """Pone los clips del proyecto de un video en las mismas carpetas (y colores) que en el proyecto principal; lo que no
+    esta alli (titulos, overlays nuevos) va a «06 EFECTOS». La linea de tiempo queda sola en la raiz, a la vista.
+    Devuelve cuantos clips movio."""
+    root = mp.GetRootFolder()
+    carpetas = {(): root}
+
+    def carpeta(camino):
+        camino = tuple(camino)
+        if camino not in carpetas:
+            padre = carpeta(camino[:-1])
+            hija = next((s for s in padre.GetSubFolderList() or [] if s.GetName() == camino[-1]), None)
+            carpetas[camino] = hija or mp.AddSubFolder(padre, camino[-1])
+        return carpetas[camino]
+    grupos, colores = {}, []
+    efectos = next((c[0] for c, _ in mapa.values() if c and c[0].endswith("EFECTOS")), "06 EFECTOS")
+    for c in root.GetClipList() or []:
+        try:
+            # (MEDIDO) todas las propiedades de una vez: 51 clips en 0,08 s contra 0,5 s pidiendolas por separado
+            props = c.GetClipProperty() or {}
+            if (props.get("Type") or "").strip().lower() in LINEA_TIPOS:
+                continue                                  # la linea de tiempo se queda en la raiz
+            r = props.get("File Path") or ""
+        except Exception:
+            continue
+        camino, color = mapa.get(os.path.normcase(r), ((), ""))
+        camino = tuple(camino) or (efectos,)
+        grupos.setdefault(camino, []).append(c)
+        if color:
+            colores.append((c, color))
+    # en el proyecto de un video no hay «01 PLANTILLAS» ni «02 EVENTOS»: sus carpetas se numeran desde 01
+    tops = sorted({c[0] for c in grupos})
+    nuevo = {t: "%02d %s" % (k, t.split(" ", 1)[1] if t[:2].isdigit() and " " in t else t)
+             for k, t in enumerate(tops, 1)}
+    grupos = {(nuevo[c[0]],) + c[1:]: v for c, v in grupos.items()}
+    n = 0
+    for camino, clips in sorted(grupos.items()):
+        dest = carpeta(camino)
+        if dest is not None and mp.MoveClips(clips, dest):
+            n += len(clips)
+    for c, color in colores:
+        try:
+            if c.GetClipColor() != color:
+                c.SetClipColor(color)
+        except Exception:
+            pass
+    mp.SetCurrentFolder(root)
+    return n
+
+
+NOMBRES_PISTA = {"EXTRA AUDIO 1": "AMBIENTE (SONIDO REAL)"}     # (ambiente.PISTA: aplausos y gritos de la toma)
+
+
+def _ordenar_linea(tl):
+    """(1.8.1, la persona: «mas ordenado») En la linea del proyecto de un video: fuera las pistas VACIAS (EXTRA 1,
+    EXTRA 2, la de voz si ese video no lleva...) y la de audio que lleva el sonido real de las tomas con su nombre.
+    Solo en la copia del video: el proyecto principal y las plantillas TRAILER XV no se tocan. Devuelve las quitadas."""
+    quitadas = []
+    for tipo in ("video", "audio"):
+        for i in range(tl.GetTrackCount(tipo), 0, -1):          # de abajo hacia arriba: borrar no corre las demas
+            if tl.GetTrackCount(tipo) <= 1:
+                break
+            if not (tl.GetItemListInTrack(tipo, i) or []):
+                nombre = tl.GetTrackName(tipo, i) or "%s%d" % (tipo[0].upper(), i)
+                if tl.DeleteTrack(tipo, i):
+                    quitadas.append(nombre)
+        for i in range(1, tl.GetTrackCount(tipo) + 1):
+            nuevo = NOMBRES_PISTA.get((tl.GetTrackName(tipo, i) or "").strip().upper())
+            if nuevo:
+                tl.SetTrackName(tipo, i, nuevo)
+    return quitadas
+
+
 def _por_drt(resolve, evento, lineas, log=print):
     """(18-nov, MEDIDO en la boda) El camino de siempre importaba el proyecto ENTERO (85 MB de project.xml) por cada
     video y luego le borraba casi todo: ~70 s por plantilla y un .drp de 41 MB. Aqui: la linea se exporta a .drt (0,3 s),
@@ -763,6 +888,13 @@ def _por_drt(resolve, evento, lineas, log=print):
             ruta = os.path.join(tmp, "%02d.drt" % len(drts))
             if t.Export(ruta, resolve.EXPORT_DRT) and os.path.exists(ruta):
                 drts[t.GetName()] = ruta
+    t_mapa = time.time()
+    try:
+        mapa = _carpetas_del_pool(actual.GetMediaPool(), evento)
+    except Exception as ex:
+        mapa = {}
+        log("Aviso: no se pudo leer el orden del media pool (%s): las plantillas quedan sin carpetas." % ex)
+    log("Orden del media pool leído: %d clips en %.1f s." % (len(mapa), time.time() - t_mapa))
     pm.SaveProject()
     hechos, fallan = [], [l for l in lineas if l not in drts]
     try:
@@ -784,12 +916,17 @@ def _por_drt(resolve, evento, lineas, log=print):
                     if p is None:
                         fallan.append(linea)
                         continue
+                    t_crear = time.time()
+                    # (1.8.0) todos los ajustes del proyecto nuevo de una vez (GetSetting() sin clave) en vez de uno
+                    # por uno: solo se cambian los que difieren
+                    nuevos = p.GetSetting() or {}
                     for k, v in ajustes.items():          # mismos ajustes (resolucion, cuadros, color...)
                         try:
-                            if v not in (None, "") and p.GetSetting(k) != v:
+                            if v not in (None, "") and nuevos.get(k) != v:
                                 p.SetSetting(k, v)
                         except Exception:
                             pass
+                    t_aj = time.time()
                     mp = p.GetMediaPool()
                     nt = mp.ImportTimelineFromFile(drts[linea], {"timelineName": linea, "importSourceClips": True})
                     if nt is None:
@@ -800,16 +937,34 @@ def _por_drt(resolve, evento, lineas, log=print):
                     p.SetCurrentTimeline(nt)
                     if nt.GetName() != linea:         # (19-nov) DaVinci le pone el nombre del .drt («00»)
                         nt.SetName(linea)
+                    t_imp = time.time()
+                    try:
+                        movidos = _ordenar_pool(mp, mapa) if mapa else 0
+                    except Exception as ex:
+                        movidos = 0
+                        log("Aviso: no se pudo ordenar el media pool de %s (%s)." % (video, ex))
+                    try:
+                        vacias = _ordenar_linea(nt)
+                    except Exception as ex:
+                        vacias = []
+                        log("Aviso: no se pudieron ordenar las pistas de %s (%s)." % (video, ex))
+                    t_ord = time.time()
                     try:
                         proxies_y_cache(p, lambda m: None)     # los proxies ya hechos y la cache de render
                     except Exception:
                         pass
+                    t_prox = time.time()
                     pm.SaveProject()
                     drp = os.path.join(destino, video + ".drp")
                     if _exportar_drp(pm, nombre, drp):
                         hechos.append(drp)
-                        log("Plantilla de %s: %s en %.0f s (%.1f MB)." % (video, os.path.basename(drp), time.time() - t0,
-                                                                       os.path.getsize(drp) / 1e6))
+                        if vacias:
+                            log("  %s: sin las pistas vacías %s." % (video, ", ".join(vacias)))
+                        log("Plantilla de %s: %s en %.0f s (%.1f MB; %d clips en carpetas; crear %.1f, ajustes %.1f, "
+                            "importar %.1f, ordenar %.1f, proxies %.1f, guardar y exportar %.1f s)." % (
+                                video, os.path.basename(drp), time.time() - t0, os.path.getsize(drp) / 1e6, movidos,
+                                t_crear - t0, t_aj - t_crear, t_imp - t_aj, t_ord - t_imp, t_prox - t_ord,
+                                time.time() - t_prox))
                     else:
                         fallan.append(linea)
                     pm.CloseProject(p)

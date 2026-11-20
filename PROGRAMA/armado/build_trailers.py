@@ -2505,6 +2505,7 @@ def transiciones(tl, pv, zonas, ver, puestos=()):
         except Exception:
             pass
     n_ok = 0
+    fallan = []
     for a, b in zip(items, items[1:]):
         if a.GetDuration() is None or b.GetDuration() is None:
             continue
@@ -2532,7 +2533,26 @@ def transiciones(tl, pv, zonas, ver, puestos=()):
         else:
             continue
         dur = max(2, min(dur, a.GetDuration() // 2, b.GetDuration() // 2))
-        n_ok += poner_transicion(b, tipo, dur, "start")
+        if poner_transicion(b, tipo, dur, "start"):
+            n_ok += 1
+        else:
+            fallan.append((b, tipo, dur))
+    # (1.8.1, MEDIDO en DaVinci) con el estabilizador ya guardado (9 s en vez de 95) la linea del 15 min salio con 0
+    # transiciones de 142: recien puestos los 128 comps de Fusion, la linea no esta «asentada» y AddTransition da False.
+    # Las que fallan se reintentan tras una pausa (hasta ~20 s)
+    for espera in (2, 4, 6, 8):
+        if not fallan:
+            break
+        time.sleep(espera)
+        quedan = []
+        for b, tipo, dur in fallan:
+            if poner_transicion(b, tipo, dur, "start"):
+                n_ok += 1
+            else:
+                quedan.append((b, tipo, dur))
+        fallan = quedan
+    if fallan:
+        aviso("%s: %d transiciones no se pudieron poner (DaVinci no las aceptó)." % (ver.get("sufijo", ""), len(fallan)))
     if items:                                    # fundido a negro al final
         poner_transicion(items[-1], "Cross Dissolve", min(tr["final"], items[-1].GetDuration() - 2), "end", ("left",))
     return n_ok
@@ -2988,13 +3008,16 @@ def preparar_grupo(grupo, ver=None):
     try:
         pre, post = grupo.GetPreClipNodeGraph(), grupo.GetPostClipNodeGraph()
         pre.SetLUT(1, DCTL_COLOR)
-        pre.SetNodeLabel(1, "CORRECCION DE COLOR")
+        pre.SetNodeLabel(1, "1 BASE (TODAS LAS TOMAS)")         # (1.8.1) numerados en el orden de la cadena
         pre.SetNodeEnabled(1, True)
         if ACTIVAR_LUT:
             look = LOOK_REC709.get((ver or {}).get("sufijo"))
             if look and os.path.exists(os.path.join(DIR_LUT, look.replace("/", os.sep))):
                 if not post.SetLUT(1, look):
                     aviso("Grupo %s: no se pudo poner el look suave (%s); queda el look entero." % (grupo.GetName(), look))
+                else:
+                    nombre_look = re.sub(r"^XV_\w+?min_|_REC709\.cube$", "", os.path.basename(look)).replace("_", " ")
+                    post.SetNodeLabel(1, "3 LOOK %s (SIN QUEMAR NI SATURAR)" % nombre_look)
             post.SetNodeEnabled(1, True)
     except Exception as ex:
         aviso("Grupo %s: no se pudo preparar el color (%s)" % (grupo.GetName(), ex))
@@ -3371,12 +3394,20 @@ def main():
         return
 
     # ---------- respaldo ----------
+    # (1.8.1, MEDIDO: exportar EVENTOS CINEMA entero = 14,4 s y 63 MB en CADA armado) Solo hace falta cuando el armado
+    # va a REEMPLAZAR lineas de este evento (rearmar: lo retocado a mano se perderia). Un evento nuevo solo AGREGA lineas.
+    try:
+        ya_armado = any((project.GetTimelineByIndex(i).GetName() or "").startswith(evento + " - ")
+                        for i in range(1, project.GetTimelineCount() + 1)) if evento else True
+    except Exception:
+        ya_armado = True
     try:
         pm.SaveProject()
-        dir_r = rutas.RESPALDOS
-        os.makedirs(dir_r, exist_ok=True)
-        pm.ExportProject(project.GetName(), os.path.join(
-            dir_r, "%s_%s.drp" % (project.GetName(), datetime.datetime.now().strftime("%Y-%m-%d_%H%M"))), False)
+        if ya_armado:
+            dir_r = rutas.RESPALDOS
+            os.makedirs(dir_r, exist_ok=True)
+            pm.ExportProject(project.GetName(), os.path.join(
+                dir_r, "%s_%s.drp" % (project.GetName(), datetime.datetime.now().strftime("%Y-%m-%d_%H%M"))), False)
     except Exception as ex:
         aviso("No se pudo respaldar el proyecto (%s)" % ex)
 
@@ -3569,6 +3600,30 @@ def main():
         except Exception as ex:
             aviso("No se pudo medir el ruido de los videos (%s); van con el nivel normal." % ex)
         niveles_ruido = {}
+        # (1.8.1) un cuadro real del tramo de cada plano, para MEDIR el color antes de ponerlo (color_guardia)
+        guardia, img_planos, look_local, vigilados, vigilados_cdl = None, {}, None, {}, {}
+        if IGUALAR:
+            try:
+                guardia = _modulo("color_guardia")
+                pedidos = {id(p): (p["item"]["ruta"], round(float(p.get("ini") or 0.0) + p["dur_f"] / float(fps) *
+                                                            float(p.get("vel") or 1.0) / 2.0, 1))
+                           for p, _ in puestos if p["tipo"] != "foto" and p.get("item", {}).get("ruta")}
+                hechas = guardia.cuadros(list(pedidos.values()))
+                img_planos = {k: hechas.get(v) for k, v in pedidos.items()}
+                lk = LOOK_REC709.get(ver.get("sufijo")) if ACTIVAR_LUT else None
+                look_local = os.path.join(SKILL_DIR, "dctl", os.path.basename(lk)) if lk else None
+                # el CDL de cada plano y su revision, todos a la vez antes de tocar DaVinci
+                trabajos = {}
+                for p, _ in puestos:
+                    if id(p) in img_planos and img_planos[id(p)] is not None:
+                        c0 = cdl_para(p, objetivos.get((p.get("momento") or p["item"].get("momento")), 0.42),
+                                      sat_evento, fps)
+                        if c0:
+                            trabajos[id(p)] = (c0, img_planos[id(p)])
+                vigilados_cdl = guardia.vigilar_varios(trabajos, look_local)
+            except Exception as ex:
+                guardia = None
+                aviso("%s: no se pudo medir el color de los planos (%s); va el color calculado." % (nombre, ex))
         for p, x in puestos:                    # llenar cuadro, color del momento, grupo, ruido e igualacion
             try:                                # fotos 3:2 o videos 4:3 llenan el 16:9 sin franjas negras
                 if not x.SetProperties({"Scaling": resolve.SCALE_FILL}):
@@ -3592,12 +3647,24 @@ def main():
                     if IGUALAR:
                         cdl = cdl_para(p, objetivos.get((p.get("momento") or p["item"].get("momento")), 0.42), sat_evento,
                                        fps)
+                        if cdl and id(p) in vigilados_cdl:
+                            # (1.8.1) medido con forma de onda / vectorscopio: si estropeaba el plano, va suavizado
+                            cdl, fallas, _t = vigilados_cdl[id(p)]
+                            for f_ in fallas:
+                                vigilados[f_] = vigilados.get(f_, 0) + 1
+                            if fallas:
+                                vigilados["suavizados"] = vigilados.get("suavizados", 0) + 1
                         if cdl and x.SetCDL(cdl):
                             info["igualados"] = info.get("igualados", 0) + 1
             except Exception:
                 pass
         if grupo:
             preparar_grupo(grupo, ver)
+        if guardia is not None:
+            print("   color medido plano por plano (forma de onda y vectorscopio): %d planos, %d con la corrección "
+                  "suavizada%s." % (len(img_planos), vigilados.get("suavizados", 0), (" (" + ", ".join(
+                      "%s %d" % (k, v) for k, v in sorted(vigilados.items()) if k != "suavizados") + ")")
+                                     if vigilados.get("suavizados") else ""))
         info["ruido"] = rd.resumen(niveles_ruido)
         info["camara_lenta"] = sum(1 for p, _ in puestos if p.get("lento_ok") and not p.get("conformado"))
         info["fotos_relleno"] = sum(1 for p, _ in puestos if p.get("relleno"))

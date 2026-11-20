@@ -90,12 +90,15 @@ def _render_tramo(project, tl, a, b, nombre, log):
     """Renderiza los cuadros [a, b) de la linea (absolutos) a RECORTES/<nombre>.*; devuelve la ruta o None."""
     d = carpeta()
     os.makedirs(d, exist_ok=True)
-    for f in os.listdir(d):
-        if f.startswith(nombre + "."):
+    for f in os.listdir(d):                      # los de antes (los que DaVinci aun tenga abiertos se quedan)
+        if f.startswith(nombre + ".") or f.startswith(nombre + "__"):
             try:
                 os.remove(os.path.join(d, f))
             except OSError:
                 pass
+    # (1.8.1, MEDIDO al rearmar el mismo evento) con el mismo nombre de siempre DaVinci no podia escribir encima del
+    # archivo que la linea anterior todavia usa: «DaVinci no pudo sacar el tramo del titulo». Cada render, su nombre
+    nombre = "%s__%s" % (nombre, time.strftime("%H%M%S"))
     project.SetRenderSettings({"SelectAllFrames": False, "MarkIn": a, "MarkOut": b - 1, "TargetDir": d,
                                "CustomName": nombre})
     job = project.AddRenderJob()
@@ -225,7 +228,14 @@ def aplicar(resolve, project, tl, mp, carpeta_mp, log=print):
         if not crudo:
             log("  texto detrás: DaVinci no pudo sacar el tramo del título.")
             continue
-        salida = os.path.join(carpeta(), "%s_persona_%d.mov" % (limpio, k))
+        # (1.8.1) con la hora: al rearmar, el de antes lo tiene abierto la linea vieja y no se podia escribir encima
+        salida = os.path.join(carpeta(), "%s_%s_persona_%d.mov" % (limpio, time.strftime("%H%M%S"), k))
+        for f in os.listdir(carpeta()):                     # los recortes viejos de este titulo, si ya se sueltan
+            if f.startswith(limpio + "_") and f.endswith("_persona_%d.mov" % k):
+                try:
+                    os.remove(os.path.join(carpeta(), f))
+                except OSError:
+                    pass
         try:                                                 # (19-nov) se mide ANTES y solo se recorta si se pone
             fps_l = float(tl.GetSetting("timelineFrameRate") or 24)
         except Exception:

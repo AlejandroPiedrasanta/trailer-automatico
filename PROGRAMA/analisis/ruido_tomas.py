@@ -27,7 +27,7 @@ PUNTOS = (0.25, 0.5, 0.75)                      # en que parte del video se toma
 REF_SOMBRA, PISO_SOMBRA = 0.25, 0.07            # el ruido de una sombra cuenta como si la zona tuviera luz 0.25
 VERSION = 2                                     # sube al cambiar la forma de medir: lo medido antes se vuelve a medir
 CACHE = os.path.join(rutas.ANALISIS, "ruido_tomas.json")
-_candado = threading.Lock()
+_candado = rutas.__dict__.setdefault("_RUIDO_CANDADO", threading.Lock())      # (1.8.1) el mismo en todas las cargas
 
 
 def _cuadro(ruta, t):
@@ -138,8 +138,43 @@ def _guardar(cache):
     os.replace(tmp, CACHE)
 
 
-def medir_varios(videos, log=None, hilos=4):
-    """videos: [(ruta, duracion)]. Devuelve {ruta normalizada: medida}; mide solo los que no estan en el cache."""
+# clave -> threading.Event de los videos que se estan midiendo ahora. En rutas (un solo modulo para todos): build_trailers
+# carga este archivo como modulo NUEVO en cada armado (_modulo) y con un dict propio no veria lo que mide el motor
+_en_curso = rutas.__dict__.setdefault("_RUIDO_EN_CURSO", {})
+
+
+def _uno(t):
+    """Mide un video y lo guarda en el cache (o espera si otro hilo ya lo esta midiendo). Devuelve la medida o None."""
+    ruta, dur, k = t
+    with _candado:
+        ya = leer_cache().get(k)               # otro hilo lo termino justo antes: no se mide otra vez
+        if isinstance(ya, dict):
+            return ya
+        ev = _en_curso.get(k)
+        propio = ev is None
+        if propio:
+            ev = _en_curso[k] = threading.Event()
+    if not propio:
+        ev.wait(180)
+        return leer_cache().get(k)
+    try:
+        m = None if rutas.PARAR.is_set() else medir(ruta, dur)
+        if m:
+            with _candado:
+                try:
+                    c = leer_cache()
+                    c[k] = m
+                    _guardar(c)
+                except Exception:
+                    pass
+        return m
+    finally:
+        with _candado:
+            _en_curso.pop(k, None)
+        ev.set()
+
+
+def _faltan(videos):
     cache = leer_cache()
     res, faltan = {}, []
     for ruta, dur in videos:
@@ -148,24 +183,41 @@ def medir_varios(videos, log=None, hilos=4):
             continue
         if isinstance(cache.get(k), dict):
             res[os.path.normcase(ruta)] = cache[k]
-        elif (ruta, dur, k) not in faltan:
+        elif all(k != x[2] for x in faltan):
             faltan.append((ruta, dur, k))
+    return res, faltan
+
+
+def adelantar(videos, hilos=2):
+    """(1.8.1, MEDIDO en DaVinci: en el armado del XV, 1 + 15 min, «Midiendo el ruido» paraba 160 de 404 s) Mide en
+    segundo plano, desde que empieza el armado, el ruido de los videos que se pueden usar: mientras DaVinci abre, ordena
+    el media pool y escucha las voces, ya queda medido. medir_varios no repite lo que se esta midiendo: lo espera.
+    Devuelve cuantos videos quedaron midiendose."""
+    _, faltan = _faltan(videos)
+    if not faltan:
+        return 0
+
+    def correr():
+        try:
+            with ThreadPoolExecutor(max_workers=max(1, int(hilos))) as ex:
+                list(ex.map(_uno, faltan))
+        except Exception:
+            pass
+    threading.Thread(target=correr, name="ruido_adelantado", daemon=True).start()
+    return len(faltan)
+
+
+def medir_varios(videos, log=None, hilos=4):
+    """videos: [(ruta, duracion)]. Devuelve {ruta normalizada: medida}; mide solo los que no estan en el cache (los que
+    ya se estan midiendo en segundo plano, los espera)."""
+    res, faltan = _faltan(videos)
     if faltan:
         if log:
             log("Midiendo el ruido de %d videos..." % len(faltan))
-
-        def uno(t):
-            return t, medir(t[0], t[1])
         with ThreadPoolExecutor(max_workers=max(1, int(hilos))) as ex:
-            for (ruta, _, k), m in ex.map(uno, faltan):
-                if m:
+            for (ruta, _, k), m in zip(faltan, ex.map(_uno, faltan)):
+                if isinstance(m, dict):
                     res[os.path.normcase(ruta)] = m
-                    cache[k] = m
-        with _candado:
-            try:
-                _guardar(cache)
-            except Exception:
-                pass
     return res
 
 

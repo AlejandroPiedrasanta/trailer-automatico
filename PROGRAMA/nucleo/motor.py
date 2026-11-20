@@ -2120,6 +2120,18 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
         if sum(1 for i in analisis["items"] if i["tipo"] == "foto" and not i.get("descartar")) < MINIMOS["foto"]:
             log("Aviso: hay menos de %d fotos que se puedan leer: la intro repetira fotos." % MINIMOS["foto"])
         resumen = _resumen(analisis["items"])
+        if not seco and (ruido is None or int(ruido) > 0):
+            try:                              # (1.8.1) el ruido de cada video se mide en segundo plano desde ya
+                import ruido_tomas
+                # primero las que el armado prefiere (las de la festejada y las mas bonitas segun la IA)
+                orden = sorted(usables, key=lambda i: (not i.get("prota"),
+                                                       -float(((i.get("ia") or {}).get("belleza")) or 0)))
+                n_r = ruido_tomas.adelantar([(i["ruta"], i.get("dur")) for i in orden
+                                             if vertical is False or not i.get("horizontal", True)])
+                if n_r:
+                    log("Midiendo en segundo plano el ruido de %d videos (para la reducción de ruido)." % n_r)
+            except Exception as ex:
+                log("Aviso: no se pudo adelantar la medida del ruido (%s)" % ex)
         try:                                  # el plan se ve ya, antes de abrir DaVinci (y aunque DaVinci falle)
             log("== Plan previo ==")
             previo = plan_previo(analisis, log, solo=solo, tipo_evento=tipo_evento, evento=evento,

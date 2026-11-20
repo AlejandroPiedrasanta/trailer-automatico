@@ -1351,7 +1351,7 @@ def objetivo_de_saturacion(items):
     return _lim(_mediana(sats), *SAT_OBJETIVO_LIMITES) if sats else SAT_OBJETIVO
 
 
-def cdl_para(pieza, objetivo, sat_objetivo=None):
+def cdl_para(pieza, objetivo, sat_objetivo=None, fps=24.0):
     """CDL (slope / offset / saturacion) que empareja este plano con poco margen (son tomas Rec.709): exposicion hacia
     la luz tipica de su momento, negros limpios, balance de blancos con los grises y saturacion hacia la del evento."""
     v = pieza["item"]
@@ -1359,7 +1359,10 @@ def cdl_para(pieza, objetivo, sat_objetivo=None):
     if not col or pieza["tipo"] == "foto":
         return None
     i0 = max(0, int(pieza["ini"] / PASO_CALIDAD))
-    i1 = min(len(col), max(i0 + 1, int(math.ceil((pieza["ini"] + pieza["dur_f"] / 24.0) / PASO_CALIDAD))))
+    # (1.8.0, auditoria) el tramo de la toma que SE VE: en camara lenta (vel 0,4) se usa menos toma; antes se medía
+    # 2,5 veces mas y un cambio de luz posterior podia entrar en la mediana del color
+    usa_s = pieza["dur_f"] / float(fps or 24.0) * float(pieza.get("vel") or 1.0)
+    i1 = min(len(col), max(i0 + 1, int(math.ceil((pieza["ini"] + usa_s) / PASO_CALIDAD))))
     m = col[i0:i1] or col
     luz = _mediana([s[0] for s in m])
     negro = _mediana([s[1] for s in m])
@@ -3587,7 +3590,8 @@ def main():
                         x.SetCDL({"NodeIndex": "1", "Slope": "1.0 1.0 1.0", "Offset": "0.0 0.0 0.0",
                                   "Power": "1.0 1.0 1.0", "Saturation": "1.0"})
                     if IGUALAR:
-                        cdl = cdl_para(p, objetivos.get((p.get("momento") or p["item"].get("momento")), 0.42), sat_evento)
+                        cdl = cdl_para(p, objetivos.get((p.get("momento") or p["item"].get("momento")), 0.42), sat_evento,
+                                       fps)
                         if cdl and x.SetCDL(cdl):
                             info["igualados"] = info.get("igualados", 0) + 1
             except Exception:
@@ -3631,9 +3635,13 @@ def main():
         except Exception as ex:
             aviso("%s: no se pudieron guardar los capitulos (%s)" % (nombre, ex))
         info["whoosh"] = whooshes(tl, mp, zonas, fps, whoosh)
+        # (1.8.0, auditoria) donde va la voz original (pastor, brindis): los SFX no la tapan
+        tramos_voz = [(v["pos"], v["pos"] + int(round((v["fin"] - v["ini"]) * fps)))
+                      for v in voces_plan or [] if v.get("pos") is not None]
         try:                                     # SFX segun el momento (campanas en la iglesia, vitores en la fiesta)
             info["sfx"] = _modulo("sfx").sonorizar(tl, mp, lambda k: buscar_clip(root, k),
-                                                   [(n, a, b) for n, a, b, _ in zonas], fps, cortes, print)
+                                                   [(n, a, b) for n, a, b, _ in zonas], fps, cortes, print,
+                                                   evitar=tramos_voz)
         except Exception as ex:
             aviso("%s: no se pudieron colocar los SFX (%s)" % (nombre, ex))
         try:                                     # los momentos fuertes: subida y golpe a la fiesta, destellos, clics
@@ -3660,7 +3668,7 @@ def main():
             aviso("%s: no se pudo poner el ambiente real (%s)" % (nombre, ex))
         try:                                     # (18-nov) SFX de emocion donde la IA vio el beso, el pastel, los anillos...
             info["emocion"] = _modulo("sfx").emocion(tl, mp, lambda k: buscar_clip(root, k), puestos, fps,
-                                                     propios, print)
+                                                     propios, print, evitar=tramos_voz)
         except Exception as ex:
             aviso("%s: no se pudieron poner los SFX de emoción (%s)" % (nombre, ex))
         try:                                     # (17-nov) el nombre DETRAS de la persona (recorte local, sin Mascara

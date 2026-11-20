@@ -47,16 +47,43 @@ GIRO_MAX = 3.0                # grados de giro que se corrigen como mucho
 _GPU = {"sirve": True, "fallos": 0}
 
 
-def leer(ruta, ini, dur, ancho=ANCHO):
-    """Los cuadros del tramo, en gris y chicos: (array n x alto x ancho uint8, fps) o (None, fps)."""
+_INFO = {}
+
+
+def _info(ruta):
+    """(1.8.0, auditoria) fps, ancho y alto (ya girados) de la toma con UN ffprobe por archivo: antes eran 3 por plano
+    (122 ms cada uno, ~0,37 s de los ~0,61 s que tarda estabilizar un plano)."""
+    if ruta in _INFO:
+        return _INFO[ruta]
+    d = {}
     try:
         r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-                            "stream=avg_frame_rate", "-of", "csv=p=0", ruta],
-                           capture_output=True, text=True, timeout=30, creationflags=rutas.SIN_VENTANA)
-        a, _, b = (r.stdout.strip().split("\n")[0] or "30/1").partition("/")
-        fps = float(a) / float(b or 1)
+                            "stream=width,height,avg_frame_rate:stream_side_data=rotation", "-of", "default=nw=1",
+                            ruta], capture_output=True, text=True, timeout=30, creationflags=rutas.SIN_VENTANA)
+        for linea in r.stdout.splitlines():
+            k, _, v = linea.partition("=")
+            d.setdefault(k.strip(), v.strip())
     except Exception:
+        pass
+    try:
+        a, _, b = (d.get("avg_frame_rate") or "30/1").partition("/")
+        fps = float(a) / float(b or 1)
+    except (ValueError, ZeroDivisionError):
         fps = 30.0
+    try:
+        w, h = int(d["width"]), int(d["height"])
+        if abs(int(float(d.get("rotation", 0) or 0))) % 180 == 90:
+            w, h = h, w
+    except (KeyError, ValueError):
+        w = h = 0
+    if w and h:                       # un fallo pasajero (disco dormido) no queda guardado
+        _INFO[ruta] = (fps, w, h)
+    return fps, w, h
+
+
+def leer(ruta, ini, dur, ancho=ANCHO):
+    """Los cuadros del tramo, en gris y chicos: (array n x alto x ancho uint8, fps) o (None, fps)."""
+    fps = _info(ruta)[0]
     if not (5.0 <= fps <= 240.0):
         fps = 30.0
     # (18-nov, la persona: «mejora el proceso en paralelo con GPU al 100») leer el tramo era lo mas lento del armado
@@ -92,21 +119,11 @@ def leer(ruta, ini, dur, ancho=ANCHO):
 
 
 def _alto(ruta, ancho):
-    try:
-        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-                            "stream=width,height:stream_side_data=rotation", "-of", "default=nw=1", ruta],
-                           capture_output=True, text=True, timeout=30, creationflags=rutas.SIN_VENTANA)
-        d = {}
-        for linea in r.stdout.splitlines():
-            k, _, v = linea.partition("=")
-            d.setdefault(k.strip(), v.strip())
-        w, h = int(d["width"]), int(d["height"])
-        if abs(int(float(d.get("rotation", 0) or 0))) % 180 == 90:
-            w, h = h, w
-        alto = int(round(ancho * h / float(w)))
-        return alto + (alto % 2)
-    except Exception:
+    _, w, h = _info(ruta)
+    if not (w and h):
         return None
+    alto = int(round(ancho * h / float(w)))
+    return alto + (alto % 2)
 
 
 def _ventana(h, w):
@@ -225,14 +242,31 @@ def movimiento(cuadros):
     puntos (_puntos); los pares que asi no se pudieron medir, con las tejas por fase (_fase)."""
     r = _puntos(cuadros)
     if r is None:
-        return _fase(cuadros)
-    out, fallan = r
-    for k in fallan:
-        out[k] = _fase(cuadros[k:k + 2])[0]
+        out, malos = _fase(cuadros, con_fallos=True)
+    else:
+        out, fallan = r
+        malos = []
+        for k in fallan:
+            m, f = _fase(cuadros[k:k + 2], con_fallos=True)
+            out[k] = m[0]
+            if f:
+                malos.append(k)
+    return _rellenar(out, malos)
+
+
+def _rellenar(out, malos):
+    """(1.8.0, auditoria) Un par que ni los puntos ni la fase pudieron medir valia 0 = «la camara no se movio»: en un
+    paneo rapido con desenfoque eso cortaba el camino y la correccion metia un tiron de un cuadro (MEDIDO: paneo de
+    6 px/cuadro con un hueco, salto de 8,3 px contra 0,07 sin hueco). Ahora se rellena con lo de los vecinos."""
+    if not len(malos) or len(malos) >= len(out):
+        return out
+    buenos = np.setdiff1d(np.arange(len(out)), malos)
+    for c in range(out.shape[1]):
+        out[malos, c] = np.interp(malos, buenos, out[buenos, c])
     return out
 
 
-def _fase(cuadros):
+def _fase(cuadros, con_fallos=False):
     """(tx, ty, giro) de cada cuadro respecto del anterior con correlacion de fase en tejas. Donde no se pudo medir
     (cuadro liso), 0."""
     n, h, w = cuadros.shape
@@ -241,6 +275,7 @@ def _fase(cuadros):
     centros = np.array([[t[4], t[5]] for t in tejas], np.float64)
     prev = None
     out = np.zeros((max(0, n - 1), 3))
+    fallos = []
     for k in range(n):
         f = cuadros[k].astype(np.float32)
         ffts = []
@@ -260,8 +295,10 @@ def _fase(cuadros):
             sol = _ajustar(centros, u, peso)
             if sol is not None:
                 out[k - 1] = sol
+            else:
+                fallos.append(k - 1)
         prev = ffts
-    return out
+    return (out, fallos) if con_fallos else out
 
 
 def _suavizar(x, sigma):
@@ -278,20 +315,10 @@ def _suavizar(x, sigma):
     return np.convolve(ext, k, mode="same")[r:r + n]
 
 
-_ANCHOS = {}
-
-
 def zoom_max(ruta):
     """Lo maximo que se puede acercar esa toma: ZOOM_MAX_4K si es de 4K o mas (la linea es HD), si no ZOOM_MAX."""
-    if ruta not in _ANCHOS:
-        try:
-            r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
-                                "-of", "csv=p=0", ruta], capture_output=True, text=True, timeout=30,
-                               creationflags=rutas.SIN_VENTANA)
-            _ANCHOS[ruta] = max(int(x) for x in r.stdout.strip().split(",")[:2])
-        except Exception:
-            _ANCHOS[ruta] = 0
-    return ZOOM_MAX_4K if _ANCHOS[ruta] >= ANCHO_4K else ZOOM_MAX
+    _, w, h = _info(ruta)
+    return ZOOM_MAX_4K if max(w, h) >= ANCHO_4K else ZOOM_MAX
 
 
 def zoom_para(cx, cy, ca, w, h):

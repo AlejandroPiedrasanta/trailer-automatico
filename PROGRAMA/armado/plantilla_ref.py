@@ -164,12 +164,16 @@ def importar(ruta, nombre=None, log=print):
     os.makedirs(dest, exist_ok=True)
     info.update({"nombre": nombre, "origen": os.path.abspath(ruta)})
     if info["con_audio"]:
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", ruta, "-vn", "-c:a", "copy",
-                        os.path.join(dest, "musica.m4a")], capture_output=True, timeout=300, creationflags=rutas.SIN_VENTANA)
-        if not os.path.exists(os.path.join(dest, "musica.m4a")):            # audio raro: a AAC
-            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", ruta, "-vn", "-c:a", "aac", "-b:a", "256k",
-                            os.path.join(dest, "musica.m4a")], capture_output=True, timeout=300,
-                           creationflags=rutas.SIN_VENTANA)
+        musica = os.path.join(dest, "musica.m4a")
+        r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", ruta, "-vn", "-c:a", "copy", musica],
+                           capture_output=True, timeout=300, creationflags=rutas.SIN_VENTANA)
+        # (1.8.0, auditoria) un audio que no cabe en .m4a (Opus de un webm, PCM de un .mov) dejaba un archivo de 0 bytes
+        # que SI existia: la plantilla quedaba muda. Ahora se convierte si ffmpeg fallo o el archivo salio vacio
+        if r.returncode != 0 or not os.path.exists(musica) or os.path.getsize(musica) < 1000:
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", ruta, "-vn", "-c:a", "aac", "-b:a", "256k", musica],
+                           capture_output=True, timeout=300, creationflags=rutas.SIN_VENTANA)
+        if not os.path.exists(musica) or os.path.getsize(musica) < 1000:
+            log("Aviso: no se pudo sacar la música de %s: la plantilla queda sin su canción." % os.path.basename(ruta))
     # portada: el medio del plano mas largo
     largo = max(info["planos"], key=lambda p: p["dur"]) if info["planos"] else {"ini": 0, "dur": 0}
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "%.2f" % (largo["ini"] + largo["dur"] / 2), "-i", ruta,

@@ -117,6 +117,7 @@ def esperar_copias(log, max_s=180):
     limite = time.time() + max_s
     avisado = False
     while time.time() < limite:
+        rutas.revisar_parada()                    # (1.8.0) «Cancelar» corta tambien esta espera (hasta 3 min)
         ahora = time.time()
         recientes = []
         for _, ruta in am.listar(BASE):
@@ -1119,9 +1120,15 @@ def _conectar_resolve(log, quedarse=False):
         def esperar(segundos):
             # (18-nov, medido) contesta a los 15-37 s; tras una caida se quedo 273 s sin contestar (la espera era de 40
             # VUELTAS y cada scriptapp sin respuesta tarda ~4 s) y al reabrirlo contesto en 15 s: se cuenta en segundos
-            r, t0, sin_proceso = None, time.time(), 0
+            r, t0, sin_proceso, dicho = None, time.time(), 0, 0
             while time.time() - t0 < segundos:
                 time.sleep(3)
+                # (1.8.0, auditoria) «Cancelar» cortaba recien al terminar la espera (hasta 3-4 min) y la ventana decia
+                # lo mismo todo el rato: ahora corta enseguida y cada 15 s dice cuanto lleva
+                rutas.revisar_parada()
+                if time.time() - t0 >= dicho + 15:
+                    dicho += 15
+                    log("Esperando a DaVinci… %d s (suele contestar en 15-40 s)" % dicho)
                 r = dvr.scriptapp("Resolve")
                 if r is not None and r.GetProjectManager() is not None:
                     log("DaVinci contestó en %.0f s." % (time.time() - t0))

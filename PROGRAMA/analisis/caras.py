@@ -176,6 +176,10 @@ def _imagenes(item):
                 out.append(np.asarray(Image.open(io.BytesIO(r.stdout)).convert("RGB")))
         except Exception:
             pass
+    if n and not out:
+        # (1.8.0, auditoria) ningun cuadro (ffmpeg fallo o paso el plazo, disco dormido): antes quedaba guardado como
+        # «nadie sale» y la festejada podia perder sus tomas para siempre; asi no se guarda y se mira otra vez
+        raise RuntimeError("sin cuadros de %s" % os.path.basename(ruta))
     return out
 
 

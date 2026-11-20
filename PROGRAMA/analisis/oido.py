@@ -288,7 +288,11 @@ def escuchar(tomas, log=print):
         if d is None:
             return
         if m.get("error"):
-            d["oido"] = {"v": VERSION, "error": m["error"]}
+            # (1.8.0, auditoria) solo «sin audio» es para siempre; otro fallo (disco dormido, plazo) se vuelve a
+            # escuchar la proxima vez y, si falla 2 veces, ya no se repite
+            n_int = (d.get("oido") or {}).get("intentos", 0) + 1
+            fijo = m["error"] == "sin audio" or n_int >= 2
+            d["oido"] = dict({"error": m["error"], "intentos": n_int}, **({"v": VERSION} if fijo else {}))
         else:
             d["oido"] = dict({"v": VERSION, "paso": PASO_S, "ventana": VENTANA_S}, **m.get("series", {}))
         hechas[0] += 1

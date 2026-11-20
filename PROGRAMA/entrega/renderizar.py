@@ -11,6 +11,8 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "nucleo"))   # PROGRAMA/nucleo: rutas pone las demas carpetas
 import motor  # noqa: E402
 
+RENDER_QUIETO_S = 600      # (1.8.0) 10 min sin que suba ni un 1 %: DaVinci pegado (lo normal es ~1 % cada 5-30 s)
+
 
 def _davinci_abierto():
     import subprocess
@@ -132,6 +134,9 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
             if not p.StartRendering(cuales, False):
                 return False
             ultimo = ""
+            # (1.8.0, auditoria) si el % no se mueve en RENDER_QUIETO_S, DaVinci se quedo pegado (NVENC, un clip roto):
+            # se detiene y los trabajos sin terminar van por el reintento y, si siguen, por el reinicio de DaVinci
+            visto, t_visto = -1.0, time.time()
             while p.IsRenderingInProgress():
                 if motor.rutas.PARAR.is_set():       # (1.6.0) «Cancelar»: se detiene el render en DaVinci
                     p.StopRendering()
@@ -149,6 +154,12 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
                     ultimo = linea
                 if progreso:
                     progreso(int(total / len(jobs)), "Renderizando")
+                if total > visto + 0.01:
+                    visto, t_visto = total, time.time()
+                elif time.time() - t_visto > RENDER_QUIETO_S:
+                    log("El render lleva %.0f min sin avanzar: lo detengo y lo intento otra vez." % (RENDER_QUIETO_S / 60))
+                    p.StopRendering()
+                    break
                 recoger()
                 time.sleep(5)
             recoger()
@@ -297,7 +308,21 @@ def poner_revision_ia(log=print, progreso=None):
     if progreso and not fut.done():
         progreso(99, "Terminando la revisión con IA")
     try:
-        revisar = fut.result()
+        # (1.8.0, auditoria) con tope y oyendo «Cancelar»: si Ollama se cuelga, el evento no se queda en «99 %» para siempre
+        import concurrent.futures as _cf
+        t_lim = time.time() + 900
+        while True:
+            if motor.rutas.PARAR.is_set():
+                raise motor.rutas.Detenido()
+            try:
+                revisar = fut.result(timeout=2)
+                break
+            except _cf.TimeoutError:
+                if time.time() > t_lim:
+                    log("Aviso: la revisión con IA tardó más de 15 min: sigo sin sus marcas.")
+                    return 0
+    except motor.rutas.Detenido:
+        raise
     except Exception as ex:
         log("Aviso: no se pudo revisar con IA (%s)" % ex)
         return 0

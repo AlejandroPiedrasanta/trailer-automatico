@@ -1849,7 +1849,9 @@ def _ver_con_ia(cache, lista, log):
     # sacan sus cuadros con ffmpeg (los 3 de cada una a la vez)
     with ThreadPoolExecutor(vision_ia.PARALELO + 2) as ex:
         for n, (d, ia) in enumerate(ex.map(una, falta), 1):
-            if not ia and (d.get("ia") or {}).get("intentos", 0) >= 1:
+            if ia is False:
+                pass                    # (1.8.0) Ollama no contesto: no gasta un intento (antes 2 caidas = «sin datos»)
+            elif not ia and (d.get("ia") or {}).get("intentos", 0) >= 1:
                 # (17-nov) una toma que la IA no logra describir (respuesta rota) se reintentaba en CADA armado: al
                 # segundo fallo queda como «vista, sin datos» (sirve, momento por reloj) y ya no se repite
                 ia = dict({"modelo": vision_ia.modelo(), "momento": "OTRO", "escena": "", "etiquetas": [],
@@ -2008,7 +2010,7 @@ def _instantes_con_ia(cache, largos, log, vision_ia):
                     n, len(largos), d["nombre"], 100 * parte,
                     " (%s)" % vision_ia.MOTIVOS.get(motivo, motivo) if motivo else ""))
     cuadros = [x for _, r in largos for x in (cache[_clave(r)]["ia"].get("instantes") or [])]
-    saltados = sum(1 for x in cuadros if len(x) > 2 and x[2] is None)
+    saltados = sum(1 for x in cuadros if len(x) > 3 and x[2] is None and x[3] == vision_ia.SIN_MIRAR)
     cuadros = [x for x in cuadros if len(x) < 3 or x[2] is not None]
     claves = sum(1 for x in cuadros if set(x[1]) & {"beso", "anillos", "votos", "primer_baile", "pastel", "brindis",
                                                        "entrada"})

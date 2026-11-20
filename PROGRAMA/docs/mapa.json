@@ -155,7 +155,8 @@
    "Pruebas de la ventana: motor simulado (armar_todo falso) + grab() a PNG en el scratchpad.",
    "Portada (QSplashScreen) al instante mientras se construye la ventana (~1,5 s).",
    "Ajustes > Voz original: un interruptor por version corta (1, 3 y 15 min); en 30 min va siempre.",
-   "Ajustes > videos verticales (ch_vert -> motor.armar(verticales=))."
+   "Ajustes > videos verticales (ch_vert -> motor.armar(verticales=)).",
+   "(1.8.0) _arrancar protegido (_arrancar_vista): si falla al preparar la vista, _fallo + _liberar (no queda en 'Trabajando…'); Trabajo.run emite fallo tambien con BaseException. Cerrar mientras arma: PARAR, espera al hilo y cierra (30 s y _cerrar_ya sale con os._exit tras _guardar). 'Listo a las' se recalcula cada 20 s (_reloj_eta) y dice 'Terminando…' si falta menos de 1 min. motor.esperar dice 'Esperando a DaVinci… N s' cada 15 s y corta con Cancelar. Probado con guion_robusto (ventana real): las 3 pasan, sale con codigo 0 en 0,5 s."
   ]
  },
  {
@@ -255,7 +256,8 @@
    "Prueba: scratchpad captura_paginas.py / captura_estados.py (motor.armar_todo falso y analisis de mentira con tomas reales de D:/BODA 7 NOVIEMBRE); probar_arrastre.py: TODO BIEN en 56 s.",
    "(17-nov) «Hazlo 100% igual»: el Inicio ya no es la escena GO de CineCaptions (escena_go queda oculta y sin uso): es el astrolabio de la maqueta (piezas.Astrolabio, vivo: tema animaciones). Los pasos van en piezas.Pasos (PASOS_VISTA / ETAPAS_VISTA) y el avance de cada version en piezas.Versiones (lee el registro: «VIDEO FINAL 1 MIN lista» y «1min Rendering 45%»).",
    "Medidas: todo en px() de la maqueta (2048 x 1360) por piezas.ESCALA; _escalar re-aplica qss_diseno() al cambiar de tamaño y llama reescalar() de cada pieza. Ajustes: el bodegon recortado (recursos/ajustes_bodegon.png) sobre el cielo; fondo_ajustes.jpg e ilustracion_ajustes.jpg ya no se usan (guardados en docs/capturas).",
-   "Iconos (17-nov, la persona: «usa Higgsfield para los iconos»): hojas de 4x4 iconos de trazo dorado sobre negro (gpt_image_2_6) -> herramientas/preparar_iconos.py -> recursos/iconos/<tipo>.png (blanco con alfa, 256 px). piezas.icono los pinta del color pedido con un degradado sutil y los guarda hechos (_ICONOS); los de controles (palomita, x, play, min, max, punto) siguen dibujados (SOLO_DIBUJADOS) y si falta un png, el dibujo de siempre."
+   "Iconos (17-nov, la persona: «usa Higgsfield para los iconos»): hojas de 4x4 iconos de trazo dorado sobre negro (gpt_image_2_6) -> herramientas/preparar_iconos.py -> recursos/iconos/<tipo>.png (blanco con alfa, 256 px). piezas.icono los pinta del color pedido con un degradado sutil y los guarda hechos (_ICONOS); los de controles (palomita, x, play, min, max, punto) siguen dibujados (SOLO_DIBUJADOS) y si falta un png, el dibujo de siempre.",
+   "(1.8.0) La inclinacion 3D de las portadas (Trailers.qml / Plantillas.qml) nunca funciono: dentro de Rotation `_ry` a secas da ReferenceError; ahora con el id (cuerpo._ry / incl._ry)."
   ]
  },
  {
@@ -612,7 +614,8 @@
    "vista (v4): por cada medio segundo, medidas ABSOLUTAS: nit (enfoque), con, quem (luces reventadas), eje/giro/pico (camara torcida o al piso), pan (barrido) y hash (huella de la imagen). La 'calidad' vieja es relativa al propio video: un video entero malo puntuaba como bueno.",
    "(1.5.7) _sincronizar_por_audio: camara con reloj dudoso puesta en hora por el nivel del audio contra las de reloj bueno; simultaneas (audio=True si el sonido lo confirma). _camara usa nombre_original (renombrados empiezan con VIDEO).",
    "(1.5.7) vision_ia VERSION 2: 'equipo' (camara/flash/celular en primer plano) -> util false; en_gpu(): con DaVinci llenando la GPU no hay instantes y la revision mira 30 cuadros; NUM_CTX 8192.",
-   "(16-nov) Revision cuadro por cuadro (INSTANTES_V 4): TODAS las tomas cada 3 s; apunta/de_cabeza/cara/sin_cabeza con respuesta cerrada. Regla de la persona: si sale gente se le ve la cara; techo, de cabeza, sin cabeza, sin cara -> fuera ese tramo; toma entera si es la mitad de una corta o el 80% de una larga."
+   "(16-nov) Revision cuadro por cuadro (INSTANTES_V 4): TODAS las tomas cada 3 s; apunta/de_cabeza/cara/sin_cabeza con respuesta cerrada. Regla de la persona: si sale gente se le ve la cara; techo, de cabeza, sin cabeza, sin cara -> fuera ese tramo; toma entera si es la mitad de una corta o el 80% de una larga.",
+   "(1.8.0, 20-nov) IA local a prueba de caidas: cortacircuitos en vision_ia._pedir (4 fallos seguidos de /api/chat = 90 s sin preguntar, IACaida); un cuadro sin respuesta queda [t, [], None, 'fallo'] y si fallan mas de 1 de 10 (FALLOS_TOPE) instantes() devuelve None: la toma NO se guarda como revisada. describir() devuelve False si Ollama no contesto (no gasta intento) y None si contesto algo roto. caras._imagenes lanza si no salio ningun cuadro (antes quedaba 'nadie sale'). oido: solo 'sin audio' es para siempre; otro error se reintenta una vez."
   ]
  },
  {
@@ -763,7 +766,8 @@
    "Camaras lentas: 3/6/12/18 por version, solo en tomas firmes, como mucho el 45 % en un mismo momento; UMBRAL_PLANO descarta tramos flojos.",
    "(1.5.7) repartir_zonas: zonas segun el material (Planificador.capacidad_f); multicamara: 2 angulos en planos emotivos con simultaneas confirmadas; emocion sube en los instantes clave de la IA; foto_final/intro con los novios.",
    "(1.5.7) Transiciones: disolvencia en todos los cortes (tr suave/apertura/zona por version); UMBRAL_TEMBLOR 0,35 y PESO_TEMBLOR.",
-   "(16-nov) vista(): tramos malos de la IA fuera; nitidez contra la MEJOR camara (FOCO_ABS_MIN 0,55; vertical en horizontal 0,75); TEMBLOR_MAX 3, BARRIDO_MAX 6; estabilizar solo 0,35-2,5; Speed Warp solo en tomas muy firmes; corte al ritmo y encadenado solo en camara lenta, fotos y saltos de luz (SALTO_LUZ)."
+   "(16-nov) vista(): tramos malos de la IA fuera; nitidez contra la MEJOR camara (FOCO_ABS_MIN 0,55; vertical en horizontal 0,75); TEMBLOR_MAX 3, BARRIDO_MAX 6; estabilizar solo 0,35-2,5; Speed Warp solo en tomas muy firmes; corte al ritmo y encadenado solo en camara lenta, fotos y saltos de luz (SALTO_LUZ).",
+   "(1.8.0) Estabilizador: un par que ni los puntos ni la fase midieron se rellena con los vecinos (_rellenar; antes valia 0 y metia un tiron: paneo sintetico 6,02 -> 1,18 px de salto); un ffprobe por archivo (_info) en vez de 3 por plano: 9 tomas reales 50,6 -> 32,5 s (36 % menos), mismo resultado. Sin probar: VFR con -fps_mode passthrough (no se sabe si DaVinci reproduce los VFR cuadro a cuadro). cdl_para mide el tramo que SE VE (dur_f / fps * vel)."
   ]
  },
  {
@@ -929,7 +933,8 @@
    "Cambio de cancion (cruces_de_musica mide el sonido con ffmpeg): si la que sale sigue sonando, se alarga 2,5 s y se apaga en 4 s; si se ACABA antes (huecos casi en silencio), se retrasa entera para terminar donde entra la otra, de la ultima a la primera: la primera se alarga y la musica de fiesta no se mueve de su marcador.",
    "SFX PROPIOS (recursos/sfx/XV_*.wav, los crea herramientas/hacer_sfx.py con numeros, sin licencias): golpe y subida a la entrada de la fiesta (marcador ACTO ... FIESTA), destellos en el titulo y el final, paso en capitulos, obturador en las fotos de la intro. Pista «SFX MOMENTOS».",
    "(1.5.7) SFX 2-3 dB mas bajos (mezcla.OBJETIVOS) y whoosh con fundido de entrada/salida.",
-   "(18-nov, la persona: «le falta más SFX de emoción, alegría») sfx.emocion: donde la IA vio un MOMENTO CLAVE en ese plano (it['ia']['instantes'] en [ini, ini+dur]: beso, pastel, primer_baile, brindis, entrada -> vitores/aplausos de la plantilla; anillos, votos -> XV_BRILLO a -6 dB), en el corte, en SFX PUBLICO 2 / SFX PUBLICO sin pisar otros, uno cada 8 s (14 en los largos), hasta 12, nunca en la intro (FIN_INTRO_S) ni donde hay voz (pasajes {'ini','fin',...} de la toma). Boda 1 min vertical: 15 planos con momento clave, 4 con su sonido. Va antes de mezcla.nivelar."
+   "(18-nov, la persona: «le falta más SFX de emoción, alegría») sfx.emocion: donde la IA vio un MOMENTO CLAVE en ese plano (it['ia']['instantes'] en [ini, ini+dur]: beso, pastel, primer_baile, brindis, entrada -> vitores/aplausos de la plantilla; anillos, votos -> XV_BRILLO a -6 dB), en el corte, en SFX PUBLICO 2 / SFX PUBLICO sin pisar otros, uno cada 8 s (14 en los largos), hasta 12, nunca en la intro (FIN_INTRO_S) ni donde hay voz (pasajes {'ini','fin',...} de la toma). Boda 1 min vertical: 15 planos con momento clave, 4 con su sonido. Va antes de mezcla.nivelar.",
+   "(1.8.0) Los SFX (sonorizar y emocion) no tapan la voz original: sfx._sin_voz con los tramos de voces_plan (v['pos']); si la voz empieza 2 s o mas despues, el SFX se acorta hasta 0,3 s antes; si ya habla, no va. plantilla_ref: musica de 0 bytes (audio que no cabe en .m4a) se convierte a AAC y se avisa si falta."
   ]
  },
  {
@@ -1008,7 +1013,8 @@
    "renderizar(solo=[...]): solo esas versiones; las demas que sigan en la cola no se vuelven a renderizar.",
    "herramientas/revisar_video.py (hoja | cuadros | audio): revisar un video terminado sin verlo entero.",
    "(1.5.7) revision_ia: la IA mira el video final (cada 3 s, max 180) y pone marcadores rojos REVISAR (IA) en la linea.",
-   "(16-nov) revision_ia usa la misma regla que el analisis y dice el motivo de cada marca REVISAR."
+   "(16-nov) revision_ia usa la misma regla que el analisis y dice el motivo de cada marca REVISAR.",
+   "(1.8.0) renderizar.RENDER_QUIETO_S = 600: si el % no se mueve en 10 min, StopRendering y va por el reintento / reinicio de DaVinci. poner_revision_ia espera con tope de 15 min y oyendo Cancelar. editable._exportar_drp exporta a '<video> (nuevo).drp' y solo si salio bien reemplaza (antes se borraba el viejo antes). Trabado de vigia_davinci ya no se lo tragan los except de _recortar_base / proyecto_por_video / _por_drt; el vigia marca SOLO la seccion culpable (la que paso su tope o la mas reciente)."
   ]
  },
  {
@@ -1500,7 +1506,8 @@
    "(19-nov, 1.7.3) MAS RAPIDO: (1) SetClipColor tarda 65 ms por clip AUNQUE ya tenga ese color (GetClipColor, GetClipProperty y GetUniqueId 0,1 ms): organizar_pool y el color de los planos solo lo cambian si es otro (~30 s menos con 450 clips); indexar igual con SetMetadata. (2) Texto detras: persona_delante.tapado_previo mide con recorte.alfas (3 cuadros a 512 px, calentados con 5 previos: 1,7 s contra 10,9 s del recorte entero, 91-98 % igual) y solo recorta el tramo si se va a poner. (3) Revision final con IA: revision_ia.tramos_vistos lee la linea y no pregunta los cuadros cuyo clip de arriba sale de una toma que vision_ia.instantes ya vio buena en toda la parte usada (con margen x2 por la camara lenta, lejos de los cortes): 8 de 17 cuadros menos en el 1 min.",
    "(19-nov) MEDIDO DESDE CERO con todo (XV 8-nov, 448 archivos, 1/3/15/30 min H + 1/3 V, scratch medir_todo.py aislado en D:\\PRUEBA TIEMPOS 1.7.3): 70 min = medir 5,4 + IA primera vista 4,8 + IA cuadro por cuadro 14 (oido a la vez) + armado H 10,6 (estabilizar ~4) + V 3,5 + RENDER 18 (53 min de video) + terminar 5,3 + proxies 5,7 (revision IA a la vez, 197 cuadros saltados) + .drp 1,4. Luego: masterizar._leer_imagen junta verificar_imagen y revisar_cortes en UNA pasada con -hwaccel auto (15 min: 112 -> 23 s, mismos resultados); proxies de celular a 30 (tema editable).",
    "(19-nov, MEDIDO, 1.7.5) RENDER: 60 s de la linea del XV en 28-31 s con el filtro de ruido nuevo, el viejo o NINGUNO (el DCTL y la nitidez no cuestan; la variacion entre corridas es de +-5 s; la 1a en frio 43 s): el limite es DaVinci, no hay nada propio que quitar. MEDIR MATERIAL: es ffmpeg decodificando el 4K (solo ffmpeg = 18,8 s para 12 tomas, las cuentas 0,1 s); decodificar Y achicar en la tarjeta (scale_cuda) da lo mismo (18,2 s): NO SIRVIO, se dejo como estaba. PROXIES DURANTE EL RENDER (editable.adelantar, PARALELO_RENDER 2; TRAILER_PROXIES_EN_RENDER=0 lo apaga): render 3 min + 8 proxies 70 s contra 117 s uno tras otro (el render 15 % mas lento, sin fallos).",
-   "(19-nov, revision de codigo 1.7.6) hacer_proxy con un candado por archivo (dos renders seguidos o adelantados + despues nunca escriben el mismo .tmp.mov); adelantar espera al anterior y con «Cancelar» no empieza los que faltan; _retiempo usa 30000/1001, 24000/1001, 60000/1001 (no 29.97 redondeado); _sin_proxy solo carpetas DEL PROGRAMA (_internal, recursos/overlays, trabajo/RECORTES); recorte.alfas al mismo ANCHO_IA y downsample que recortar (4,8 s); tramos_vistos ignora pistas apagadas y cubre las dos lecturas de GetLeftOffset (cuadros del clip o de la linea)."
+   "(19-nov, revision de codigo 1.7.6) hacer_proxy con un candado por archivo (dos renders seguidos o adelantados + despues nunca escriben el mismo .tmp.mov); adelantar espera al anterior y con «Cancelar» no empieza los que faltan; _retiempo usa 30000/1001, 24000/1001, 60000/1001 (no 29.97 redondeado); _sin_proxy solo carpetas DEL PROGRAMA (_internal, recursos/overlays, trabajo/RECORTES); recorte.alfas al mismo ANCHO_IA y downsample que recortar (4,8 s); tramos_vistos ignora pistas apagadas y cubre las dos lecturas de GetLeftOffset (cuadros del clip o de la linea).",
+   "(1.8.0, 20-nov) Barrido de 144 opciones de la medicion del analisis (hwaccel auto/cuda/d3d11va/none x skip_frame x hilos x tomas a la vez, 8 tomas, 95 s): la mejor (d3d11va, 6 a la vez) 8,0 s contra 9,0 de la actual, dentro del ruido (la misma opcion va de 9,6 a 13,8 s); skip_frame nonref/bidir cambia el resultado (parecido 0-0,85). La medicion ya esta en el tope del NVDEC: no se cambia. Script: scratchpad/barridos/barrido_medir.py."
   ]
  },
  {

@@ -205,9 +205,14 @@ def principal(padre):
         ahora = time.time()
         nombres = " / ".join(s[0] for s in secs.values())
         motivo = None
-        for nombre, t0, tope in secs.values():
+        # (1.8.0, auditoria) la seccion CULPABLE: la que paso su tope o, si DaVinci se congelo, la mas reciente (la de
+        # dentro). Antes se marcaban TODAS las abiertas («armado» › «plantillas» › «plantilla de X») y, aunque la de
+        # dentro se reintentara bien, al cerrar «armado» salia Trabado y se rearmaba y renderizaba todo otra vez
+        culpable = max(secs, key=lambda k: secs[k][1]) if secs else None
+        for sid_, (nombre, t0, tope) in secs.items():
             if tope and ahora - t0 > tope:
                 motivo = "«%s» lleva %.0f s sin terminar (tope %.0f s)" % (nombre, ahora - t0, tope)
+                culpable = sid_
                 break
         pids = _pids()
         cpu, edad = _tiempos(pids[0]) if pids else (None, None)
@@ -232,8 +237,8 @@ def principal(padre):
             colgada_desde = None
         if motivo:
             matadas = _leer(MATADAS, {}) or {}
-            for sid in secs:
-                matadas[sid] = motivo
+            if culpable is not None:
+                matadas[culpable] = motivo
             _escribir(MATADAS, matadas)
             cerrar(motivo)
             colgada_desde = None

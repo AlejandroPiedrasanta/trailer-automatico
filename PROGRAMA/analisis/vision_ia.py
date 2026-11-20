@@ -92,7 +92,37 @@ MODELO_RECOMENDADO = "qwen3-vl:8b-instruct"
 DESCARGA_OLLAMA = "https://ollama.com/download"
 
 
+# (1.8.0, auditoria) «cortacircuitos»: si Ollama no contesta CORTE_FALLOS veces seguidas (colgado, sin memoria de video),
+# las preguntas de los proximos CORTE_S fallan al instante en vez de esperar 120 s cada una (con 448 tomas eran horas).
+# Esos cuadros quedan como no mirados (instantes) y la toma se revisa otra vez la proxima vez.
+CORTE_FALLOS, CORTE_S = 4, 90.0
+_corte = {"seguidos": 0, "hasta": 0.0}
+_corte_lock = threading.Lock()
+
+
+class IACaida(OSError):
+    pass
+
+
 def _pedir(camino, cuerpo=None, timeout=5.0, base=None):
+    if camino != "/api/chat":
+        return _pedir_uno(camino, cuerpo, timeout, base)
+    if time.time() < _corte["hasta"]:
+        raise IACaida("la IA local no responde (pausa de %.0f s)" % CORTE_S)
+    try:
+        r = _pedir_uno(camino, cuerpo, timeout, base)
+    except (OSError, TimeoutError):           # URLError, conexion rechazada, plazo vencido
+        with _corte_lock:
+            _corte["seguidos"] += 1
+            if _corte["seguidos"] >= CORTE_FALLOS:
+                _corte["seguidos"], _corte["hasta"] = 0, time.time() + CORTE_S
+        raise
+    with _corte_lock:
+        _corte["seguidos"] = 0
+    return r
+
+
+def _pedir_uno(camino, cuerpo=None, timeout=5.0, base=None):
     datos = json.dumps(cuerpo).encode() if cuerpo is not None else None
     propio = _propio["url"] if base is None else None
     req = urllib.request.Request((base or propio or URL) + camino, data=datos, headers={"Content-Type": "application/json"})
@@ -103,7 +133,7 @@ def _pedir(camino, cuerpo=None, timeout=5.0, base=None):
         # el servidor propio se cayo (conexion rechazada): se sigue con el de siempre
         if propio and isinstance(getattr(ex, "reason", None), ConnectionError) and _propio["url"] == propio:
             _propio["url"] = None
-            return _pedir(camino, cuerpo, timeout)
+            return _pedir_uno(camino, cuerpo, timeout)
         raise
 
 
@@ -508,6 +538,8 @@ def _ver_cuadro(nombre, img):
 
 
 SIN_MIRAR = "medidas"         # motivo de un cuadro que la IA no miro (sirve = None: ni bueno ni malo)
+FALLO = "fallo"               # (1.8.0) la IA no contesto ese cuadro (sirve = None, igual que no mirado)
+FALLOS_TOPE = 0.10            # mas de 1 de cada 10 cuadros sin respuesta: la toma no se guarda como revisada
 
 
 def instantes(ruta, dur, log=None, fuera=None, limite=None, dron=False):
@@ -537,14 +569,23 @@ def instantes(ruta, dur, log=None, fuera=None, limite=None, dron=False):
     def pedir(t):
         return _pozo("modelo", PARALELO).submit(ver, cuadros(ruta, [t])[0])
 
+    pedidos, fallos = [0], [0]
+
     def recoger(t, tarea):
+        pedidos[0] += 1
         try:
             r = tarea.result()
         except rutas.Detenido:
             raise
         except Exception:
             r = None
-        return [round(t, 1), r[0], not r[1], r[1]] if r else None
+        if not r:
+            # (1.8.0, auditoria) antes el cuadro fallido DESAPARECIA y, si fallaban todos (Ollama caido), la toma
+            # quedaba guardada como «revisada, nada malo» para siempre. Ahora queda como no mirado (sirve = None) y,
+            # si fallan muchos, la toma no se guarda: se vuelve a mirar la proxima vez
+            fallos[0] += 1
+            return [round(t, 1), [], None, FALLO]
+        return [round(t, 1), r[0], not r[1], r[1]]
     # un cuadro «vale» por medio paso a cada lado: se salta solo si TODO ese tramo ya esta fuera (con medio segundo de
     # margen se colaban 2 planos en 750 pegados a un cuadro que la IA habia marcado malo; asi, ninguno, y cuesta 40 s)
     margen = paso / 2.0
@@ -560,6 +601,11 @@ def instantes(ruta, dur, log=None, fuera=None, limite=None, dron=False):
         if malos / float(n) < limite <= (malos + len(saltados)) / float(n):
             for k, tarea in [(k, pedir(tiempos[k])) for k in saltados]:
                 out[k] = recoger(tiempos[k], tarea)
+    if fallos[0] and fallos[0] > max(1, FALLOS_TOPE * pedidos[0]):
+        if log:
+            log("Aviso: la IA local no contestó en %d de %d cuadros de %s: la vuelvo a revisar la próxima vez." % (
+                fallos[0], pedidos[0], os.path.basename(ruta)))
+        return None
     return [x for x in out if x is not None]
 
 
@@ -634,9 +680,10 @@ def describir(tipo, ruta, dur=0.0, log=None):
         resp = _pedir("/api/chat", cuerpo, timeout=300.0)
         d = json.loads(resp["message"]["content"])
     except Exception as ex:
-        if log:
+        if log and not isinstance(ex, IACaida):          # (en pausa no se repite el aviso por cada toma)
             log("Aviso: la IA local no pudo ver %s (%s)" % (os.path.basename(ruta), str(ex)[:80]))
-        return None
+        # (1.8.0) False = no contesto (caida, plazo): no cuenta como intento; None = contesto algo roto
+        return False if isinstance(ex, (OSError, TimeoutError)) else None
     mom = MOMENTO.get(str(d.get("momento") or "").strip().upper(), "OTRO")
     etiquetas = [e for e in (str(x).strip().lower().replace(" ", "_") for x in d.get("etiquetas") or []) if e in ETIQUETAS]
     util = d.get("util")

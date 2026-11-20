@@ -503,7 +503,9 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
                     puestos.append((r[0], {"entra": "fundido"}))
     # 3) la musica de la plantilla, entera
     musica = os.path.join(info["carpeta"], "musica.m4a")
-    if os.path.exists(musica):
+    if not (os.path.exists(musica) and os.path.getsize(musica) >= 1000):      # (1.8.0) que no salga muda sin avisar
+        log("Aviso: la plantilla «%s» no tiene su música: el video sale sin canción." % info.get("nombre", ""))
+    elif os.path.exists(musica):
         mp.SetCurrentFolder(_carpeta(mp, _carpeta(mp, root, "05 MUSICA"), "PLANTILLAS"))
         m = mp.ImportMedia([musica]) or []
         if m:

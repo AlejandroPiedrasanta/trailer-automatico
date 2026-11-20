@@ -603,6 +603,9 @@ def app():
                 registro.error("Armado: %s" % traceback.format_exc())      # la traza, al registro (no a la persona)
                 self.linea.emit("No se pudo terminar: %s" % ex)
                 self.fallo.emit(str(ex))
+            except BaseException as ex:          # (1.8.0, auditoria) un SystemExit dentro de build_trailers (exec) no
+                registro.error("Armado: %s" % traceback.format_exc())     # emitia ni fin ni fallo
+                self.fallo.emit("el armado se detuvo (%s)" % (ex.__class__.__name__,))
 
     class Copia(QThread):
         """Copia ordenada a 1 MATERIAL. Si es un evento nuevo, antes guarda aparte el material del anterior."""
@@ -3910,7 +3913,21 @@ def app():
                 self._avisar("Termino de analizar el material y sigo solo…")
 
         def _arrancar(self, op, con_render, texto, funcion=None):
-            """Pone la ventana a trabajar y lanza el hilo: armar todo (funcion=None) o renderizar lo editado."""
+            """Pone la ventana a trabajar y lanza el hilo: armar todo (funcion=None) o renderizar lo editado.
+            (1.8.0, auditoria) Protegido: si algo falla al preparar la vista, la ventana no se queda en «Trabajando…»
+            con las pastillas apagadas."""
+            try:
+                self._arrancar_vista(op, con_render, texto, funcion)
+            except Exception as ex:
+                registro.error("Arrancar: %s" % traceback.format_exc())
+                t = getattr(self, "trabajo", None)
+                if t is not None and t.isRunning():
+                    return                               # el hilo ya corre: el fallo fue despues, al terminar de pintar
+                self.trabajo = None
+                self._fallo(str(ex))
+                self._liberar()
+
+        def _arrancar_vista(self, op, con_render, texto, funcion=None):
             self.registro.clear()
             self._en_espera = False                      # (1.6.0) ya dio la orden: se acaba la sala de espera
             self.sala.poner([])
@@ -3974,6 +3991,13 @@ def app():
             self.trabajo.fallo.connect(self._fallo)
             self.trabajo.finished.connect(self._liberar)
             self.trabajo.start()
+            # (1.8.0, auditoria) «Listo a las» solo se recalculaba cuando llegaba avance: mientras DaVinci abria o
+            # renderizaba el de 30 min se quedaba viejo (decia 14:05 a las 14:20). Cada 20 s se vuelve a calcular
+            if getattr(self, "_reloj_eta", None) is None:
+                self._reloj_eta = QTimer(self)
+                self._reloj_eta.setInterval(20000)
+                self._reloj_eta.timeout.connect(lambda: self._poner_eta(self._prog))
+            self._reloj_eta.start()
 
         # (texto del registro, % , texto, fase que empieza)
         LINEAS = [("Analizando material", 3, "Revisando fotos y videos", "timeline"),
@@ -4028,6 +4052,9 @@ def app():
             else:
                 w = min(1.0, max(0.0, (f - 0.06) / 0.5))            # cuanto mas avanza, mas manda lo real
                 resto = (1 - w) * resto_previo + w * resto_real
+            if resto < 60:                               # (1.8.0) nunca una hora que ya paso
+                self.versiones.poner_eta("Terminando…")
+                return
             fin = time.strftime("%H:%M", time.localtime(time.time() + resto))
             self.versiones.poner_eta("Listo a las <b>%s</b>  ·  <span style='color:%s;'>faltan %s</span>" % (
                 fin, TENUE, motor.texto_tiempo(resto).split(" (")[0].replace("unos ", "")))
@@ -4110,6 +4137,9 @@ def app():
                 i, n = int(a.group(1)), int(a.group(2))
                 self._poner_prog(0.03 + 0.08 * i / float(n))
                 self._sub("Analizando %d de %d · %s" % (i, n, a.group(3)[:40]))
+                return
+            if m.startswith("Esperando a"):              # (1.8.0) DaVinci tarda en abrir / una copia sigue: que se vea
+                self._sub(m)
                 return
             for clave, pct, texto, fase in self.LINEAS:
                 if clave in m:
@@ -4389,6 +4419,8 @@ def app():
 
         def _liberar(self):
             self.trabajo = None
+            if getattr(self, "_reloj_eta", None) is not None:
+                self._reloj_eta.stop()
             self._chips_editable()
             self._cargar_organizacion()
             for b in self._pastillas(True):
@@ -4538,9 +4570,24 @@ def app():
                 self._maximizar()
 
         def closeEvent(self, e):
+            vivo = self.trabajo is not None and self.trabajo.isRunning()
+            if vivo and getattr(self, "_cerrando", False):
+                e.ignore()                               # ya se esta deteniendo: se cierra solo al terminar
+                return
             if self.trabajo is not None and not self._si(
                     "Si cierras ahora, el armado se detiene donde va.", "Cerrar", "Seguir trabajando", "aviso",
                     titulo="Todavía está trabajando"):
+                e.ignore()
+                return
+            if vivo:
+                # (1.8.0, auditoria) antes se cerraba con el hilo corriendo: el programa se caia («QThread destroyed»)
+                # y DaVinci seguia renderizando. Ahora se pide parar (Cancelar detiene el render en DaVinci), se
+                # espera al hilo y se cierra; si en 30 s no paro, se guarda y se sale igual
+                self._cerrando = True
+                rutas.PARAR.set()
+                self._sub("Cerrando: detengo DaVinci…")
+                self.trabajo.finished.connect(self.close)
+                QTimer.singleShot(30000, self._cerrar_ya)
                 e.ignore()
                 return
             try:
@@ -4556,6 +4603,17 @@ def app():
             except Exception:
                 pass
             e.accept()
+
+        def _cerrar_ya(self):
+            """El trabajo no se detuvo en 30 s (DaVinci no contesta): se guarda lo de la ventana y se sale."""
+            if self.trabajo is None or not self.trabajo.isRunning():
+                return
+            registro.info("Cierre: el trabajo no se detuvo en 30 s; salgo igual.")
+            try:
+                self._guardar()
+            except Exception:
+                pass
+            os._exit(0)
 
     if rutas.ES_WIN:
         try:

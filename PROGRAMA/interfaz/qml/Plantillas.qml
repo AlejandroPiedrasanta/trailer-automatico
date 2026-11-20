@@ -92,7 +92,7 @@ Item {
                 spacing: px(22)
                 Image { anchors.horizontalCenter: parent.horizontalCenter; width: px(100); height: width
                     source: "image://icono/pelicula/9DB0B6/" + width; sourceSize: Qt.size(width * 4, height * 4)
-                    SequentialAnimation on y { loops: Animation.Infinite; running: (parent.visible) && (typeof quieto === "undefined" || !quieto)
+                    SequentialAnimation on y { loops: Animation.Infinite; running: (parent && parent.visible) && (typeof quieto === "undefined" || !quieto)
                         NumberAnimation { to: -px(8); duration: 1400; easing.type: Easing.InOutSine }
                         NumberAnimation { to: 0; duration: 1400; easing.type: Easing.InOutSine } } }
                 Text { anchors.horizontalCenter: parent.horizontalCenter; color: "#F1F5F6"
@@ -251,6 +251,7 @@ Item {
         HoverHandler { id: hvP }
 
         Item {
+            id: incl
             anchors.fill: parent
             // (1.7.8) se inclina hacia el raton (perspectiva) y vuelve suave al salir
             property real _ry: hvP.hovered && !_quieto ? (hvP.point.position.x / Math.max(1, width) - 0.5) * -14 : 0
@@ -259,8 +260,9 @@ Item {
             Behavior on _ry { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
             Behavior on _rx { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
             transform: [
-                Rotation { origin.x: width / 2; origin.y: height / 2; axis { x: 0; y: 1; z: 0 } angle: _ry },
-                Rotation { origin.x: width / 2; origin.y: height / 2; axis { x: 1; y: 0; z: 0 } angle: _rx }
+                // (1.8.0) con el id: dentro de Rotation `_ry` a secas no existe (no se inclinaba nunca)
+                Rotation { origin.x: incl.width / 2; origin.y: incl.height / 2; axis { x: 0; y: 1; z: 0 } angle: incl._ry },
+                Rotation { origin.x: incl.width / 2; origin.y: incl.height / 2; axis { x: 1; y: 0; z: 0 } angle: incl._rx }
             ]
             y: zona.containsMouse && !c.centro ? -px(8) : 0
             Behavior on y { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }

@@ -203,8 +203,9 @@ Item {
             Behavior on _ry { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
             Behavior on _rx { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
             transform: [
-                Rotation { origin.x: width / 2; origin.y: height / 2; axis { x: 0; y: 1; z: 0 } angle: _ry },
-                Rotation { origin.x: width / 2; origin.y: height / 2; axis { x: 1; y: 0; z: 0 } angle: _rx }
+                // (1.8.0) con el id: dentro de Rotation `_ry` a secas no existe (ReferenceError: no se inclinaba nunca)
+                Rotation { origin.x: cuerpo.width / 2; origin.y: cuerpo.height / 2; axis { x: 0; y: 1; z: 0 } angle: cuerpo._ry },
+                Rotation { origin.x: cuerpo.width / 2; origin.y: cuerpo.height / 2; axis { x: 1; y: 0; z: 0 } angle: cuerpo._rx }
             ]
             y: zona.containsMouse && !p.elegida ? -px(8) : 0
             Behavior on y { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }

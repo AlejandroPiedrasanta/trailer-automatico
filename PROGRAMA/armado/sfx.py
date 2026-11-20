@@ -48,9 +48,21 @@ def _frames(clip, fps):
         return 10 * fps
 
 
-def sonorizar(tl, mp, buscar, zonas, fps, cortes, log=print):
+def _sin_voz(ini, dur, evitar, S):
+    """(1.8.0, auditoria) El SFX no tapa la voz original (pastor, brindis): si la voz empieza despues de 2 s del SFX,
+    este se acorta hasta ahi; si ya esta hablando, no va. evitar: [(ini_f, fin_f)]. Devuelve la duracion (0 = no va)."""
+    for a, b in evitar or ():
+        if a < ini + dur and ini < b:
+            if a - ini >= 2 * S:
+                dur = int(a - ini - 0.3 * S)
+            else:
+                return 0
+    return dur
+
+
+def sonorizar(tl, mp, buscar, zonas, fps, cortes, log=print, evitar=()):
     """zonas: [(nombre, inicio_f, fin_f)] relativos al inicio de la timeline; cortes: inicios de plano.
-    buscar(clave) -> MediaPoolItem. Devuelve cuantos SFX se colocaron."""
+    buscar(clave) -> MediaPoolItem. evitar: tramos de voz original [(ini_f, fin_f)]. Devuelve los SFX colocados."""
     st = tl.GetStartFrame()
     S = fps
     total = max(z1 for _, _, z1 in zonas)
@@ -89,7 +101,7 @@ def sonorizar(tl, mp, buscar, zonas, fps, cortes, log=print):
         if c is None:
             return False
         ini = max(0, int(ini))
-        dur = int(min(dur, _frames(c, fps), total - ini))
+        dur = _sin_voz(ini, int(min(dur, _frames(c, fps), total - ini)), evitar, S)
         if dur < S:
             return False
         for pk in (pista_k, alterna):
@@ -148,7 +160,7 @@ EMOCION_DUR_S = 4.0
 EMOCION_MAX = 12
 
 
-def emocion(tl, mp, buscar, puestos_plan, fps, propios=None, log=print):
+def emocion(tl, mp, buscar, puestos_plan, fps, propios=None, log=print, evitar=()):
     """puestos_plan: [(pieza del plan, clip de la linea)] (los mismos de ambiente.poner). Pone el SFX de cada momento
     clave que la IA vio EN ESE PLANO (it['ia']['instantes']: [t, [etiquetas], ...]), en el corte, sin pisar otros SFX
     ni la voz original (pasajes de voz de la toma). Devuelve [(sfx, segundo)]."""
@@ -193,7 +205,7 @@ def emocion(tl, mp, buscar, puestos_plan, fps, propios=None, log=print):
         c = (propios or {}).get(nombre) if nombre.startswith("XV_") else buscar(nombre)
         if c is None:
             continue
-        dur = int(min(EMOCION_DUR_S * S, _frames(c, fps), total_s * S - f))
+        dur = _sin_voz(f, int(min(EMOCION_DUR_S * S, _frames(c, fps), total_s * S - f)), evitar, S)
         if dur < S:
             continue
         for t in pistas:

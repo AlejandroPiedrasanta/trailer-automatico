@@ -653,6 +653,26 @@ def _es_linea(clip, lineas):
         return True                     # en la duda, no se borra
 
 
+def _exportar_drp(pm, nombre, drp):
+    """(1.8.0, auditoria) Exporta a un archivo aparte y solo si salio bien reemplaza el .drp: antes se borraba el viejo
+    ANTES de exportar y, si DaVinci fallaba, el evento se quedaba sin su plantilla editable."""
+    tmp = drp[:-4] + " (nuevo).drp"
+    try:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        if pm.ExportProject(nombre, tmp, True) and os.path.exists(tmp) and os.path.getsize(tmp) > 0:
+            os.replace(tmp, drp)
+            return True
+    except OSError:
+        pass
+    try:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    except OSError:
+        pass
+    return False
+
+
 def _recortar_base(pm, tmp, carpeta, lineas, log):
     """Una copia del proyecto con SOLO las lineas del evento y sus clips, exportada a otro .drp: cada plantilla por
     video se importa de esta (mucho mas chica) en vez del proyecto entero. Devuelve su ruta, o None."""
@@ -690,6 +710,8 @@ def _recortar_base(pm, tmp, carpeta, lineas, log):
             log("Copia solo con este evento: %d lineas, %d clips fuera, %.1f MB en %.0f s." % (
                 len(quedan), len(sobran), os.path.getsize(salida) / 1e6, time.time() - t0))
             return salida
+    except vigia_davinci.Trabado:
+        raise
     except Exception as ex:
         log("Aviso: no se pudo hacer la copia chica del evento (%s): uso el proyecto entero." % ex)
     return None
@@ -706,9 +728,12 @@ def proyecto_por_video(resolve, evento, lineas, log=print, desde=None):
         lineas = [l for l in lineas if l not in hechas]
         if not lineas:
             return [os.path.join(destino0, rutas.nombre_video(l) + ".drp") for l in hechas]
+    import vigia_davinci
     hechos = []
     try:
         hechos, lineas = _por_drt(resolve, evento, lineas, log)
+    except vigia_davinci.Trabado:
+        raise                       # (1.8.0) DaVinci colgado: que lo vea el motor, no «sigo por el de siempre»
     except Exception as ex:
         log("Aviso: plantillas por el camino rápido: %s; sigo por el de siempre." % ex)
     return hechos + (_proyecto_por_video(resolve, evento, lineas, log) if lineas else [])
@@ -781,15 +806,15 @@ def _por_drt(resolve, evento, lineas, log=print):
                         pass
                     pm.SaveProject()
                     drp = os.path.join(destino, video + ".drp")
-                    if os.path.exists(drp):
-                        os.remove(drp)
-                    if pm.ExportProject(nombre, drp, True):
+                    if _exportar_drp(pm, nombre, drp):
                         hechos.append(drp)
                         log("Plantilla de %s: %s en %.0f s (%.1f MB)." % (video, os.path.basename(drp), time.time() - t0,
                                                                        os.path.getsize(drp) / 1e6))
                     else:
                         fallan.append(linea)
                     pm.CloseProject(p)
+            except vigia_davinci.Trabado:
+                raise
             except Exception as ex:
                 log("Aviso: la plantilla rápida de %s falló (%s): va por el camino de siempre." % (video, ex))
                 fallan.append(linea)
@@ -902,9 +927,7 @@ def _proyecto_por_video(resolve, evento, lineas, log=print):
                 pm.SaveProject()
                 marca("guardar")
                 drp = os.path.join(destino, video + ".drp")
-                if os.path.exists(drp):
-                    os.remove(drp)
-                if pm.ExportProject(nombre, drp, True):
+                if _exportar_drp(pm, nombre, drp):
                     marca("exportar")
                     hechos.append(drp)
                     log("Plantilla de %s: %s (solo esa linea y sus %d clips) en %.0f s (%s)." % (

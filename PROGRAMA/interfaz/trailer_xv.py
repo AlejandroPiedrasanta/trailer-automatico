@@ -828,9 +828,55 @@ def app():
         VIDEO = False
         TITILAN = 26
 
+        _nebulosa = None
+
+        def poner_nebulosa(self):
+            """(1.7.7, la persona eligio «Nebulosa esmeralda») El fondo vivo: qml/Nebulosa.qml (un shader en la tarjeta de
+            video) DEBAJO de todo. No repinta la ventana de widgets (lo de encima no se vuelve a pintar): solo la tarjeta
+            mezcla la imagen. Va un rato despues de abrir. Si Qt Quick o el shader fallan, queda la imagen quieta.
+            TRAILER_NEBULOSA=0 la apaga."""
+            if self._nebulosa is not None or os.environ.get("TRAILER_NEBULOSA") == "0":
+                return
+            try:
+                from PySide6.QtQuickWidgets import QQuickWidget
+                from PySide6.QtCore import QUrl
+                import barra_qml
+                q = QQuickWidget(self)
+                q.setResizeMode(QQuickWidget.SizeRootObjectToView)
+                q.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+                q.setFocusPolicy(Qt.NoFocus)
+                q.setSource(QUrl.fromLocalFile(os.path.join(barra_qml.CARPETA, "Nebulosa.qml")))
+                if q.status() == QQuickWidget.Error or q.rootObject() is None:
+                    raise RuntimeError("; ".join(e.toString() for e in q.errors()) or "sin raiz")
+                q.setGeometry(self.rect())
+                q.lower()
+                q.show()
+                self._nebulosa = q
+                self.TITILAN = 0                    # las estrellas ya titilan en el shader
+                self._cuadros_nebulosa = None
+                self.update()
+            except Exception as ex:
+                registro.info("La nebulosa no cargó (queda el cielo quieto): %s" % ex)
+                self._nebulosa = False
+
+        def _ritmo_nebulosa(self, ver):
+            """30 cuadros con la ventana en uso, 10 sin foco (ahi suele estar DaVinci usando la tarjeta), 0 minimizada."""
+            if not self._nebulosa:
+                return
+            c = 0 if not ver else (30 if self.window().isActiveWindow() else 10)
+            if c != getattr(self, "_cuadros_nebulosa", None):
+                self._cuadros_nebulosa = c
+                try:
+                    self._nebulosa.rootObject().setProperty("cuadros", c)
+                except Exception:
+                    pass
+
         def _tic(self):
             self.t += self.PASO_MS / 1000.0
             ver = self.isVisible() and not self.window().isMinimized()      # minimizada no se pinta nada
+            self._ritmo_nebulosa(ver)
+            if self._nebulosa:                  # la nebulosa lo hace todo en la tarjeta: aqui no se repinta nada
+                return
             if not self.VIDEO:
                 if ver and self.window().isActiveWindow():
                     from PySide6.QtGui import QRegion
@@ -889,6 +935,8 @@ def app():
 
         def resizeEvent(self, e):
             super().resizeEvent(e)
+            if self._nebulosa:
+                self._nebulosa.setGeometry(self.rect())
             if getattr(self, "al_cambiar", None):
                 self.al_cambiar()
             if self._peli is not None:
@@ -1148,6 +1196,7 @@ def app():
             _tiempo("  final")
             QTimer.singleShot(300, self._arranque)
             QTimer.singleShot(700, self._barra_a_qml)    # (1.7) con la ventana ya a la vista
+            QTimer.singleShot(1300, self.cielo.poner_nebulosa)    # (1.7.7) el fondo vivo, despues de la barra
             QTimer.singleShot(6000, self._mudar_proxies)  # (19-nov) los proxies de antes, a Videos
 
         # ============================================================== paginas

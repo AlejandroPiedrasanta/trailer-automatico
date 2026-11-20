@@ -80,6 +80,11 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
                if p.GetTimelineByIndex(i).GetName().startswith("TRAILER XV")]
         if tpl:                                   # el visor queda en la plantilla, no en el evento
             p.SetCurrentTimeline(tpl[0])
+        try:                                      # (19-nov) los proxies se hacen mientras DaVinci renderiza
+            import editable
+            editable.adelantar(p, log)
+        except Exception as ex:
+            log("Aviso: los proxies se haran despues del render (%s)" % ex)
         r.OpenPage("deliver")
         ids = [j["JobId"] for j in jobs]
         log("Renderizando %d timelines: %s" % (len(ids), ", ".join(j["TimelineName"] for j in jobs)))

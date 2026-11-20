@@ -402,6 +402,64 @@ def proxies_y_cache(project, log=print):
         log("Proxies apagados en Ajustes: solo la caché de render.")
         cache(project, log)
         return 0
+    esperar_adelanto(log)                    # los que se hicieron mientras DaVinci renderizaba
+    videos = _videos_para_proxy(project)
+    return _hacer_y_enlazar(project, videos, log)
+
+
+# (19-nov, MEDIDO: proxies 5,7 min DESPUES del render, con la tarjeta del render al 36 %) Se hacen MIENTRAS DaVinci
+# renderiza: antes del render se apunta que videos van (con su codigo de tiempo y su FPS) y ffmpeg los hace en segundo
+# plano, de a PARALELO_RENDER (menos que PARALELO: la tarjeta tambien comprime el render). Al terminar, proxies_y_cache
+# espera a que acaben y solo enlaza.
+PARALELO_RENDER = 2
+_ADELANTO = {}
+
+
+def adelantar(project, log=print):
+    """Lanza en segundo plano los proxies que faltan de las lineas del proyecto. Llamar con DaVinci libre (lee el media
+    pool); lo que hace despues es solo ffmpeg. No devuelve nada; proxies_y_cache espera."""
+    if not rutas.proxies_activos() or os.environ.get("TRAILER_PROXIES_EN_RENDER") == "0":
+        return
+    try:
+        videos = _videos_para_proxy(project)
+        faltan = {}
+        for o, cs in videos.items():
+            if os.path.exists(ruta_proxy(o)):
+                continue
+            try:
+                faltan[o] = (cs[0].GetClipProperty("Start TC") or None, cs[0].GetClipProperty("FPS") or None)
+            except Exception:
+                faltan[o] = (None, None)
+    except Exception as ex:
+        log("Aviso: los proxies se haran despues del render (%s)" % ex)
+        return
+    if not faltan:
+        return
+    cod = _codificador()
+    ex = ThreadPoolExecutor(PARALELO_RENDER, thread_name_prefix="proxies")
+    t0 = time.time()
+    futuros = [ex.submit(hacer_proxy, o, log, cod, tc, fps) for o, (tc, fps) in faltan.items()]
+    ex.shutdown(wait=False)
+    _ADELANTO["trabajo"] = (futuros, t0)
+    log("Proxies en segundo plano mientras se renderiza: %d videos." % len(faltan))
+
+
+def esperar_adelanto(log=print):
+    pend = _ADELANTO.pop("trabajo", None)
+    if not pend:
+        return
+    futuros, t0 = pend
+    hechos = 0
+    for f in futuros:
+        try:
+            hechos += bool(f.result())
+        except Exception:
+            pass
+    log("Proxies hechos durante el render: %d en %.0f s." % (hechos, time.time() - t0))
+
+
+def _videos_para_proxy(project):
+    """{ruta: [clips]} de los videos que llevan proxy: los que estan en alguna linea de evento (o ya lo tienen)."""
     mp = project.GetMediaPool()
     videos = {}
     for c in _clips(mp.GetRootFolder()):
@@ -433,6 +491,10 @@ def proxies_y_cache(project, log=print):
                       if os.path.normcase(r) in usados or os.path.exists(ruta_proxy(r))}
     except Exception:
         pass
+    return videos
+
+
+def _hacer_y_enlazar(project, videos, log):
     if videos:
         cod = _codificador()
         t0 = time.time()

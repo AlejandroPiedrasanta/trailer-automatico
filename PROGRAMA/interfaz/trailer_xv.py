@@ -1456,6 +1456,9 @@ def app():
                         ("liberar", "Cerrar programas pesados al armar", self.ch_liberar),
                         ("proxies", "Proxies para editar", self.ch_proxies))],
                     "proxies_ruta": rutas.carpeta_proxies() if self.ch_proxies.isChecked() else "",
+                    # (19-nov) el ruido de DaVinci (temporal, el que mas limpia), a la vista: antes solo en el menu
+                    "ruido_dv": {"texto": self.l_ruido_dv.text(), "hay": not self.b_ruido_quitar.isHidden(),
+                                 "ocupado": not self.b_ruido_dv.isEnabled()},
                     "voz": [{"clave": k, "texto": b.text(), "si": b.isChecked()} for k, b in self.ch_voz.items()],
                     "ruido": self.s_ruido.value(),
                     "ia": {"texto": ia, "ok": "Lista" in ia, "boton": "" if self.b_ia.isHidden() else self.b_ia.text()},
@@ -1473,6 +1476,8 @@ def app():
                 rutas.abrir(rutas.carpeta_proxies())
             return {"interruptor": lambda v: ch[v["clave"]].setChecked(bool(v["si"])),
                     "abrir_proxies": abrir_proxies,
+                    "ruido_dv_guardar": lambda _v: self._guardar_ruido_dv(),
+                    "ruido_dv_quitar": lambda _v: self._quitar_ruido_dv(),
                     "voz": lambda v: self.ch_voz[v["clave"]].setChecked(bool(v["si"])),
                     "ruido": lambda v: self.s_ruido.setValue(int(v)),
                     "instalar_ia": lambda _v: self._instalar_ia(),

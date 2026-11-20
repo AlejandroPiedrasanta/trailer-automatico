@@ -36,8 +36,11 @@ ANCHO = 384                   # px de ancho de la imagen con que se mide (alto p
 TEJAS = (4, 3)                # columnas x filas de tejas para la correlacion de fase
 PICO_MIN = 0.06               # una teja sin un pico claro (pared lisa, cielo) no vota
 MARGEN_S = 0.5                # se mide un poco antes y despues del plano: el suavizado no se tuerce en los bordes
-SUAVES_S = (1.0, 0.6, 0.35)   # suavizado (s) que se prueba, de mas firme a mas suelto, hasta que el zoom alcance
-ZOOM_MAX = 1.08               # nunca se acerca mas que esto (con 4K en una linea HD no se nota)
+# (19-nov, la persona: «pule más la estabilidad») primero 1,6 s (casi de tripode); si el zoom no alcanza, mas suelto
+SUAVES_S = (1.6, 1.0, 0.6, 0.35)   # suavizado (s) que se prueba, de mas firme a mas suelto, hasta que el zoom alcance
+ZOOM_MAX = 1.08               # nunca se acerca mas que esto en tomas HD (se notaria)
+ZOOM_MAX_4K = 1.18            # (19-nov) en tomas de 4K o mas la linea es HD: sobra resolucion, acercar 18 % no se nota
+ANCHO_4K = 3000               # px del lado mayor desde el que una toma cuenta como 4K
 GIRO_MAX = 3.0                # grados de giro que se corrigen como mucho
 
 
@@ -275,6 +278,22 @@ def _suavizar(x, sigma):
     return np.convolve(ext, k, mode="same")[r:r + n]
 
 
+_ANCHOS = {}
+
+
+def zoom_max(ruta):
+    """Lo maximo que se puede acercar esa toma: ZOOM_MAX_4K si es de 4K o mas (la linea es HD), si no ZOOM_MAX."""
+    if ruta not in _ANCHOS:
+        try:
+            r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+                                "-of", "csv=p=0", ruta], capture_output=True, text=True, timeout=30,
+                               creationflags=rutas.SIN_VENTANA)
+            _ANCHOS[ruta] = max(int(x) for x in r.stdout.strip().split(",")[:2])
+        except Exception:
+            _ANCHOS[ruta] = 0
+    return ZOOM_MAX_4K if _ANCHOS[ruta] >= ANCHO_4K else ZOOM_MAX
+
+
 def zoom_para(cx, cy, ca, w, h):
     """Acercamiento que hace falta para que, movida (cx, cy px) y girada (ca rad), la imagen siga cubriendo el cuadro."""
     z = 1.0
@@ -295,7 +314,7 @@ def temblor(mov, fps):
     return float(np.mean(np.hypot(np.diff(x - _suavizar(x, s)), np.diff(y - _suavizar(y, s)))))
 
 
-VERSION = 3                  # (19-nov: 3, siguiendo puntos; 2, los girados no se median) sube si cambia la cuenta: lo guardado deja de valer
+VERSION = 4                  # (19-nov: 4, mas firme y zoom 1,18 en 4K; 3, siguiendo puntos; 2, los girados no se median) sube si cambia la cuenta: lo guardado deja de valer
 _guardado = {"datos": None, "sucio": False}
 _candado = __import__("threading").Lock()
 
@@ -365,6 +384,7 @@ def _calcular(ruta, ini, dur, dur_video=None):
     if cuadros is None or len(cuadros) < 6:
         return None
     n, h, w = cuadros.shape
+    tope = zoom_max(ruta)
     mov = movimiento(cuadros)
     X = np.concatenate([[0.0], np.cumsum(mov[:, 0])])
     Y = np.concatenate([[0.0], np.cumsum(mov[:, 1])])
@@ -382,13 +402,13 @@ def _calcular(ruta, ini, dur, dur_video=None):
         tramo = slice(k0, k1)
         z = zoom_para(cx[tramo], cy[tramo], ca[tramo], w, h)
         mejor = (z, cx, cy, ca)
-        if z <= ZOOM_MAX:
+        if z <= tope:
             break
     z, cx, cy, ca = mejor
-    if z > ZOOM_MAX:                       # ni siguiendo mas a la camara alcanza: se corrige solo una parte
-        f = (ZOOM_MAX - 1.0) / (z - 1.0)
+    if z > tope:                           # ni siguiendo mas a la camara alcanza: se corrige solo una parte
+        f = (tope - 1.0) / (z - 1.0)
         cx, cy, ca = cx * f, cy * f, ca * f
-        z = ZOOM_MAX
+        z = tope
     tramo = slice(k0, k1)
     corr_mov = np.stack([np.diff(X + cx), np.diff(Y + cy), np.diff(A + ca)], axis=1)
     return {"t0": a + k0 / fps, "fps": fps,

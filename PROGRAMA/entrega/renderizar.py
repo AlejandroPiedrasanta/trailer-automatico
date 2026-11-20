@@ -217,9 +217,24 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
         # (1.5.7) la IA local mira los videos finales. (18-nov, medido en la boda: 4 min 13 s, y despues 4 min 56 s de
         # plantillas .drp, una detras de otra) Ahora va EN SEGUNDO PLANO: la IA usa la GPU y las plantillas DaVinci y
         # el disco; sus marcadores rojos los pone poner_revision_ia() cuando termina (motor lo llama al final).
+        # (19-nov) lo que la IA ya vio bien al analizar no se vuelve a preguntar (se lee de la linea aqui, con DaVinci)
+        vistos = {}
+        try:
+            import revision_ia
+            ini = {j["TimelineName"]: int(j.get("MarkIn") or 0) for j in jobs}
+            por_nombre = dict(hechos)
+            with motor.CANDADO:
+                pv = motor.conectar_resolve(log, quedarse=True).GetProjectManager().GetCurrentProject()
+                for i in range(1, pv.GetTimelineCount() + 1):
+                    tl = pv.GetTimelineByIndex(i)
+                    if tl.GetName() in por_nombre:
+                        vistos[por_nombre[tl.GetName()]] = revision_ia.tramos_vistos(tl, ini.get(tl.GetName()) or None)
+        except Exception as ex:
+            log("Aviso: la revision con IA mirara todo (%s)" % ex)
+
         def revisar_ia(lista=list(hechos)):
             import revision_ia
-            malos = revision_ia.revisar_varios([r for _, r in lista], log)
+            malos = revision_ia.revisar_varios([r for _, r in lista], log, vistos)
             return {nombre: malos[ruta] for nombre, ruta in lista if malos.get(ruta)}
         from concurrent.futures import ThreadPoolExecutor as _TP
         _ia = _TP(1, thread_name_prefix="revision_ia")

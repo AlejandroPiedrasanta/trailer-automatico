@@ -44,13 +44,58 @@ def _duracion(ruta):
         return 0.0
 
 
+def tramos_vistos(tl, desde_frame=None):
+    """[(ini_s, fin_s, pista, ya_visto)] de cada clip de material de la linea, en segundos del video final.
+    (19-nov) ya_visto: la IA ya miro esa toma cuadro por cuadro al analizar (vision_ia.instantes) y TODOS sus cuadros
+    en la parte que usa el clip (con margen: la camara lenta usa menos toma) salieron buenos. Ahi la revision final no
+    vuelve a preguntar: es la misma imagen con color y estabilizador."""
+    import persona_delante as pdl
+    try:
+        with open(os.path.join(rutas.ANALISIS, "material.json"), encoding="utf-8") as f:
+            items = {os.path.normcase(i["ruta"]): i for i in json.load(f).get("items") or [] if i.get("ruta")}
+    except Exception:
+        return []
+    fps = float(tl.GetSetting("timelineFrameRate") or 24)
+    desde = tl.GetStartFrame() if desde_frame is None else desde_frame
+    out = []
+    for v in range(1, tl.GetTrackCount("video") + 1):
+        for it in tl.GetItemListInTrack("video", v) or []:
+            if not pdl._es_material(it):
+                continue
+            ok = False
+            try:
+                m = it.GetMediaPoolItem()
+                d = items.get(os.path.normcase(m.GetClipProperty("File Path") or ""))
+                inst = [x for x in ((d or {}).get("ia") or {}).get("instantes") or [] if len(x) > 2]
+                if inst:
+                    fps_m = float(m.GetClipProperty("FPS") or fps) or fps
+                    lo = it.GetLeftOffset() / fps_m
+                    dur = (it.GetEnd() - it.GetStart()) / fps
+                    rango = [x for x in inst if lo - 1.5 <= x[0] <= lo + 2 * dur + 1.5]
+                    ok = bool(rango) and all(x[2] is True for x in rango)
+            except Exception:
+                ok = False
+            out.append(((it.GetStart() - desde) / fps, (it.GetEnd() - desde) / fps, v, ok))
+    return out
+
+
+def _visto(tramos, t):
+    """¿Lo que se ve en el segundo t (el clip de material de la pista mas alta) ya lo reviso la IA y estaba bien?"""
+    cerca = [x for x in tramos if x[0] - 0.25 <= t < x[1] + 0.25]
+    if not cerca:
+        return False
+    arriba = max(cerca, key=lambda x: x[2])
+    return arriba[3] and arriba[0] + 0.25 <= t < arriba[1] - 0.25          # lejos de los cortes (fundidos)
+
+
 def revisar(ruta, log=print):
     """[segundos] del video final donde la IA local ve algo que no deberia ir; None si no hay IA local."""
     return revisar_varios([ruta], log).get(ruta)
 
 
-def revisar_varios(rutas_, log=print):
+def revisar_varios(rutas_, log=print, vistos=None):
     """{ruta: [segundos]} de varios videos finales con UNA sola cola de preguntas a la IA (None si no hay IA local).
+    vistos: {ruta: tramos_vistos(...)}; esos cuadros no se preguntan otra vez.
     (18-nov, medido en la boda: 4 videos uno tras otro = 34 + 160 + 15 + 50 s) Por separado, al final de cada video
     quedaban hilos ociosos y el de 1 min no llenaba las PARALELO preguntas a la vez del servidor propio."""
     try:
@@ -63,16 +108,20 @@ def revisar_varios(rutas_, log=print):
     import time
     t0 = time.time()
     maximo = CUADROS_MAX if vision_ia.en_gpu() else CUADROS_SIN_GPU     # DaVinci llenando la GPU: una muestra
-    pedidos, cuantos = [], {}
+    pedidos, cuantos, saltados = [], {}, 0
     for ruta in rutas_:
         dur = _duracion(ruta)
         paso = max(PASO_MIN_S, dur / float(maximo))
         t = max(SIN_REVISAR_INICIO_S, paso / 2.0)          # la entrada (fundido desde negro) y la tarjeta final no
         n = 0
+        tramos = (vistos or {}).get(ruta) or []
         while dur > 1 and t < dur - SIN_REVISAR_FINAL_S:
-            pedidos.append((ruta, round(t, 1)))
+            if tramos and _visto(tramos, t):
+                saltados += 1
+            else:
+                pedidos.append((ruta, round(t, 1)))
+                n += 1
             t += paso
-            n += 1
         cuantos[ruta] = n
 
     def uno(par):                       # (16-nov) la misma regla que al analizar: techo, de cabeza, gente sin cara...
@@ -100,9 +149,10 @@ def revisar_varios(rutas_, log=print):
             log("Revision con IA de %s: nada fuera de lugar (%d cuadros)." % (os.path.basename(ruta), cuantos[ruta]))
         out[ruta] = [t for t, _ in m]
     s = time.time() - t0
-    log("Revision con IA: %d cuadros de %d videos en %.0f s (%.2f s por cuadro, %d a la vez%s)." % (
+    log("Revision con IA: %d cuadros de %d videos en %.0f s (%.2f s por cuadro, %d a la vez%s%s)." % (
         len(pedidos), len(rutas_), s, s / max(1, len(pedidos)), vision_ia.PARALELO,
-        "" if maximo == CUADROS_MAX else ", modelo fuera de la GPU: muestra chica"))
+        "" if maximo == CUADROS_MAX else ", modelo fuera de la GPU: muestra chica",
+        ", %d ya vistos al analizar" % saltados if saltados else ""))
     return out
 
 

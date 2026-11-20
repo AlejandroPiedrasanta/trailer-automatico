@@ -38,7 +38,11 @@ ETIQUETA_DAVINCI = "RUIDO DE DAVINCI"
 # medida de ruido_tomas x1000 -> de N1 a N5. Con ruido puesto a proposito: 0.8/255 da 5 a 6; 1.5/255, 9 a 11;
 # 3.1/255, 16 a 20; 5.6/255, 28 a 36. Una toma limpia da de 2.5 a 3.6.
 UMBRALES = (5.0, 9.0, 16.0, 28.0)
-LUMA_MEDIOS = 0.40                          # tope de la limpieza de luz fuera de las sombras, en cualquier nivel
+LUMA_MEDIOS = 0.32                          # tope de la limpieza de luz fuera de las sombras (19-nov: 0,40 -> 0,32, mas textura de piel y pelo; con la nitidez, mismo grano)
+# (19-nov, la persona: «un poco de nitidez») realce de bordes por nivel: (fuerza, umbral del ruido que queda). Mas en las
+# tomas limpias, casi nada en las ruidosas (ahi realzaria el grano). TOPE: lo maximo que mueve un pixel (sin halos).
+NITIDEZ = {1: (0.55, 0.004), 2: (0.45, 0.005), 3: (0.32, 0.007), 4: (0.20, 0.010), 5: (0.10, 0.014)}
+TOPE_NITIDEZ = 0.035
 NIVEL_SIN_MEDIDA = 2                        # si un video no se pudo medir
 
 
@@ -176,6 +180,9 @@ __CONSTANT__ float FUERZA_CROMA = @CROMA@f;
 __CONSTANT__ int PASO_CROMA = @PASO@;
 __CONSTANT__ float GRUESO_LUMA = @GRUESO@f;
 __CONSTANT__ float LUMA_MEDIOS = @MEDIOS@f;
+__CONSTANT__ float NITIDEZ = @NITIDEZ@f;
+__CONSTANT__ float UMBRAL_NITIDEZ = @UMBRAL@f;
+__CONSTANT__ float TOPE_NITIDEZ = @TOPE@f;
 
 __DEVICE__ float luma(float r, float g, float b)
 {
@@ -190,7 +197,10 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     float y0 = luma(r0, g0, b0);
     float inv_borde = 1.0f / (2.0f * SIGMA_BORDE * SIGMA_BORDE);
     float inv_croma = 1.0f / (8.0f * SIGMA_BORDE * SIGMA_BORDE);
-    float sy = 0.0f, wy = 0.0f, scb = 0.0f, scr = 0.0f, wc = 0.0f, sg = 0.0f, wg = 0.0f;
+    float sy = 0.0f, wy = 0.0f, scb = 0.0f, scr = 0.0f, wc = 0.0f, sg = 0.0f, wg = 0.0f, sd = 0.0f, wd = 0.0f;
+    float sn = 0.0f, wn = 0.0f;
+    // la nitidez se mide a la escala que se VE: una toma 4K va a una linea HD (la mitad), asi que de 2 en 2 pixeles
+    int esc = p_Width > 2600 ? 2 : 1;
     for (int dy = -2; dy <= 2; dy++)
     {
         for (int dx = -2; dx <= 2; dx++)
@@ -202,9 +212,21 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
             y = y < 0 ? 0 : (y >= p_Height ? p_Height - 1 : y);
             float yy = luma(_tex2D(p_TexR, x, y), _tex2D(p_TexG, x, y), _tex2D(p_TexB, x, y));
             float dl = yy - y0;
-            float w = _expf(-d2 / 4.5f) * _expf(-dl * dl * inv_borde);
+            float wd0 = _expf(-d2 / 4.5f);
+            float w = wd0 * _expf(-dl * dl * inv_borde);
             sy += w * yy;
             wy += w;
+            int xn = p_X + dx * esc;             // nitidez: la zona a la escala que se ve, limpia (bilateral) y desenfocada
+            int yn = p_Y + dy * esc;
+            xn = xn < 0 ? 0 : (xn >= p_Width ? p_Width - 1 : xn);
+            yn = yn < 0 ? 0 : (yn >= p_Height ? p_Height - 1 : yn);
+            float yq = luma(_tex2D(p_TexR, xn, yn), _tex2D(p_TexG, xn, yn), _tex2D(p_TexB, xn, yn));
+            float dq = yq - y0;
+            float wq = wd0 * _expf(-dq * dq * inv_borde);
+            sn += wq * yq;
+            wn += wq;
+            sd += wd0 * yq;
+            wd += wd0;
             int xc = p_X + dx * PASO_CROMA;
             int yc = p_Y + dy * PASO_CROMA;
             xc = xc < 0 ? 0 : (xc >= p_Width ? p_Width - 1 : xc);
@@ -233,6 +255,14 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     float yb = sy / wy;
     yb = yb + GRUESO_LUMA * sombra * (sg / wg - yb);
     float yf = y0 + fl * (yb - y0);
+    // (19-nov, la persona: «un poco de nitidez para mejorar la calidad») NITIDEZ de bordes, no de grano: el detalle es
+    // la imagen ya limpia (el bilateral respeta los bordes) menos la desenfocada; lo que no pasa de UMBRAL_NITIDEZ es
+    // ruido que quedo y no se toca; nunca mueve mas de TOPE_NITIDEZ (sin halos) y en las sombras va a la mitad.
+    float det = sn / wn - sd / wd;
+    float mag = _fabs(det);
+    det = det * _saturatef((mag - UMBRAL_NITIDEZ) / UMBRAL_NITIDEZ);
+    float realce = NITIDEZ * (1.0f - 0.5f * sombra) * det;
+    yf = yf + _clampf(realce, -TOPE_NITIDEZ, TOPE_NITIDEZ);
     float cb = (b0 - y0) + FUERZA_CROMA * (scb / wc - (b0 - y0));
     float cr = (r0 - y0) + FUERZA_CROMA * (scr / wc - (r0 - y0));
     float r1 = cr + yf;
@@ -250,8 +280,10 @@ def fuente(n):
         return TRANSPARENTE
     n = max(1, min(5, n))
     borde, luma, croma, paso, grueso = NIVELES[n]
+    nitidez, umbral = NITIDEZ[n]
     cambios = {"@N@": str(n), "@NOMBRE@": NOMBRES[n], "@BORDE@": "%.4f" % borde, "@LUMA@": "%.3f" % luma,
-               "@CROMA@": "%.3f" % croma, "@PASO@": str(int(paso)), "@GRUESO@": "%.3f" % grueso, "@MEDIOS@": "%.3f" % LUMA_MEDIOS}
+               "@CROMA@": "%.3f" % croma, "@PASO@": str(int(paso)), "@GRUESO@": "%.3f" % grueso, "@MEDIOS@": "%.3f" % LUMA_MEDIOS,
+               "@NITIDEZ@": "%.3f" % nitidez, "@UMBRAL@": "%.4f" % umbral, "@TOPE@": "%.3f" % TOPE_NITIDEZ}
     texto = PLANTILLA
     for clave, valor in cambios.items():
         texto = texto.replace(clave, valor)

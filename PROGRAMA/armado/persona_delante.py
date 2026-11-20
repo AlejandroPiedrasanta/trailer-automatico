@@ -143,6 +143,28 @@ def tapado(con_texto, sin_texto, persona, dur_s):
     return sum(partes) / len(partes) if partes else None
 
 
+def tapado_previo(con_texto, sin_texto, dur_s):
+    """Lo mismo que tapado() pero sin el recorte entero: el alfa de la gente sale de recorte.alfas en esos 3 cuadros.
+    (19-nov) El tramo entero se recortaba (~5 cuadros/s) y luego casi siempre se descartaba: asi solo se recorta lo
+    que se va a poner."""
+    import numpy as np
+    from PIL import Image
+    import recorte
+    ts = (dur_s * 0.35, dur_s * 0.5, dur_s * 0.65)
+    alfa = recorte.alfas(sin_texto, ts)
+    partes = []
+    for t in ts:
+        a, b, p = _gris(con_texto, t), _gris(sin_texto, t), alfa.get(t)
+        if a is None or b is None or p is None:
+            continue
+        p = np.asarray(Image.fromarray((p * 255).astype(np.uint8)).resize((480, 270), Image.BILINEAR), np.float32)
+        letras = (a - b) > 55.0
+        if letras.sum() < 150:
+            continue
+        partes.append(float((p[letras] > 128).mean()))
+    return sum(partes) / len(partes) if partes else None
+
+
 MIN_TAPADO = 0.10                            # (17-nov) con casi todo tapado el nombre no se leia: asi no se pone
 # visto con el 57 %: «Adriana Raquel» no se leia; (18-nov, boda) «Cindy & Dereck» con ~40 % tampoco: 30 %
 MAX_TAPADO = float(os.environ.get("TRAILER_TEXTO_DETRAS_MAX", 0.30))
@@ -204,8 +226,17 @@ def aplicar(resolve, project, tl, mp, carpeta_mp, log=print):
             log("  texto detrás: DaVinci no pudo sacar el tramo del título.")
             continue
         salida = os.path.join(carpeta(), "%s_persona_%d.mov" % (limpio, k))
-        r = recorte.recortar(crudo, salida, 0.0, None, log)
-        parte = tapado(con_texto, crudo, salida, (b - a) / float((r or {}).get("fps") or 24)) if r and con_texto else None
+        try:                                                 # (19-nov) se mide ANTES y solo se recorta si se pone
+            fps_l = float(tl.GetSetting("timelineFrameRate") or 24)
+        except Exception:
+            fps_l = 24.0
+        try:
+            parte = tapado_previo(con_texto, crudo, (b - a) / fps_l) if con_texto else None
+        except Exception as e:
+            log("  texto detrás: no se pudo medir (%s)." % e)
+            parte = None
+        r = recorte.recortar(crudo, salida, 0.0, None, log) \
+            if parte is not None and MIN_TAPADO <= parte <= MAX_TAPADO else None
         for sobra in (crudo, con_texto):
             try:
                 os.remove(sobra)

@@ -3098,7 +3098,10 @@ def organizar_pool(mp, root, evento, items):
                     r = c.GetClipProperty("File Path")
                     if r:
                         pool[os.path.normcase(r)] = c
-                        c.SetClipColor(color)
+                        # (19-nov, medido) SetClipColor tarda 65 ms aunque ya tenga ese color (GetClipColor 0,1 ms):
+                        # con 450 clips eran ~30 s en cada armado
+                        if c.GetClipColor() != color:
+                            c.SetClipColor(color)
 
     def vaciar_viejas(f):                            # quita carpetas que quedaron vacias
         for s in f.GetSubFolderList() or []:
@@ -3570,7 +3573,9 @@ def main():
             except Exception:
                 pass
             try:
-                x.SetClipColor(COLORES.get((p.get("momento") or p["item"].get("momento")), "Brown"))
+                col = COLORES.get((p.get("momento") or p["item"].get("momento")), "Brown")
+                if x.GetClipColor() != col:          # (19-nov) 65 ms aunque ya lo tenga
+                    x.SetClipColor(col)
                 if grupo:
                     x.AssignToColorGroup(grupo)
                 if p["tipo"] != "foto":

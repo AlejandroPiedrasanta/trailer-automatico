@@ -110,7 +110,8 @@ def indexar(log=print, intellisearch=True):
                 if media >= BANDERA_MIN and "Green" not in (c.GetFlagList() or []):
                     if c.AddFlag("Green"):
                         n_band += 1
-            if c.SetMetadata(meta):
+            ya = c.GetMetadata() or {}                   # (19-nov) escribir cuesta ~65 ms por clip: solo si cambia
+            if all((ya.get(k) or "") == v for k, v in meta.items()) or c.SetMetadata(meta):
                 n_meta += 1
         log("Metadatos en %d archivos, %d marcadores MEJOR TOMA, %d banderas verdes." % (n_meta, n_marc, n_band))
         guardar(r, p)

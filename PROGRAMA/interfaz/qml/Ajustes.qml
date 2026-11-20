@@ -128,6 +128,21 @@ Item {
                 Text { anchors.verticalCenter: parent.verticalCenter; text: Math.round(desl.visto); color: "#F1F5F6"; width: px(70)
                     horizontalAlignment: Text.AlignRight; font.family: raiz.familia; font.pixelSize: px(34) }
             }
+            // (19-nov) el ruido de DaVinci (temporal: el que mas limpia): se deja a gusto en un clip y se guarda aqui
+            Rectangle { width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.10) }
+            Text {
+                width: parent.width; wrapMode: Text.WordWrap
+                text: ((raiz.d.ruido_dv || {}).texto || "") + ((raiz.d.ruido_dv || {}).hay ? "" :
+                      "  ·  Para limpiar más, deja la reducción de ruido a tu gusto en un clip de DaVinci (página Color) y guárdala:")
+                color: "#9DB0B6"; font.family: raiz.familia; font.pixelSize: px(28)
+            }
+            Row {
+                spacing: px(16)
+                Boton { escala: raiz.escala; familia: raiz.familia; texto: "Guardar el del clip actual"; icono: "onda"
+                    activo: !(raiz.d.ruido_dv || {}).ocupado; onClic: raiz.accion("ruido_dv_guardar", 0) }
+                Boton { visible: (raiz.d.ruido_dv || {}).hay === true; escala: raiz.escala; familia: raiz.familia
+                    texto: "Quitar"; onClic: raiz.accion("ruido_dv_quitar", 0) }
+            }
         }
     }
 

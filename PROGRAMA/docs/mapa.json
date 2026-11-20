@@ -824,6 +824,7 @@
   "notas": [
    "Tomas Rec.709: se tocan poco. Por plano solo empareja (pendiente 0.92-1.12, saturacion 0.90-1.08 hacia la del evento), DCTL casi neutro y look _REC709 a media fuerza (LOOK_REC709). Medir antes de subir margenes.",
    "Ruido: cada video se mide (ruido_tomas) y recibe un nivel N1..N5 (ruido.py, un DCTL por nivel). El mismo proceso para cualquier toma; la fuerza entera solo en las sombras.",
+   "(19-nov) Nitidez en el mismo DCTL (NITIDEZ por nivel, mas en N1-N2 y casi nada en N5): detalle = bilateral - gaussiano medido a escala de pantalla (esc=2 en 4K), con umbral para no realzar grano y tope TOPE_NITIDEZ 0,035 (sin halos); mitad en sombras. LUMA_MEDIOS 0,32 (mas textura de piel). Medido en DaVinci: bordes +15 % con el mismo grano. La NR temporal de DaVinci no se puede por script: se usa el .drx de Ajustes > «Ruido de DaVinci».",
    "Ruido de DaVinci: Ajustes > «Guardar el del clip actual» captura el grado del clip bajo el cursor (datos/ruido_davinci/ruido.drx) y al armar se aplica a todas las tomas con ApplyGradeFromDRX; el DCTL queda transparente (N0).",
    "Saturacion: nunca por encima de la de camara. CDL 0,85-1,00 (solo baja), DCTL 0,93 + calma colores muy vivos y quita color a las luces casi quemadas, y los looks _REC709 no suben la saturacion de ningun color (suavizar_looks.sin_subir_saturacion).",
    "Toma sobreexpuesta: gamma (Power <= 1,22) en vez de bajar la pendiente (que volvia grises las luces); con luces al tope no se aclara."
@@ -1287,6 +1288,7 @@
    "calcular",
    "movimiento",
    "zoom_para",
+   "zoom_max",
    "enfoque_cine"
   ],
   "notas": [
@@ -1306,6 +1308,7 @@
    "La API de Resolve solo devuelve las CARAS de IntelliSearch (metadato People); objetos/escenas no salen al script: eso lo hace la IA local (analisis/vision_ia.py). build_trailers.lo_que_ve premia beso, anillos, votos, primer baile, pastel, brindis (CLAVE_IA) y los novios; textos_extra no pone capitulo de un momento que el evento no tiene.",
    "(1.5.7) _con_limite: AnalyzeForIntellisearch con limite de tiempo (DaVinci se trabo en «Inicializando»). Ajustes > IA local: vision_ia.estado / instalar_modelo (ollama pull) / Descargar Ollama.",
    "(16-nov) Estabilizador PROPIO (estabilizar.py): correlacion de fase en 12 tejas, camino suavizado, zoom minimo (ZOOM_MAX 1,08) y Transform de Fusion «ESTABILIZADOR» con un keyframe por cuadro; reemplaza a TimelineItem.Stabilize(). El script «Stabilize Tracker Transform» es manual y su licencia no deja incluirlo.",
+   "(19-nov) Mas firme: SUAVES_S empieza en 1,6 s y zoom_max(ruta) deja hasta ZOOM_MAX_4K 1,18 en tomas de 4K (ancho >= ANCHO_4K; al bajar a HD no pierde nitidez), 1,08 en HD. Temblor que queda: 17 % -> 4 % (8 tomas reales). VERSION 4 recalcula lo guardado.",
    "(16-nov) Magic Mask: sus puntos solo se ponen a mano (no automatizable). Depth Map de Fusion no se renderiza en un comp de clip (DaVinci 21.2): profundidad.py queda apagado (ENFOQUE_CINE False). Los comps se ponen ANTES del primer render (DaVinci reusa lo renderizado)."
   ]
  },
@@ -1481,7 +1484,8 @@
    "instalar_dctl copiaba tambien .cf/desktop.ini (icono de carpeta) y fallaba con Permission denied: ya los salta.",
    "PROXIES: editable.proxies_y_cache hacia proxy de TODOS los videos del media pool (129, mas de 20 min); (17-nov) solo de los que estan en alguna linea de evento (o ya tienen proxy). Personas por carpeta, final: 313 archivos en 21 min (188 fotos en 34 s; la carpeta de 38 videos largos, 14 min).",
    "IA DE VISTA, NO SIRVIO (19-nov, boda, 96 cuadros nuevos, scratch probar_mosaico.py / medir_iguales.py): 4 cuadros en UNA imagen 2x2 con una sola pregunta: 0,83 -> 0,33 s por cuadro PERO solo marco 10 malos de 37 (acuerdo sirve/no 68 % contra 92 % de volver a preguntar uno por uno): deja pasar techo/sin cara. Saltar cuadros casi iguales (miniatura 32x32, diferencia < 10): solo el 3 % de los pares en tomas de celular en mano y la IA les daba otro veredicto 1 de cada 4: no ahorra.",
-   "ESTABILIZADOR (19-nov, 14 tomas mas movidas de la boda, scratch probar_estab.py, jueces independientes DIS y LK): medir siguiendo puntos (OpenCV LK + RANSAC, estabilizar._puntos) quita 44 %/94 % del temblor contra 40 %/33 % de las tejas por fase y tarda 5,1 s contra 6,6 s: adoptado (fase de respaldo en los pares sin puntos). NO SIRVIO: mas zoom (1,15) y suavizado tipo gimbal de 2 s (mismo temblor, mas recorte); flujo denso DIS como medidor (8,6 s, igual que LK). Los videos del iPhone no traen giroscopio: Gyroflow no aplica."
+   "ESTABILIZADOR (19-nov, 14 tomas mas movidas de la boda, scratch probar_estab.py, jueces independientes DIS y LK): medir siguiendo puntos (OpenCV LK + RANSAC, estabilizar._puntos) quita 44 %/94 % del temblor contra 40 %/33 % de las tejas por fase y tarda 5,1 s contra 6,6 s: adoptado (fase de respaldo en los pares sin puntos). NO SIRVIO: mas zoom (1,15) y suavizado tipo gimbal de 2 s (mismo temblor, mas recorte); flujo denso DIS como medidor (8,6 s, igual que LK). Los videos del iPhone no traen giroscopio: Gyroflow no aplica.",
+   "(19-nov, 1.7.3) MAS RAPIDO: (1) SetClipColor tarda 65 ms por clip AUNQUE ya tenga ese color (GetClipColor, GetClipProperty y GetUniqueId 0,1 ms): organizar_pool y el color de los planos solo lo cambian si es otro (~30 s menos con 450 clips); indexar igual con SetMetadata. (2) Texto detras: persona_delante.tapado_previo mide con recorte.alfas (3 cuadros a 512 px, calentados con 5 previos: 1,7 s contra 10,9 s del recorte entero, 91-98 % igual) y solo recorta el tramo si se va a poner. (3) Revision final con IA: revision_ia.tramos_vistos lee la linea y no pregunta los cuadros cuyo clip de arriba sale de una toma que vision_ia.instantes ya vio buena en toda la parte usada (con margen x2 por la camara lenta, lejos de los cortes): 8 de 17 cuadros menos en el 1 min."
   ]
  },
  {

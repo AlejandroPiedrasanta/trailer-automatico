@@ -87,13 +87,41 @@ def masterizar(ruta, log=print):
     return True
 
 
+_LECTURAS = {}
+
+
+def _leer_imagen(ruta):
+    """UNA pasada de ffmpeg por el video final para verificar_imagen (stdout) y revisar_cortes (stderr).
+    (19-nov, medido en el 30 min: 113 s + 124 s, cada una decodificando el video entero con el procesador, y los
+    videos siguientes esperando en fila) Ahora un solo decodificado, por la tarjeta si se puede."""
+    try:
+        clave = (os.path.abspath(ruta), os.path.getsize(ruta), os.path.getmtime(ruta))
+    except OSError:
+        clave = None
+    if clave and clave in _LECTURAS:
+        return _LECTURAS[clave]
+    filtro = ("[0:v]split=2[a][b];[a]fps=1,scale=480:-2,signalstats,metadata=mode=print:file=-[s];"
+              "[b]scale=320:-2,blackdetect=d=%.2f:pic_th=0.98:pix_th=0.06,freezedetect=n=0.003:d=%.2f[c]"
+              % (NEGRO_MIN_S, CONGELADO_MIN_S))
+    r = None
+    for acel in (["-hwaccel", "auto"], []):
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats"] + acel + ["-i", ruta, "-an", "-filter_complex", filtro,
+                            "-map", "[s]", "-f", "null", "-", "-map", "[c]", "-f", "null", "-"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3600,
+                           stdin=subprocess.DEVNULL, creationflags=SIN_VENTANA)
+        if r.returncode == 0 and "SATAVG" in r.stdout:
+            break
+    if clave and r is not None and r.returncode == 0:
+        if len(_LECTURAS) > 4:
+            _LECTURAS.clear()
+        _LECTURAS[clave] = r
+    return r
+
+
 def verificar_imagen(ruta, log=print):
     """Mide el video final (1 cuadro por segundo): saturacion media, % de cuadros muy saturados,
     luz media y % de cuadros con altas luces quemadas. Valores en escala de 8 bits."""
-    r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", ruta, "-an", "-vf",
-                        "fps=1,scale=480:-2,signalstats,metadata=mode=print:file=-", "-f", "null", "-"],
-                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3600,
-                       creationflags=SIN_VENTANA)
+    r = _leer_imagen(ruta)
     def serie(clave):
         return [float(x) for x in re.findall(r"lavfi\.signalstats\.%s=([\d.]+)" % clave, r.stdout)]
     sat, sat_alta, luz, luz_alta = serie("SATAVG"), serie("SATHIGH"), serie("YAVG"), serie("YHIGH")
@@ -124,11 +152,7 @@ def revisar_cortes(ruta, log=print):
     """Cuadros negros o congelados en el video final (un hueco en la linea, un clip sin su medio, un render trabado).
     Devuelve [(segundo, "negro"|"congelado", duracion)] fuera del principio y del final; renderizar.py pone un marcador
     morado «REVISAR (IMAGEN)» en cada uno."""
-    filtro = ("scale=320:-2,blackdetect=d=%.2f:pic_th=0.98:pix_th=0.06,freezedetect=n=0.003:d=%.2f"
-              % (NEGRO_MIN_S, CONGELADO_MIN_S))
-    r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", ruta, "-an", "-vf", filtro, "-f", "null", "-"],
-                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3600,
-                       stdin=subprocess.DEVNULL, creationflags=SIN_VENTANA)
+    r = _leer_imagen(ruta)
     d = re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", r.stderr)
     total = int(d.group(1)) * 3600 + int(d.group(2)) * 60 + float(d.group(3)) if d else 0.0
     malos = [(float(a), "negro", float(b) - float(a))

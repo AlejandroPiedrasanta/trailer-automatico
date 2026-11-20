@@ -94,7 +94,7 @@ def enlazar_proxies(project, log=print):
     for c in _clips(project.GetMediaPool().GetRootFolder()):
         try:
             r = c.GetClipProperty("File Path") or ""
-            if not r or not r.lower().endswith(EXT_VIDEO) or not os.path.exists(r):
+            if not r or not r.lower().endswith(EXT_VIDEO) or not os.path.exists(r) or _sin_proxy(r):
                 continue
             p = ruta_proxy(r)
             actual = c.GetClipProperty("Proxy Media Path") or ""
@@ -108,8 +108,10 @@ def enlazar_proxies(project, log=print):
             if not os.path.exists(p):                # hecho cuando el video estaba en otra carpeta
                 p = proxy_huerfano(r) or p
             if os.path.exists(p) and os.path.normcase(actual) != os.path.normcase(p):
+                if _retiempo(p, _fps_davinci(c.GetClipProperty("FPS")))[0]:   # antes de enlazar (DaVinci recuerda
+                    arreglar_proxy(p, r, c.GetClipProperty("Start TC"), c.GetClipProperty("FPS"))   # el rechazo)
                 ok = c.LinkProxyMedia(p)
-                if not ok and arreglar_proxy(p, r, c.GetClipProperty("Start TC")):   # codigo de tiempo y audio PCM
+                if not ok and arreglar_proxy(p, r, c.GetClipProperty("Start TC"), c.GetClipProperty("FPS")):
                     c.UnlinkProxyMedia()                # (DaVinci recuerda el rechazo en la sesion)
                     ok = c.LinkProxyMedia(p)
                 if ok:
@@ -174,6 +176,41 @@ def _tc_para(original, start_tc=None):
     return tc
 
 
+def _fps(ruta):
+    """Cuadros por segundo (r_frame_rate) del archivo, o 0."""
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
+                            "-of", "default=nw=1:nk=1", ruta],
+                           capture_output=True, text=True, timeout=30, creationflags=rutas.SIN_VENTANA)
+        a, b = (r.stdout.strip().split("/") + ["1"])[:2]
+        return float(a) / float(b or 1)
+    except Exception:
+        return 0.0
+
+
+def _fps_davinci(fps):
+    """El FPS con que DaVinci lee el clip (propiedad «FPS») como numero, o None."""
+    try:
+        f = float(fps)
+        return f if f > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _retiempo(ruta, fps):
+    """(19-nov, MEDIDO en la XV: 13 de 82 proxies rechazados) Los videos de celular van a cuadros por segundo VARIABLES
+    (29,98 de media) y DaVinci los lee como 30, pero el proxy salia a 29,97 justos: mismos 464 cuadros y aun asi
+    LinkProxyMedia da False. Con el FPS de DaVinci se pone el proxy a esa velocidad, un cuadro por cuadro (setpts), sin
+    cambiar cuantos son. [] si ya coincide."""
+    if not fps:
+        return [], ""
+    actual = _fps(ruta)
+    if not actual or abs(actual - fps) < 0.005:
+        return [], ""
+    v = ("%.3f" % fps).rstrip("0").rstrip(".")
+    return ["-r", v], "setpts=N/(%s*TB)" % v
+
+
 def _audio_proxy(proxy):
     try:
         r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name",
@@ -184,19 +221,25 @@ def _audio_proxy(proxy):
         return ""
 
 
-def arreglar_proxy(proxy, original, start_tc=None):
+def arreglar_proxy(proxy, original, start_tc=None, fps=None):
     """(19-nov, MEDIDO en el XV: LinkProxyMedia daba False en 17 de 23 clips de la camara Sony) DaVinci solo acepta el
     proxy con el MISMO codigo de tiempo que el original («06:46:40;27», drop frame) y con el audio en PCM como el
     original (con AAC lo rechaza aunque el codigo de tiempo cuadre). Se arregla sin recomprimir el video (segundos).
-    True si lo cambio."""
+    fps: el que DaVinci lee del clip; si el proxy va a otra velocidad (celular: 30 contra 29,97) se recomprime a esa
+    (el proxy es chico: segundos). True si lo cambio."""
     tc = _tc_para(original, start_tc)
     audio = _audio_proxy(proxy)
-    if not tc and audio in ("", "pcm_s16le"):    # (ffprobe no distingue «drop frame»: con codigo, se rehace siempre;
-        return False                             # solo se llama cuando DaVinci ya lo rechazo)
+    salida_r, filtro_r = _retiempo(proxy, _fps_davinci(fps))
+    if not tc and audio in ("", "pcm_s16le") and not salida_r:   # (ffprobe no distingue «drop frame»: con codigo,
+        return False                             # se rehace siempre; solo se llama cuando DaVinci ya lo rechazo)
     tmp = proxy + ".tc.mov"
+    video = ["-c:v", "copy"]
+    if salida_r:
+        c, extra = _codificador()
+        video = ["-vf", filtro_r, "-c:v", c] + extra + ["-pix_fmt", "yuv420p"] + salida_r
     try:
         r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", proxy, "-map", "0:v:0",
-                            "-map", "0:a?", "-c:v", "copy", "-c:a", "pcm_s16le"] + (["-timecode", tc] if tc else []) +
+                            "-map", "0:a?"] + video + ["-c:a", "pcm_s16le"] + (["-timecode", tc] if tc else []) +
                            ["-movflags", "+faststart", tmp],
                            capture_output=True, text=True, timeout=600, creationflags=rutas.SIN_VENTANA)
         if r.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 0:
@@ -269,8 +312,9 @@ def _girado(ruta):
         return False, 0, 0
 
 
-def hacer_proxy(original, log=print, codificador=None, start_tc=None):
-    """Hace el proxy (si no esta hecho). Devuelve su ruta o None."""
+def hacer_proxy(original, log=print, codificador=None, start_tc=None, fps=None):
+    """Hace el proxy (si no esta hecho). fps: el que DaVinci lee del clip (el proxy sale a ese). Devuelve su ruta o
+    None."""
     destino = ruta_proxy(original)
     if not os.path.exists(destino):              # (19-nov) hecho cuando el video estaba en otra carpeta: no se rehace
         destino = proxy_huerfano(original) or destino
@@ -286,15 +330,22 @@ def hacer_proxy(original, log=print, codificador=None, start_tc=None):
                 return destino
             _REHECHOS.add(destino)
         else:
+            # (19-nov, MEDIDO) uno hecho antes a otra velocidad (celular: 29,97 contra los 30 de DaVinci) se arregla
+            # ANTES de enlazarlo: DaVinci recuerda el rechazo de esa ruta en la sesion y ya no lo acepta arreglado
+            if _retiempo(destino, _fps_davinci(fps))[0]:
+                arreglar_proxy(destino, original, start_tc, fps)
             return destino
     os.makedirs(os.path.dirname(destino), exist_ok=True)
     c, extra = codificador or _codificador()
     tmp = destino + ".tmp.mov"
     tc = _tc_para(original, start_tc)            # (19-nov) el mismo codigo de tiempo que el original (si no, no enlaza)
     con_tc = ["-timecode", tc] if tc else []
+    salida_r, filtro_r = _retiempo(original, _fps_davinci(fps))   # (19-nov) celular: a la velocidad que lee DaVinci
+    con_tc = salida_r + con_tc
+    retiempo = ("," + filtro_r) if filtro_r else ""
     orden = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", original, "-map", "0:v:0", "-map", "0:a?",
-             "-vf", "scale=-2:%d" % ALTO_PROXY, "-c:v", c] + extra + ["-pix_fmt", "yuv420p", "-c:a", "pcm_s16le",
-                                                                       "-movflags", "+faststart"] + con_tc + [tmp]
+             "-vf", "scale=-2:%d%s" % (ALTO_PROXY, retiempo), "-c:v", c] + extra + [
+                 "-pix_fmt", "yuv420p", "-c:a", "pcm_s16le", "-movflags", "+faststart"] + con_tc + [tmp]
     try:
         # (18-nov, la persona: «necesito procesos más rápidos... bajar más los tiempos») Leer el 4K con el procesador
         # era lo lento (4 veces el tiempo real). Con la tarjeta NVIDIA todo el camino (leer, achicar y comprimir) va a
@@ -303,7 +354,7 @@ def hacer_proxy(original, log=print, codificador=None, start_tc=None):
         if c == "h264_nvenc" and not girado:            # girado: la via toda en la tarjeta no gira (salia acostado)
             rapidas.append(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-hwaccel", "cuda",
                             "-hwaccel_output_format", "cuda", "-i", original, "-map", "0:v:0", "-map", "0:a?",
-                            "-vf", "scale_cuda=-2:%d:format=nv12" % ALTO_PROXY, "-c:v", c] + extra +
+                            "-vf", "scale_cuda=-2:%d:format=nv12%s" % (ALTO_PROXY, retiempo), "-c:v", c] + extra +
                            ["-c:a", "pcm_s16le", "-movflags", "+faststart"] + con_tc + [tmp])
         if c != "libx264":
             rapidas.append(orden[:4] + ["-hwaccel", "auto"] + orden[4:])
@@ -324,6 +375,16 @@ def hacer_proxy(original, log=print, codificador=None, start_tc=None):
     except Exception as ex:
         log("Aviso: no se pudo hacer el proxy de %s (%s)" % (os.path.basename(original), ex))
         return None
+
+
+def _sin_proxy(ruta):
+    """(19-nov) Lo que NO lleva proxy: las luces del programa (XV_BRILLOS_H...) y los recortes con transparencia del
+    texto detras (…_persona_0.mov). Venian tambien de OTRA instalacion (su carpeta recursos no es la de esta) y un
+    proxy H.264 les quita la transparencia: editando con proxies la persona taparia el titulo con un cuadro entero."""
+    partes = {x.upper() for x in os.path.normpath(ruta).split(os.sep)}
+    nombre = os.path.basename(ruta).upper()
+    return bool(partes & {"RECURSOS", "RECORTES", "OVERLAYS", "_INTERNAL"}) or "_PERSONA_" in nombre or \
+        re.match(r"^(XV|BODA)_(DESTELLO|BRILLOS)_[HV]\.", nombre) is not None
 
 
 def _clips(carpeta):
@@ -351,7 +412,7 @@ def proxies_y_cache(project, log=print):
             continue
         # (16-nov) «Video + Audio» tambien es video: con «"audio" not in tipo» solo pasaba 1 de 73 (el dron sin sonido)
         if r and os.path.exists(r) and r.lower().endswith(EXT_VIDEO) and tipo.strip() != "audio" \
-                and not os.path.normcase(r).startswith(os.path.normcase(rutas.RECURSOS)):
+                and not os.path.normcase(r).startswith(os.path.normcase(rutas.RECURSOS)) and not _sin_proxy(r):
             videos.setdefault(r, []).append(c)
     # (17-nov) solo los videos que ESTAN en las lineas de los eventos (no las plantillas): en el XV del 8-nov eran 129
     # proxies (mas de 20 min) para 58 tomas usadas. Lo que no esta en ninguna linea se edita igual, sin proxy.
@@ -377,14 +438,15 @@ def proxies_y_cache(project, log=print):
         t0 = time.time()
         log("Haciendo proxies para editar con fluidez: %d videos (%s)..." % (len(videos), cod[0]))
         # el codigo de tiempo que DaVinci lee de cada clip (el proxy debe llevar el mismo, «drop frame» incluido)
-        tcs = {}
+        tcs, fpss = {}, {}
         for o, cs in videos.items():
             try:
                 tcs[o] = cs[0].GetClipProperty("Start TC") or None
+                fpss[o] = cs[0].GetClipProperty("FPS") or None
             except Exception:
                 tcs[o] = None
         with ThreadPoolExecutor(PARALELO) as ex:
-            hechos = dict(zip(videos, ex.map(lambda o: hacer_proxy(o, log, cod, tcs.get(o)), list(videos))))
+            hechos = dict(zip(videos, ex.map(lambda o: hacer_proxy(o, log, cod, tcs.get(o), fpss.get(o)), list(videos))))
         n = fallos = 0
         for original, clips in videos.items():
             p = hechos.get(original)
@@ -402,7 +464,7 @@ def proxies_y_cache(project, log=print):
                         ok = c.LinkProxyMedia(p)
                         # (19-nov, MEDIDO) LinkProxyMedia daba False en silencio (Sony: codigo de tiempo y audio PCM) y
                         # se contaban igual como enlazados: se arregla el proxy y se intenta otra vez
-                        if not ok and arreglar_proxy(p, original, tcs.get(original)):
+                        if not ok and arreglar_proxy(p, original, tcs.get(original), fpss.get(original)):
                             c.UnlinkProxyMedia()        # (DaVinci recuerda el rechazo en la sesion)
                             ok = c.LinkProxyMedia(p)
                     if ok:

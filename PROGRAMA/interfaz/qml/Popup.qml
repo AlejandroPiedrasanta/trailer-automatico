@@ -304,7 +304,7 @@ Item {
                 Repeater {
                     model: ["Horizontal", "Vertical"]
                     Pastilla { chica: true; texto: modelData; marcada: raiz.resultado.formato === index
-                        onClic: { var r = raiz.resultado; r.formato = index; raiz.resultado = r } }
+                        onClic: { var r = Object.assign({}, raiz.resultado)   /* una copia: el mismo objeto no avisa del cambio y la pastilla no se marcaba */; r.formato = index; raiz.resultado = r } }
                 }
             }
             Row {
@@ -318,7 +318,7 @@ Item {
                         texto: modelData[1]
                         marcada: (raiz.resultado[lista] || []).indexOf(modelData[0]) >= 0
                         onClic: {
-                            var r = raiz.resultado
+                            var r = Object.assign({}, raiz.resultado)   /* una copia: el mismo objeto no avisa del cambio y la pastilla no se marcaba */
                             var l = (r[lista] || []).slice()
                             var i = l.indexOf(modelData[0])
                             if (i >= 0) { if (l.length + ((r[lista === "h" ? "v" : "h"] || []).length) > 1) l.splice(i, 1) }
@@ -343,7 +343,7 @@ Item {
                 Repeater {
                     model: raiz.datos.tipos || []
                     Pastilla { chica: true; texto: modelData; marcada: raiz.resultado.tipo_i === index
-                        onClic: { var r = raiz.resultado; r.tipo_i = index; raiz.resultado = r } }
+                        onClic: { var r = Object.assign({}, raiz.resultado)   /* una copia: el mismo objeto no avisa del cambio y la pastilla no se marcaba */; r.tipo_i = index; raiz.resultado = r } }
                 }
             }
             Rectangle {
@@ -361,7 +361,7 @@ Item {
                     color: "white"; selectionColor: "#1FA971"
                     font.family: raiz.familia; font.pixelSize: px(36)
                     clip: true
-                    onTextEdited: { var r = raiz.resultado; r.nombre = text; raiz.resultado = r }
+                    onTextEdited: { var r = Object.assign({}, raiz.resultado)   /* una copia: el mismo objeto no avisa del cambio y la pastilla no se marcaba */; r.nombre = text; raiz.resultado = r }
                     Keys.onReturnPressed: raiz.cerrar(raiz.primario)
                     Keys.onEscapePressed: raiz.cerrar(raiz.esc)
                     Component.onCompleted: forceActiveFocus()
@@ -386,7 +386,7 @@ Item {
                     texto: modelData[1]
                     marcada: (raiz.resultado.elegidos || []).indexOf(modelData[0]) >= 0
                     onClic: {
-                        var r = raiz.resultado
+                        var r = Object.assign({}, raiz.resultado)   /* una copia: el mismo objeto no avisa del cambio y la pastilla no se marcaba */
                         var l = (r.elegidos || []).slice()
                         var i = l.indexOf(modelData[0])
                         if (raiz.datos.varios) { if (i >= 0) l.splice(i, 1); else l.push(modelData[0]) }

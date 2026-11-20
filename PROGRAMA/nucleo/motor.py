@@ -1692,6 +1692,36 @@ def encolar_render(project, tl, evento):
 _PROYECTO_VIDEO = {"nombre": None}        # mientras se trabaja en el proyecto de un video, conectar_resolve lo acepta
 
 
+def eventos_con_plantillas():
+    """(19-nov, la persona: «debe de tirarme las plantillas que ya hay») [(evento, [videos])] de TODOS los eventos con
+    plantillas (.drp en EVENTO TERMINADO - <evento>/PLANTILLAS DE LOS VIDEOS), aunque el de ahora no este terminado:
+    primero el evento actual y luego los demas, del mas nuevo al mas viejo."""
+    salida = []
+    vistos = set()
+    actual = leer_estado().get("evento")
+    carpetas = []
+    try:
+        for f in os.listdir(rutas.SALIDA):
+            p = os.path.join(rutas.SALIDA, f)
+            if f.startswith(rutas.PREFIJO_TERMINADO) and os.path.isdir(os.path.join(p, rutas.PLANTILLAS_EVENTO)):
+                carpetas.append((os.path.getmtime(p), f[len(rutas.PREFIJO_TERMINADO):]))
+    except OSError:
+        pass
+    eventos = ([actual] if actual else []) + [e for _, e in sorted(carpetas, reverse=True)]
+    for ev in eventos:
+        clave = rutas.limpiar_nombre(ev).upper()
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        try:
+            vids = videos_editables(ev)
+        except Exception:
+            vids = []
+        if vids:
+            salida.append((ev, vids))
+    return salida
+
+
 def videos_editables(evento):
     """Los videos del evento con su proyecto editable (.drp en PLANTILLAS DE LOS VIDEOS), en orden: horizontales por
     duracion, verticales y luego las plantillas."""
@@ -1704,7 +1734,9 @@ def videos_editables(evento):
         for f in os.listdir(carpeta):
             if f.lower().endswith(".drp") and not f.lower().endswith((" (nuevo).drp", ".nuevo.drp")):   # temporales
                 n = os.path.splitext(f)[0]
-                clave = rutas.nombre_video("%s - %s" % (evento, n))
+                # (19-nov) solo los tráileres «VIDEO FINAL ...» se juntan por nombre viejo/nuevo; las plantillas
+                # («PLANTILLA 1 VERTICAL - 2026-11-08») llevan « - » adentro y salian todas como una sola
+                clave = rutas.nombre_video("%s - %s" % (evento, n)) if n.upper().startswith("VIDEO FINAL") else n
                 t = os.path.getmtime(os.path.join(carpeta, f))
                 if clave not in por_video or t > por_video[clave][0]:
                     por_video[clave] = (t, n)

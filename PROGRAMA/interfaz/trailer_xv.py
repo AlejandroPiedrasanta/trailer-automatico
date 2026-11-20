@@ -1581,31 +1581,58 @@ def app():
                 self._avisar("Espera a que termine: después podrás editar sus plantillas.", "warn")
                 return
             est = motor.leer_estado()
-            evento = est.get("evento")
-            if not (evento and est.get("timelines") and motor.evento_terminado()):
+            # (19-nov, la persona: «debe de tirarme las plantillas que ya hay») las de TODOS los eventos terminados,
+            # primero el de ahora; antes, sin el evento actual terminado, decia «Todavía no hay plantillas»
+            grupos = motor.eventos_con_plantillas()
+            if not grupos:
+                evento = est.get("evento")
+                if evento and est.get("timelines") and motor.evento_terminado():    # de antes: una sola linea
+                    r = self._popup("Abre la línea de «%s» en DaVinci para retocarla, o saca de nuevo los videos con "
+                                    "lo que cambiaste." % evento, ("Abrir en DaVinci", "Renderizar lo editado",
+                                                                  "Cancelar"), "pregunta", titulo="Plantillas")
+                    if r == 0:
+                        self._editar_en_davinci()
+                    elif r == 1:
+                        self._renderizar_editado()
+                    return
                 self._popup("Todavía no hay plantillas. Pulsa «Tráiler»: al terminar, cada video queda con su propia "
                             "plantilla para retocarlo en DaVinci.", ("Entendido",), "info", titulo="Plantillas")
                 return
-            videos = motor.videos_editables(evento)
-            if not videos:                       # eventos de antes: una sola linea en EVENTOS CINEMA
-                r = self._popup("Abre la línea de «%s» en DaVinci para retocarla, o saca de nuevo los videos con lo "
-                                "que cambiaste." % evento, ("Abrir en DaVinci", "Renderizar lo editado", "Cancelar"),
-                                "pregunta", titulo="Plantillas")
-                if r == 0:
-                    self._editar_en_davinci()
-                elif r == 1:
-                    self._renderizar_editado()
-                return
-            abiertos = [v for v in est.get("editando") or [] if v in videos
-                        and est.get("editando_evento") in (None, evento)]
+            varios = len(grupos) > 1
+            claves, etiquetas = [], {}
+            for ev, vids in grupos:
+                for v in vids:
+                    k = "%s|%s" % (ev, v)
+                    claves.append(k)
+                    corto = self._etiqueta_video(v)
+                    etiquetas[k] = "%s · %s" % (ev, corto) if varios else corto
+            ev0 = grupos[0][0]
+            abiertos = ["%s|%s" % (est.get("editando_evento"), v) for v in est.get("editando") or []]
+            abiertos = [k for k in abiertos if k in etiquetas]
             r, elegidos = self._elegir_de_videos(
-                "Plantillas de %s" % evento, "Abre un video en DaVinci para retocarlo: solo su proyecto, con su línea "
-                "en Edición. «Renderizar» saca de nuevo los marcados, sin volver a armar.",
-                videos, abiertos[-1:] or videos[:1], True, ("Abrir en DaVinci", "Renderizar", "Cancelar"))
-            if r == 0 and elegidos:
-                self._editar_en_davinci(elegidos[0])
-            elif r == 1 and elegidos:
-                self._renderizar_editado(elegidos)
+                "Plantillas" if varios else "Plantillas de %s" % ev0,
+                "Abre un video en DaVinci para retocarlo: solo su proyecto, con su línea en Edición. «Renderizar» saca "
+                "de nuevo los marcados, sin volver a armar.",
+                claves, abiertos[-1:] or claves[:1], True, ("Abrir en DaVinci", "Renderizar", "Cancelar"), etiquetas)
+            if not elegidos or r not in (0, 1):
+                return
+            evento = elegidos[0].split("|", 1)[0]
+            del_evento = [k.split("|", 1)[1] for k in elegidos if k.split("|", 1)[0] == evento]
+            if r == 0:
+                self._editar_en_davinci(del_evento[0], evento)
+            else:
+                if len(del_evento) < len(elegidos):
+                    self._avisar("Se renderiza un evento a la vez: ahora los de «%s»." % evento, "warn")
+                self._renderizar_editado(del_evento, evento)
+
+        @staticmethod
+        def _etiqueta_video(v):
+            """«VIDEO FINAL HORIZONTAL 1 MIN» -> «1 min»; «PLANTILLA 1 VERTICAL - 2026-11-08» -> «Plantilla 1»."""
+            txt = re.sub(r" - \d{4}-\d\d-\d\d$", "", v.upper()).replace("VIDEO FINAL ", "").replace("HORIZONTAL ", "")
+            txt = txt.replace(" MIN", " min")
+            if txt.startswith("PLANTILLA"):
+                txt = txt.replace(" VERTICAL", "")
+            return txt[:1] + txt[1:].lower() if not txt[:1].isdigit() else txt
 
         def _ver_formato(self, i):
             """El selector Horizontal | Vertical muestra las duraciones de ese formato (las dos se guardan)."""
@@ -3598,12 +3625,12 @@ def app():
                             titulo="Este evento ya está armado")
             return "editado" if r == 0 else "armar" if r == 1 else None
 
-        def _editar_en_davinci(self, video=None):
-            """video: ya elegido en el popup de Plantillas (si no, se pregunta)."""
+        def _editar_en_davinci(self, video=None, evento=None):
+            """video (y su evento, si es de otro evento terminado): ya elegido en el popup de Plantillas."""
             if self.trabajo is not None:
                 self._avisar("Espera a que termine: después podrás retocarlo en DaVinci.", "warn")
                 return
-            evento = motor.leer_estado().get("evento")
+            evento = evento or motor.leer_estado().get("evento")
             videos = [video] if video else motor.videos_editables(evento)
             if not videos:                       # eventos de antes, sin proyecto por video: la linea en EVENTOS CINEMA
                 self._avisar("Abriendo DaVinci en la línea del evento…")
@@ -3621,12 +3648,11 @@ def app():
             qt_kit.correr_en_hilo(self, lambda: motor.abrir_video_editable(registro.info, video, evento),
                                   self._editar_listo)
 
-        def _elegir_de_videos(self, titulo, texto, videos, marcados, varios, boton):
+        def _elegir_de_videos(self, titulo, texto, videos, marcados, varios, boton, etiquetas=None):
             """(19-nov) Popup con una pastilla por video («1 min», «Vertical 1 min»...). varios=False: uno solo.
             Devuelve la lista elegida ([] = cancelar). Con varios botones (tupla): (numero del boton, lista)."""
-            def etiqueta(v):
-                txt = v.upper().replace("VIDEO FINAL ", "").replace("HORIZONTAL ", "").replace(" MIN", " min")
-                return txt[:1] + txt[1:].lower() if not txt[:1].isdigit() else txt
+            def etiqueta(v):                     # etiquetas: {valor: texto} (Plantillas de varios eventos)
+                return (etiquetas or {}).get(v) or self._etiqueta_video(v)
             qml = getattr(self, "popup_qml", None)
             if qml is not None and not qml.abierto():      # (1.7) en QML: una pastilla por video
                 botones = boton if isinstance(boton, tuple) else (boton, "Cancelar")
@@ -3651,8 +3677,7 @@ def app():
             grupo = QButtonGroup(elegir)
             grupo.setExclusive(not varios)
             for i, v in enumerate(videos):
-                txt = v.upper().replace("VIDEO FINAL ", "").replace("HORIZONTAL ", "").replace(" MIN", " min")
-                b = QPushButton(txt[:1] + txt[1:].lower() if not txt[:1].isdigit() else txt, checkable=True)
+                b = QPushButton(etiqueta(v), checkable=True)
                 b.setMinimumWidth(px(250))
                 b.setCursor(Qt.PointingHandCursor)
                 b.setChecked(v in marcados)
@@ -3672,9 +3697,9 @@ def app():
                 self._avisar("DaVinci quedó en Edición con «%s». Retoca lo que quieras y pulsa "
                              "«Renderizar lo editado»." % nombre)
 
-        def _renderizar_editado(self, elegidos=None):
+        def _renderizar_editado(self, elegidos=None, evento_elegido=None):
             """Saca de nuevo los videos con las lineas tal como estan en DaVinci (sin volver a armar). elegidos: ya
-            marcados en el popup de Plantillas (si no, se pregunta)."""
+            marcados en el popup de Plantillas (si no, se pregunta); evento_elegido: si son de otro evento terminado."""
             if self.trabajo is not None:
                 self.b_log.setChecked(True)
                 return
@@ -3682,7 +3707,7 @@ def app():
                 self._avisar("Espera a que termine de copiar el material.", "warn")
                 return
             est = motor.leer_estado()
-            evento = est.get("evento")
+            evento = evento_elegido or est.get("evento")
             if not evento:
                 self._avisar("Todavía no hay ningún evento armado: pulsa ▶ primero.", "warn")
                 return

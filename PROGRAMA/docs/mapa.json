@@ -1049,9 +1049,17 @@
    "renderizar_videos_editados",
    "_editar_listo",
    "carpetas_movidas",
-   "_carpetas_al_dia"
+   "_carpetas_al_dia",
+   "carpeta_proxies",
+   "proxies_activos",
+   "mudar_proxies",
+   "enlazar_proxies",
+   "arreglar_proxy",
+   "proxy_huerfano",
+   "_cambio_proxies"
   ],
   "notas": [
+   "(19-nov, la persona: «en Ajustes si activo o no los proxies; si los activo, la ruta es en Videos: crea la carpeta y pon ahi todos los proxies de cualquier evento o plantilla») rutas.carpeta_proxies() = Videos/PROXIES TRAILER AUTOMATICO (SHGetKnownFolderPath; Mac ~/Movies), rutas.proxies_activos() = config proxies_activos (de fabrica True; Ajustes › Video › «Proxies para editar», _cambio_proxies). Apagado: proxies_y_cache solo pone la cache. Los de antes (rutas.PROXIES_VIEJOS = BASE/PROXIES) se mudan solos al abrir (mudar_proxies, en un hilo). Nombre del proxy = nombre del video + tamaño (rutas.ruta_proxy; el de antes llevaba la ruta y al mover el evento quedaban huerfanos: ruta_proxy_vieja / proxy_huerfano por duracion los recuperan). MEDIDO en el XV: LinkProxyMedia daba False EN SILENCIO en 17 de 23 clips Sony (y se contaban como enlazados): DaVinci exige el mismo codigo de tiempo («06:46:40;27», drop frame a 29,97) y audio PCM; con AAC lo rechaza. hacer_proxy ya los hace asi; arreglar_proxy arregla los viejos sin recomprimir (-c:v copy) y se reintenta con UnlinkProxyMedia antes (DaVinci recuerda el rechazo en la sesion). Al abrir un video: enlazar_proxies (solo enlaza los hechos). Resultado: 23 de 23.",
    "(19-nov, probado en DaVinci con el XV) Al abrir un video, reenlazar: si el evento se movio de carpeta (D:\\XV 8 NOV -> D:\\TERMIANDO\\XV 8 NOV) carpetas_movidas lo busca con la misma ruta uno o dos niveles mas adentro (u otro disco, no C:), reenlaza y pone estado.carpetas al dia; el .drp se vuelve a exportar. Un proyecto de video que quedo sin linea (cuelgue) se rehace desde EVENTOS CINEMA.",
    "Al terminar (con o sin render) DaVinci queda en la pagina Edicion con la linea mas corta del evento abierta (dejar_editable); las lineas viven en 02 EVENTOS/<evento> del proyecto EVENTOS CINEMA.",
    "Copia por video: EVENTO TERMINADO - <evento>/PLANTILLAS DE LOS VIDEOS/VIDEO FINAL 1 MIN.drt + LEEME.txt (rutas.plantillas_evento + rutas.nombre_video; build_trailers.EDITABLE la apaga). Los videos al lado, en VIDEO TERMINADO.",

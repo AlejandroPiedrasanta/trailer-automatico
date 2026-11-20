@@ -1569,14 +1569,12 @@ def _metadatos_visibles(cache, items, log, fecha=None):
                     os.replace(p + ".tmp", p)
         except Exception:
             pass
-        try:                                     # el proxy lleva en su nombre la huella de ruta + tamaño
-            import hashlib
+        try:                                     # el proxy lleva en su nombre la huella de nombre + tamaño
             for ruta, antes, ahora in cambios:
-                def proxy(tam):
-                    h = hashlib.sha1(("%s|%d" % (os.path.normcase(os.path.abspath(ruta)), tam)).encode("utf-8")).hexdigest()[:12]
-                    return os.path.join(rutas.BASE, "PROXIES", "%s_%s_proxy.mov" % (os.path.splitext(os.path.basename(ruta))[0][:60], h))
-                if os.path.exists(proxy(antes)) and not os.path.exists(proxy(ahora)):
-                    os.rename(proxy(antes), proxy(ahora))
+                for viejo in (rutas.ruta_proxy(ruta, antes), rutas.ruta_proxy_vieja(ruta, antes)):
+                    if os.path.exists(viejo) and not os.path.exists(rutas.ruta_proxy(ruta, ahora)):
+                        os.rename(viejo, rutas.ruta_proxy(ruta, ahora))
+                        break
         except Exception:
             pass
     if hechos or fallos:

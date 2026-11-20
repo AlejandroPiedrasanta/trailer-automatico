@@ -1148,6 +1148,7 @@ def app():
             _tiempo("  final")
             QTimer.singleShot(300, self._arranque)
             QTimer.singleShot(700, self._barra_a_qml)    # (1.7) con la ventana ya a la vista
+            QTimer.singleShot(6000, self._mudar_proxies)  # (19-nov) los proxies de antes, a Videos
 
         # ============================================================== paginas
         def _pagina_inicio(self):
@@ -1452,7 +1453,9 @@ def app():
             return {"interruptores": [{"clave": k, "texto": t, "si": ch.isChecked()} for k, t, ch in (
                         ("render", "Renderizar al terminar", self.ch_render), ("igualar", "Igualar luz y color", self.ch_igualar),
                         ("vert", "Usar videos verticales", self.ch_vert),
-                        ("liberar", "Cerrar programas pesados al armar", self.ch_liberar))],
+                        ("liberar", "Cerrar programas pesados al armar", self.ch_liberar),
+                        ("proxies", "Proxies para editar", self.ch_proxies))],
+                    "proxies_ruta": rutas.carpeta_proxies() if self.ch_proxies.isChecked() else "",
                     "voz": [{"clave": k, "texto": b.text(), "si": b.isChecked()} for k, b in self.ch_voz.items()],
                     "ruido": self.s_ruido.value(),
                     "ia": {"texto": ia, "ok": "Lista" in ia, "boton": "" if self.b_ia.isHidden() else self.b_ia.text()},
@@ -1462,8 +1465,14 @@ def app():
                     "version": self.l_version.text(), "act": "" if self.l_act.isHidden() else self.l_act.text()}
 
         def _acciones_ajustes(self):
-            ch = {"render": self.ch_render, "igualar": self.ch_igualar, "vert": self.ch_vert, "liberar": self.ch_liberar}
+            ch = {"render": self.ch_render, "igualar": self.ch_igualar, "vert": self.ch_vert, "liberar": self.ch_liberar,
+                  "proxies": self.ch_proxies}
+
+            def abrir_proxies(_v):
+                os.makedirs(rutas.carpeta_proxies(), exist_ok=True)
+                rutas.abrir(rutas.carpeta_proxies())
             return {"interruptor": lambda v: ch[v["clave"]].setChecked(bool(v["si"])),
+                    "abrir_proxies": abrir_proxies,
                     "voz": lambda v: self.ch_voz[v["clave"]].setChecked(bool(v["si"])),
                     "ruido": lambda v: self.s_ruido.setValue(int(v)),
                     "instalar_ia": lambda _v: self._instalar_ia(),
@@ -2425,10 +2434,18 @@ def app():
                                        "Premiere, Lightroom, Topaz, CineCaptions, navegadores) como si pulsaras la X: "
                                        "cada uno puede pedir guardar. Con la memoria de video libre la IA va hasta 4 "
                                        "veces más rápida. Nunca toca Windows ni DaVinci.")
+            # (19-nov, la persona) los proxies para editar: si o no; si, todos en Videos/PROXIES TRAILER AUTOMATICO
+            self.ch_proxies = piezas.Interruptor("")
+            self.ch_proxies.setChecked(rutas.proxies_activos())
+            self.ch_proxies.setToolTip("Copias livianas (540p) de los videos para que DaVinci edite fluido. Encendido, "
+                                       "van todas (de cualquier evento o plantilla) en tu carpeta Videos, en «%s». "
+                                       "Apagado, no se hacen: DaVinci usa los originales." % rutas.NOMBRE_PROXIES)
+            self.ch_proxies.toggled.connect(self._cambio_proxies)
             lv.setSpacing(px(16))
             for txt, ch in (("Renderizar al terminar", self.ch_render), ("Igualar luz y color", self.ch_igualar),
                             ("Usar videos verticales", self.ch_vert),
-                            ("Cerrar programas pesados al armar", self.ch_liberar)):
+                            ("Cerrar programas pesados al armar", self.ch_liberar),
+                            ("Proxies para editar", self.ch_proxies)):
                 fila = QHBoxLayout()
                 l = QLabel(txt, objectName="fila_aj")
                 l.setToolTip(ch.toolTip())
@@ -2612,6 +2629,29 @@ def app():
             self._pintar_ruido_dv()
             QTimer.singleShot(2500, self._medir_cache)
             return w
+
+        def _cambio_proxies(self, si):
+            """Ajustes > «Proxies para editar»: se guarda ya; al encenderlo, la carpeta en Videos y los de antes ahi."""
+            c = rutas.leer_config()
+            c["proxies_activos"] = bool(si)
+            rutas.guardar_config(c)
+            if not si:
+                self._avisar("Proxies apagados: DaVinci editará con los videos originales.")
+                return
+            os.makedirs(rutas.carpeta_proxies(), exist_ok=True)
+            self._avisar("Proxies encendidos: van todos en %s." % rutas.carpeta_proxies())
+            self._mudar_proxies()
+
+        def _mudar_proxies(self):
+            """Los proxies de antes (por dentro) a la carpeta de Videos, en un hilo (son GB: otro disco = copiar)."""
+            if not rutas.proxies_activos() or not os.path.isdir(rutas.PROXIES_VIEJOS):
+                return
+            import editable
+
+            def listo(n, error):
+                if error is None and n:
+                    self._avisar("Proxies mudados a tu carpeta Videos: %d." % n)
+            qt_kit.correr_en_hilo(self, lambda: editable.mudar_proxies(registro.info), listo, baja=True)
 
         def _pagina_trailers(self):
             """(19-nov, la persona: «la de tráilers súper minimalista, solo de escoger el estilo y listo») el estilo

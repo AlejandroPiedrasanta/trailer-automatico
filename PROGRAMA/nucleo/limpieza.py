@@ -74,7 +74,7 @@ def que_hay():
             items.append({"clave": clave, "texto": texto, "rutas": rutas_, "bytes": b, "archivos": n})
 
     agregar("davinci", "Caché de render de DaVinci", _davinci())
-    agregar("proxies", "Proxies de los videos", [os.path.join(rutas.BASE, "PROXIES")])
+    agregar("proxies", "Proxies de los videos", [rutas.carpeta_proxies(), rutas.PROXIES_VIEJOS])   # (19-nov) en Videos
     resp = sorted((os.path.join(rutas.RESPALDOS, f) for f in os.listdir(rutas.RESPALDOS)
                    if f.lower().endswith(".drp")), key=os.path.getmtime) if os.path.isdir(rutas.RESPALDOS) else []
     agregar("respaldos", "Respaldos viejos del proyecto (queda el último)", resp[:-1])

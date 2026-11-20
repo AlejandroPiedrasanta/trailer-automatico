@@ -48,6 +48,18 @@ Item {
                         onCambiado: (si) => raiz.accion("interruptor", { "clave": modelData.clave, "si": si }) }
                 }
             }
+            // (19-nov) donde van los proxies (con ellos encendidos): un clic abre la carpeta
+            Text {
+                visible: (raiz.d.proxies_ruta || "") !== ""
+                width: video.width - video.px(88)
+                elide: Text.ElideMiddle
+                text: "Van en Videos › " + (raiz.d.proxies_ruta || "").split(/[\\/]/).pop() + "  (abrir)"
+                color: zp.containsMouse ? "#6CF2B4" : "#9DB0B6"
+                font.family: raiz.familia; font.pixelSize: px(26); font.underline: zp.containsMouse
+                Behavior on color { ColorAnimation { duration: 150 } }
+                MouseArea { id: zp; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                    onClicked: raiz.accion("abrir_proxies", 0) }
+            }
         }
         Tarjeta {
             id: voz

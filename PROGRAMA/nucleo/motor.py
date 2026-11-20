@@ -1796,7 +1796,13 @@ def abrir_proyecto_video(resolve, evento, video, log=print, marcar=True):
             raise RuntimeError("DaVinci no pudo abrir el proyecto de «%s»." % video)
     _PROYECTO_VIDEO.update({"nombre": p.GetName(), "carpeta": carpeta})
     try:                                        # (19-nov) material movido o renombrado: que no se abra en rojo
-        if reenlazar(p, log):
+        cambio = reenlazar(p, log)
+        try:                                    # (19-nov) y sus proxies, desde Videos/PROXIES TRAILER AUTOMATICO
+            import editable
+            cambio = editable.enlazar_proxies(p, log) or cambio
+        except Exception as ex:
+            log("Aviso: no se pudieron enlazar los proxies de %s (%s)" % (video, ex))
+        if cambio:
             pm.SaveProject()
             drp = os.path.join(rutas.plantillas_evento(evento), video + ".drp")
             if os.path.exists(drp):

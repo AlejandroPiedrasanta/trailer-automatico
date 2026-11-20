@@ -127,6 +127,74 @@ CARPETAS = {"foto": os.path.join(MATERIAL, "FOTOS"),
             "video": os.path.join(MATERIAL, "VIDEOS"),
             "dron": os.path.join(MATERIAL, "DRON")}
 SALIDA = _salida()
+
+# (19-nov, la persona: «deja en Ajustes si activo o no los proxies; si los activo, la ruta es en Videos: crea la carpeta y
+# pon ahi todos los proxies de cualquier evento, plantilla o lo que sea») una sola carpeta para todos, a la vista
+NOMBRE_PROXIES = "PROXIES TRAILER AUTOMATICO"
+PROXIES_VIEJOS = os.path.join(BASE, "PROXIES")      # donde iban antes (por dentro): se mudan a la de Videos
+
+
+def carpeta_videos():
+    """La carpeta Videos del usuario (Windows: la de verdad, aunque este en otro disco u OneDrive; Mac: Peliculas)."""
+    if ES_MAC:
+        return os.path.join(os.path.expanduser("~"), "Movies")
+    if ES_WIN:
+        try:
+            import ctypes
+            from ctypes import wintypes
+            import uuid
+            guid = uuid.UUID("{18989B1D-99B5-455B-841C-AB7C74E4DDFC}")          # FOLDERID_Videos
+
+            class GUID(ctypes.Structure):
+                _fields_ = [("d1", wintypes.DWORD), ("d2", wintypes.WORD), ("d3", wintypes.WORD),
+                            ("d4", ctypes.c_ubyte * 8)]
+            g = GUID(guid.fields[0], guid.fields[1], guid.fields[2],
+                     (ctypes.c_ubyte * 8).from_buffer_copy(guid.bytes[8:]))
+            p = ctypes.c_wchar_p()
+            if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(g), 0, None, ctypes.byref(p)) == 0:
+                ruta = p.value
+                ctypes.windll.ole32.CoTaskMemFree(p)
+                if ruta and os.path.isdir(ruta):
+                    return ruta
+        except Exception:
+            pass
+    return os.path.join(os.path.expanduser("~"), "Videos")
+
+
+def proxies_activos():
+    """Ajustes > Video > «Proxies para editar» (encendido de fabrica)."""
+    return leer_config().get("proxies_activos", True) is not False
+
+
+def carpeta_proxies():
+    """Videos/PROXIES TRAILER AUTOMATICO: los proxies de todos los eventos y plantillas."""
+    return os.path.join(carpeta_videos(), NOMBRE_PROXIES)
+
+
+def _tam(ruta, tam):
+    if tam is not None:
+        return int(tam)
+    try:
+        return os.path.getsize(ruta)
+    except OSError:
+        return 0
+
+
+def ruta_proxy(original, tam=None):
+    """El proxy de un video: <nombre>_<huella>_proxy.mov en carpeta_proxies(). (19-nov) La huella es el NOMBRE del
+    archivo y su tamaño, no su carpeta: si la persona mueve el evento (D:\\XV -> D:\\TERMIANDO\\XV) su proxy sigue sirviendo."""
+    import hashlib
+    nombre = os.path.basename(original)
+    h = hashlib.sha1(("%s|%d" % (nombre.lower(), _tam(original, tam))).encode("utf-8")).hexdigest()[:12]
+    return os.path.join(carpeta_proxies(), "%s_%s_proxy.mov" % (os.path.splitext(nombre)[0][:60], h))
+
+
+def ruta_proxy_vieja(original, tam=None):
+    """El nombre de antes del 19-nov (la huella llevaba la ruta entera): para pasarlos al de ahora."""
+    import hashlib
+    h = hashlib.sha1(("%s|%d" % (os.path.normcase(os.path.abspath(original)), _tam(original, tam))).encode("utf-8")
+                     ).hexdigest()[:12]
+    return os.path.join(carpeta_proxies(), "%s_%s_proxy.mov" % (os.path.splitext(os.path.basename(original))[0][:60], h))
 TERMINADOS = SALIDA                                # el disco donde salen los videos (espacio para el render)
 PREFIJO_TERMINADO = "EVENTO TERMINADO - "
 VIDEOS_EVENTO = "VIDEO TERMINADO"

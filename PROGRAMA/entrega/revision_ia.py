@@ -15,7 +15,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 import rutas
 
-CUADROS_MAX = 180
+# (18-nov, medido en la boda: 270 cuadros de 4 videos en 253 s, 180 del de 15 min) las tomas ya pasaron por la IA
+# cuadro por cuadro al analizar y lo negro / congelado lo mira masterizar.revisar_cortes: 100 bastan (15 min: uno cada 9 s)
+CUADROS_MAX = 100
 SIN_REVISAR_INICIO_S, SIN_REVISAR_FINAL_S = 3.0, 6.0    # la boda: marcaba 0:01 en todos (el fundido de la plantilla)
 CUADROS_SIN_GPU = 30         # si el modelo no cabe en la GPU (DaVinci abierto), una muestra mas chica
 PASO_MIN_S = 3.0
@@ -44,48 +46,76 @@ def _duracion(ruta):
 
 def revisar(ruta, log=print):
     """[segundos] del video final donde la IA local ve algo que no deberia ir; None si no hay IA local."""
+    return revisar_varios([ruta], log).get(ruta)
+
+
+def revisar_varios(rutas_, log=print):
+    """{ruta: [segundos]} de varios videos finales con UNA sola cola de preguntas a la IA (None si no hay IA local).
+    (18-nov, medido en la boda: 4 videos uno tras otro = 34 + 160 + 15 + 50 s) Por separado, al final de cada video
+    quedaban hilos ociosos y el de 1 min no llenaba las PARALELO preguntas a la vez del servidor propio."""
     try:
         import vision_ia
     except Exception:
-        return None
+        return {}
     modelo = vision_ia.modelo(log)
     if not modelo:
-        return None
-    dur = _duracion(ruta)
-    if dur <= 1:
-        return []
+        return {}
+    import time
+    t0 = time.time()
     maximo = CUADROS_MAX if vision_ia.en_gpu() else CUADROS_SIN_GPU     # DaVinci llenando la GPU: una muestra
-    paso = max(PASO_MIN_S, dur / float(maximo))
-    tiempos = []
-    t = max(SIN_REVISAR_INICIO_S, paso / 2.0)              # la entrada (fundido desde negro) y la tarjeta final no
-    while t < dur - SIN_REVISAR_FINAL_S:
-        tiempos.append(round(t, 1))
-        t += paso
+    pedidos, cuantos = [], {}
+    for ruta in rutas_:
+        dur = _duracion(ruta)
+        paso = max(PASO_MIN_S, dur / float(maximo))
+        t = max(SIN_REVISAR_INICIO_S, paso / 2.0)          # la entrada (fundido desde negro) y la tarjeta final no
+        n = 0
+        while dur > 1 and t < dur - SIN_REVISAR_FINAL_S:
+            pedidos.append((ruta, round(t, 1)))
+            t += paso
+            n += 1
+        cuantos[ruta] = n
 
-    def uno(t):                         # (16-nov) la misma regla que al analizar: techo, de cabeza, gente sin cara...
+    def uno(par):                       # (16-nov) la misma regla que al analizar: techo, de cabeza, gente sin cara...
+        ruta, t = par
         img = vision_ia._cuadro(ruta, t, 448)
         if not img:
-            return t, ""
+            return ruta, t, ""
         try:
-            return t, vision_ia._ver_cuadro(modelo, img)[1]
+            return ruta, t, vision_ia._ver_cuadro(modelo, img)[1]
         except Exception:
-            return t, ""
+            return ruta, t, ""
+    malos = {r: [] for r in rutas_}
     with ThreadPoolExecutor(vision_ia.PARALELO) as ex:
-        malos = [(t, motivo) for t, motivo in ex.map(uno, tiempos) if motivo]
-    if malos:
-        log("REVISAR (IA) %s: %s" % (os.path.basename(ruta), ", ".join(
-            "%d:%02d %s" % (t // 60, t % 60, vision_ia.MOTIVOS.get(m, m)) for t, m in malos[:12])
-            + (" …" if len(malos) > 12 else "")))
-        malos = [t for t, _ in malos]
-    else:
-        log("Revision con IA de %s: nada fuera de lugar (%d cuadros)." % (os.path.basename(ruta), len(tiempos)))
-    return malos
+        for ruta, t, motivo in ex.map(uno, pedidos):
+            if motivo:
+                malos[ruta].append((t, motivo))
+    out = {}
+    for ruta in rutas_:
+        m = malos[ruta]
+        if m:
+            log("REVISAR (IA) %s: %s" % (os.path.basename(ruta), ", ".join(
+                "%d:%02d %s" % (t // 60, t % 60, vision_ia.MOTIVOS.get(x, x)) for t, x in m[:12])
+                + (" …" if len(m) > 12 else "")))
+        else:
+            log("Revision con IA de %s: nada fuera de lugar (%d cuadros)." % (os.path.basename(ruta), cuantos[ruta]))
+        out[ruta] = [t for t, _ in m]
+    s = time.time() - t0
+    log("Revision con IA: %d cuadros de %d videos en %.0f s (%.2f s por cuadro, %d a la vez%s)." % (
+        len(pedidos), len(rutas_), s, s / max(1, len(pedidos)), vision_ia.PARALELO,
+        "" if maximo == CUADROS_MAX else ", modelo fuera de la GPU: muestra chica"))
+    return out
 
 
 def marcar(timeline, segundos, desde_frame=0, color=COLOR, nombre=NOMBRE_MARCA, nota=NOTA):
     """Marcadores rojos «REVISAR (IA)» en la linea, en esos segundos del video (desde_frame: donde empezo el render).
     (1.5.9) Con color/nombre/nota, los amarillos del audio."""
     fps = float(timeline.GetSetting("timelineFrameRate") or 24)
+    try:                                 # (19-nov) los de un render anterior se quitan: si no, se duplicaban
+        for f, m in (timeline.GetMarkers() or {}).items():
+            if m.get("name") == nombre:
+                timeline.DeleteMarkerAtFrame(f)
+    except Exception:
+        pass
     n = 0
     for s in segundos or []:
         try:

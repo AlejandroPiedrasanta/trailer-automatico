@@ -23,6 +23,8 @@ cada plano del armado:
 calcular(ruta, ini, dur, ...) -> {"t0", "fps", "cx", "cy", "ang", "zoom", "antes", "despues"} o None
 aplicar(item, corr, fps_linea, ini, vel) -> True si quedo puesto
 """
+import os
+import json
 import math
 import subprocess
 
@@ -39,6 +41,9 @@ ZOOM_MAX = 1.08               # nunca se acerca mas que esto (con 4K en una line
 GIRO_MAX = 3.0                # grados de giro que se corrigen como mucho
 
 
+_GPU = {"sirve": True, "fallos": 0}
+
+
 def leer(ruta, ini, dur, ancho=ANCHO):
     """Los cuadros del tramo, en gris y chicos: (array n x alto x ancho uint8, fps) o (None, fps)."""
     try:
@@ -51,19 +56,33 @@ def leer(ruta, ini, dur, ancho=ANCHO):
         fps = 30.0
     if not (5.0 <= fps <= 240.0):
         fps = 30.0
-    try:
-        r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-ss", "%.3f" % max(0.0, ini), "-t",
-                            "%.3f" % dur, "-i", ruta, "-an", "-vf", "scale=%d:-2,format=gray" % ancho,
-                            "-f", "rawvideo", "-pix_fmt", "gray", "-"],
-                           capture_output=True, timeout=300, creationflags=rutas.SIN_VENTANA)
-        datos = r.stdout
-    except Exception:
+    # (18-nov, la persona: «mejora el proceso en paralelo con GPU al 100») leer el tramo era lo mas lento del armado
+    # (0,70 s por plano decodificando 4K con el procesador); con la tarjeta de video, 0,33 s. Si la GPU no puede con
+    # ese archivo (o no hay), sale vacio y se lee con el procesador como antes.
+    # (19-nov) el alto se fija aqui: con «-2» ffmpeg redondeaba distinto (682 contra 684 en los 4K girados) y
+    # ninguna toma vertical se media
+    alto = _alto(ruta, ancho)
+    if not alto:
         return None, fps
+    datos = b""
+    for gpu in ((["-hwaccel", "auto"],) if _GPU["sirve"] else ()) + ([],):
+        try:
+            r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error"] + gpu + [
+                                "-ss", "%.3f" % max(0.0, ini), "-t", "%.3f" % dur, "-i", ruta, "-an",
+                                "-vf", "scale=%d:%d,format=gray" % (ancho, alto), "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                               capture_output=True, timeout=300, creationflags=rutas.SIN_VENTANA)
+            datos = r.stdout
+        except Exception:
+            datos = b""
+        if datos:
+            break
+        if gpu:
+            _GPU["fallos"] += 1
+            if _GPU["fallos"] >= 3:          # esta PC no decodifica con la tarjeta: no se insiste
+                _GPU["sirve"] = False
     if not datos:
         return None, fps
-    # el alto: el que de el ancho dado (ffmpeg redondea a par); se deduce del tamano y el aspecto del video
-    alto = _alto(ruta, ancho)
-    if not alto or len(datos) % (ancho * alto):
+    if len(datos) % (ancho * alto):
         return None, fps
     n = len(datos) // (ancho * alto)
     return np.frombuffer(datos, np.uint8).reshape(n, alto, ancho), fps
@@ -158,9 +177,61 @@ def _ajustar(c, u, peso):
     return sol
 
 
+def _puntos(cuadros):
+    """(19-nov, la persona: «busca IAs para estabilizar las tomas movidas, mejora ese flujo») El movimiento siguiendo
+    puntos (OpenCV: esquinas + Lucas-Kanade + RANSAC, lo que usan vidstab y Gyroflow sin giroscopio): la gente que se
+    mueve queda fuera del ajuste. Medido en las 14 tomas mas movidas de la boda, con jueces independientes (flujo
+    denso DIS y el propio LK): quita 44 % / 94 % del temblor contra 40 % / 33 % de las tejas por fase, y mide en 5,1 s
+    contra 6,6 s. Devuelve (movimiento, [pares que no se pudieron medir]) o None sin OpenCV."""
+    try:
+        import cv2
+    except Exception:
+        return None
+    n = len(cuadros)
+    out = np.zeros((max(0, n - 1), 3))
+    fallan = []
+    p0 = None
+    for k in range(1, n):
+        a, b = cuadros[k - 1], cuadros[k]
+        if p0 is None or len(p0) < PUNTOS_MIN * 2:
+            p0 = cv2.goodFeaturesToTrack(a, 300, 0.01, 8)
+        if p0 is None or len(p0) < PUNTOS_MIN:
+            fallan.append(k - 1)
+            p0 = None
+            continue
+        p1, st, _e = cv2.calcOpticalFlowPyrLK(a, b, p0, None, winSize=(21, 21), maxLevel=3)
+        ok = st.ravel() == 1
+        M = None
+        if ok.sum() >= PUNTOS_MIN:
+            M, dentro = cv2.estimateAffinePartial2D(p0[ok], p1[ok], method=cv2.RANSAC, ransacReprojThreshold=1.5)
+        if M is None:
+            fallan.append(k - 1)
+            p0 = None
+            continue
+        out[k - 1] = (M[0, 2], M[1, 2], math.atan2(M[1, 0], M[0, 0]))
+        # los puntos que siguen sirviendo pasan al cuadro siguiente (no se buscan de nuevo cada vez)
+        p0 = p1[ok][dentro.ravel() == 1].reshape(-1, 1, 2) if dentro is not None else None
+    return out, fallan
+
+
+PUNTOS_MIN = 12               # puntos seguidos que hacen falta para fiarse del ajuste (si no, las tejas por fase)
+
+
 def movimiento(cuadros):
-    """(tx, ty, giro) de cada cuadro respecto del anterior (n-1 filas), en px de la imagen chica y radianes. Donde no
-    se pudo medir (cuadro liso), 0."""
+    """(tx, ty, giro) de cada cuadro respecto del anterior (n-1 filas), en px de la imagen chica y radianes. Siguiendo
+    puntos (_puntos); los pares que asi no se pudieron medir, con las tejas por fase (_fase)."""
+    r = _puntos(cuadros)
+    if r is None:
+        return _fase(cuadros)
+    out, fallan = r
+    for k in fallan:
+        out[k] = _fase(cuadros[k:k + 2])[0]
+    return out
+
+
+def _fase(cuadros):
+    """(tx, ty, giro) de cada cuadro respecto del anterior con correlacion de fase en tejas. Donde no se pudo medir
+    (cuadro liso), 0."""
     n, h, w = cuadros.shape
     tejas = _tejas(h, w)
     win = {}
@@ -224,7 +295,65 @@ def temblor(mov, fps):
     return float(np.mean(np.hypot(np.diff(x - _suavizar(x, s)), np.diff(y - _suavizar(y, s)))))
 
 
+VERSION = 3                  # (19-nov: 3, siguiendo puntos; 2, los girados no se median) sube si cambia la cuenta: lo guardado deja de valer
+_guardado = {"datos": None, "sucio": False}
+_candado = __import__("threading").Lock()
+
+
+def _archivo():
+    return os.path.join(rutas.ANALISIS, "estabilizar.json")
+
+
+def _clave(ruta, ini, dur):
+    return "%s|%d|%.2f|%.2f" % (os.path.basename(ruta), os.path.getsize(ruta), ini, dur)
+
+
+def _leer_guardado():
+    with _candado:
+        if _guardado["datos"] is None:
+            try:
+                with open(_archivo(), encoding="utf-8") as f:
+                    j = json.load(f)
+                _guardado["datos"] = j.get("planos", {}) if j.get("version") == VERSION else {}
+            except Exception:
+                _guardado["datos"] = {}
+        return _guardado["datos"]
+
+
+def guardar():
+    """Deja en el disco lo medido en este armado (lo llama el armado al terminar de estabilizar)."""
+    with _candado:
+        if not _guardado["sucio"] or _guardado["datos"] is None:
+            return
+        try:
+            os.makedirs(rutas.ANALISIS, exist_ok=True)
+            with open(_archivo() + ".tmp", "w", encoding="utf-8") as f:
+                json.dump({"version": VERSION, "planos": _guardado["datos"]}, f)
+            os.replace(_archivo() + ".tmp", _archivo())
+            _guardado["sucio"] = False
+        except OSError:
+            pass
+
+
 def calcular(ruta, ini, dur, dur_video=None):
+    """La correccion de un plano (ver _calcular). (18-nov, la persona: «con el análisis ya deberías saber dónde ir de
+    una vez») Lo ya medido de un plano (mismo archivo, mismo tramo) se guarda en datos/analisis/estabilizar.json: al
+    volver a armar, o en otra version que usa el mismo plano, no se vuelve a leer el video."""
+    try:
+        k = _clave(ruta, ini, dur)
+    except OSError:
+        return _calcular(ruta, ini, dur, dur_video)
+    datos = _leer_guardado()
+    if k in datos:
+        return datos[k] or None
+    c = _calcular(ruta, ini, dur, dur_video)
+    with _candado:
+        datos[k] = c or 0
+        _guardado["sucio"] = True
+    return c
+
+
+def _calcular(ruta, ini, dur, dur_video=None):
     """La correccion de un plano: lo que hay que mover, girar y acercar cada cuadro del tramo [ini, ini + dur] de la
     toma. Devuelve {"t0": segundo del primer valor en la toma, "fps", "cx", "cy" (fraccion del ancho / alto, + =
     derecha / abajo), "ang" (grados, + = horario), "zoom", "antes", "despues" (temblor medido)} o None."""

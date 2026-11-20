@@ -22,14 +22,37 @@ import time
 import base64
 import shutil
 import subprocess
+import threading
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 import rutas
 
 VERSION = 4                 # 4 (17-nov): «belleza» 1-10 de cada toma. 2: pregunta aparte por equipo de filmacion en primer plano (se colaba la camara)
 #                             3: tiraba tomas buenas por una camara al fondo o en manos de un invitado: solo cuenta
 #                                el equipo pegado al lente que TAPA la imagen (boda: de 20 fuera a solo las de la camara)
-PARALELO = 3               # tomas a la vez: ffmpeg saca los cuadros de las siguientes mientras la GPU mira una
+PARALELO = 4               # preguntas a la IA a la vez (las atiende juntas el servidor propio: servidor_rapido)
+# (18-nov, la persona: «mejora los analizadores, que hagan más rápido y en paralelo las tomas») Sacar el cuadro con
+# ffmpeg (0,55 s) se hacia EN FILA con la pregunta dentro de cada toma. Ahora los cuadros salen aparte (EXTRAER a la
+# vez: 0,20 s por cuadro; medido, ffmpeg no frena a la IA) y la IA siempre tiene PARALELO preguntas esperando.
+EXTRAER = max(3, min(8, (os.cpu_count() or 4) // 2))
+TOMAS_A_LA_VEZ = PARALELO * 2      # tomas con sus cuadros ya pedidos (las cortas, de 1 cuadro, no dejan la GPU esperando)
+_pozos, _candado_pozos = {}, threading.Lock()
+
+
+def _pozo(nombre, n):
+    with _candado_pozos:
+        p = _pozos.get(nombre)
+        if p is None:
+            p = _pozos[nombre] = ThreadPoolExecutor(n, thread_name_prefix="ia_" + nombre)
+        return p
+
+
+def cuadros(ruta, tiempos, lado=448):
+    """Los cuadros de esos segundos, saliendo ya (ffmpeg, EXTRAER a la vez): [futuro -> imagen en base64 o None]."""
+    return [_pozo("ffmpeg", EXTRAER).submit(_cuadro, ruta, t, lado) for t in tiempos]
+
+
 # contexto chico: 3 cuadros + la pregunta caben en ~5 mil tokens. Ollama cargaba el modelo con 64 mil (10 GB); con DaVinci
 # usando la GPU no entraba y cada consulta tardaba mas de 2 min (16-nov). Con 8 mil: ~6 GB y unos segundos.
 NUM_CTX = 8192
@@ -69,20 +92,108 @@ MODELO_RECOMENDADO = "qwen3-vl:8b-instruct"
 DESCARGA_OLLAMA = "https://ollama.com/download"
 
 
-def _pedir(camino, cuerpo=None, timeout=5.0):
+def _pedir(camino, cuerpo=None, timeout=5.0, base=None):
     datos = json.dumps(cuerpo).encode() if cuerpo is not None else None
-    req = urllib.request.Request(URL + camino, data=datos, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.load(r)
+    propio = _propio["url"] if base is None else None
+    req = urllib.request.Request((base or propio or URL) + camino, data=datos, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.load(r)
+    except urllib.error.URLError as ex:
+        # el servidor propio se cayo (conexion rechazada): se sigue con el de siempre
+        if propio and isinstance(getattr(ex, "reason", None), ConnectionError) and _propio["url"] == propio:
+            _propio["url"] = None
+            return _pedir(camino, cuerpo, timeout)
+        raise
 
 
-def _arrancar_ollama():
-    """Si Ollama esta instalado pero apagado, lo enciende (sin ventana) y espera un poco."""
+def _exe_ollama():
     exe = shutil.which("ollama")
     for c in (os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Ollama", "ollama.exe"),
               "/Applications/Ollama.app/Contents/Resources/ollama", "/usr/local/bin/ollama", "/opt/homebrew/bin/ollama"):
         if not exe and c and os.path.exists(c):
             exe = c
+    return exe
+
+
+# (18-nov, «mejora los analizadores, que hagan más rápido y en paralelo») MEDIDO con cuadros nuevos (Ollama guarda las
+# imagenes repetidas y engaña): el Ollama de siempre atiende UNA pregunta a la vez (1,07 s por cuadro, mande 1 o 3 a la
+# vez). Con OLLAMA_NUM_PARALLEL=4, 0,77 s (3 a la vez 0,92; 6 igual que 4) y 1,8 GB mas de memoria de video. Esa opcion
+# solo se lee al encender el servidor, asi que el programa enciende el SUYO en otro puerto (mismos modelos; el del
+# usuario no se toca ni se reinicia) y lo apaga al salir. Si no enciende o el modelo no cabe en la GPU, el de siempre.
+PUERTO_PROPIO = int(os.environ.get("TRAILER_OLLAMA_PUERTO", "11439"))
+_propio = {"url": None, "proc": None, "no": os.environ.get("TRAILER_OLLAMA_PROPIO") == "0", "probado": 0.0}
+
+
+def _apagar_propio():
+    p, _propio["proc"], _propio["url"] = _propio["proc"], None, None
+    if p is not None:
+        try:
+            p.kill()
+        except OSError:
+            pass
+
+
+_candado_propio = threading.Lock()
+
+
+OPCIONES_SERVIDOR = {"OLLAMA_FLASH_ATTENTION": os.environ.get("TRAILER_OLLAMA_FA", "1"),
+                     "OLLAMA_KV_CACHE_TYPE": os.environ.get("TRAILER_OLLAMA_KV", "q8_0")}
+
+
+def servidor_rapido(nombre=None):
+    """Deja las preguntas yendo al servidor propio (PARALELO a la vez de verdad). True si quedo; False: el de siempre.
+    nombre: el modelo de vision (se descarga del servidor de siempre para que quepa en la GPU)."""
+    if _propio["no"]:
+        return False
+    url = "http://127.0.0.1:%d" % PUERTO_PROPIO
+    with _candado_propio:
+        if _propio["url"]:
+            return True
+        if time.time() - _propio["probado"] < 120:
+            return False
+        _propio["probado"] = time.time()
+
+        def vivo():
+            try:
+                _pedir("/api/version", timeout=1.0, base=url)
+                return True
+            except Exception:
+                return False
+        if not vivo():                           # (si quedo uno de una vez anterior, se aprovecha)
+            exe = _exe_ollama()
+            if not exe:
+                return False
+            try:
+                _propio["proc"] = subprocess.Popen(
+                    [exe, "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                    creationflags=rutas.SIN_VENTANA,
+                    env=dict(os.environ, OLLAMA_HOST="127.0.0.1:%d" % PUERTO_PROPIO, OLLAMA_NUM_PARALLEL=str(PARALELO),
+                             OLLAMA_MAX_LOADED_MODELS="1", **OPCIONES_SERVIDOR))
+            except OSError:
+                return False
+            import atexit
+            atexit.register(_apagar_propio)
+            for _ in range(30):
+                time.sleep(0.5)
+                if vivo():
+                    break
+            else:
+                _apagar_propio()
+                return False
+        try:                                     # el modelo, fuera del servidor de siempre: no caben los dos en la GPU
+            for m in _pedir("/api/ps", timeout=3.0, base=URL).get("models") or []:
+                if nombre and (m.get("name") or m.get("model")) == nombre:
+                    _pedir("/api/generate", {"model": nombre, "prompt": "", "keep_alive": 0}, timeout=60.0, base=URL)
+        except Exception:
+            pass
+        _propio["url"] = url
+        return True
+
+
+def _arrancar_ollama():
+    """Si Ollama esta instalado pero apagado, lo enciende (sin ventana) y espera un poco."""
+    exe = _exe_ollama()
     if not exe:
         return False
     try:
@@ -128,9 +239,15 @@ def modelo(log=None):
         if "vision" in caps or any(p in n.lower() for p in PREFERIDOS):
             ven.append(n)
 
+    import re
+
     def orden(n):
         bajo = n.lower()
-        return (next((k for k, p in enumerate(PREFERIDOS) if p in bajo), len(PREFERIDOS)), "instruct" not in bajo, n)
+        # (18-nov) con qwen3-vl:4b y :8b instalados ganaba el 4b por orden alfabetico, y el 4b deja pasar 15 de 40
+        # cuadros malos (medido): a igual familia, el de MAS parametros primero
+        tam = re.search(r":(\d+(?:\.\d+)?)b", bajo)
+        return (next((k for k, p in enumerate(PREFERIDOS) if p in bajo), len(PREFERIDOS)), "instruct" not in bajo,
+                -float(tam.group(1)) if tam else 0.0, n)
     ven.sort(key=orden)
     _estado["modelo"] = ven[0] if ven else None
     if log and _estado["modelo"]:
@@ -154,6 +271,47 @@ def _foto(ruta, lado=448):
         return None
 
 
+PESADOS_GPU = (("Resolve.exe", "DaVinci Resolve"), ("PureRAW", "DxO PureRAW"), ("Photoshop.exe", "Photoshop"),
+               ("Adobe Premiere Pro.exe", "Premiere"), ("AfterFX.exe", "After Effects"), ("Lightroom.exe", "Lightroom"),
+               ("Topaz", "Topaz"), ("CineCaptions", "CineCaptions"))
+
+
+def memoria_video():
+    """(usados_GB, total_GB, [programas pesados abiertos]) o None si no hay nvidia-smi. (18-nov, medido) con la memoria
+    de video llena (15,7 de 16,3 GB: DaVinci + DxO PureRAW + el modelo) la revision cuadro por cuadro iba a 3,1 s por
+    cuadro con la GPU al 12 %, y en_gpu() decia que si (el modelo figura entero pero Windows lo intercambia)."""
+    try:
+        r = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
+                           capture_output=True, text=True, timeout=10, creationflags=rutas.SIN_VENTANA)
+        usado, total = [float(x) / 1024.0 for x in r.stdout.strip().splitlines()[0].split(",")]
+    except Exception:
+        return None
+    abiertos = []
+    try:
+        t = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, timeout=10,
+                           creationflags=rutas.SIN_VENTANA).stdout.lower() if os.name == "nt" else ""
+        abiertos = [nombre for clave, nombre in PESADOS_GPU if clave.lower() in t]
+    except Exception:
+        pass
+    return usado, total, abiertos
+
+
+def aviso_memoria(log, s_por_cuadro=None):
+    """Si la memoria de video va llena (o la IA fue lenta), lo dice claro con los programas que la ocupan."""
+    m = memoria_video()
+    if not m:
+        return
+    usado, total, abiertos = m
+    lento = s_por_cuadro is not None and s_por_cuadro > 1.5
+    if usado / max(0.1, total) > 0.85 or lento:
+        log("AVISO: la memoria de video va %s (%.1f de %.1f GB)%s: la IA local va varias veces más lenta%s. Para ir "
+            "rápido, cierra %s antes de pulsar ▶." % (
+                "llena" if usado / max(0.1, total) > 0.85 else "justa", usado, total,
+                " con %s %s" % (" y ".join(abiertos), "abiertos" if len(abiertos) > 1 else "abierto") if abiertos else "",
+                " (%.1f s por cuadro; con la GPU libre, 0,8)" % s_por_cuadro if lento else "",
+                " y ".join(abiertos) if abiertos else "los programas que usen la tarjeta"))
+
+
 def en_gpu(minimo=0.8):
     """¿El modelo cabe en la GPU? (cargado, con al menos `minimo` de su tamaño en la memoria de video). Con DaVinci
     abierto la GPU puede estar casi llena: el modelo queda en el procesador y cada consulta tarda 5-10 veces mas."""
@@ -168,11 +326,19 @@ def en_gpu(minimo=0.8):
                 return float(m.get("size_vram") or 0) / float(m["size"])
         return 0.0
     try:
+        servidor_rapido(nombre)                  # (18-nov) varias preguntas a la vez de verdad, si se puede
         p = parte()
         if p < minimo:
             # (17-nov) el modelo se QUEDA como se cargo: si entro con DaVinci abierto (80 % en el procesador) sigue asi
             # aunque DaVinci ya este cerrado y la GPU libre (18 s por toma en vez de 3). Se descarga y se carga otra vez.
             _pedir("/api/generate", {"model": nombre, "prompt": "", "keep_alive": 0}, timeout=60.0)
+            time.sleep(2.0)
+            p = parte()
+        if p < minimo and _propio["url"]:
+            # con varias preguntas a la vez el modelo ocupa mas memoria de video: si asi no cabe, con el de siempre
+            _pedir("/api/generate", {"model": nombre, "prompt": "", "keep_alive": 0}, timeout=60.0)
+            _apagar_propio()
+            _propio["no"] = True
             time.sleep(2.0)
             p = parte()
         return p >= minimo
@@ -239,10 +405,24 @@ def instalar_modelo(log=print):
     return bool(modelo())
 
 
+# (18-nov, MEDIDO con la boda: iPhone 4K HEVC, 66 cuadros, 6 a la vez) leer con la tarjeta: 0,24 -> 0,15 s por cuadro y
+# deja el procesador al oido, que corre a la vez. Los cuadros salen derechos (252x448 en vertical, igual que antes: el
+# cuadro baja a la memoria y ffmpeg lo gira). Si la tarjeta falla 3 veces seguidas, se vuelve al procesador.
+_hw = {"fallos": 0}
+
+
 def _cuadro(ruta, t, lado=448):
-    r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-ss", "%.2f" % max(0.0, t), "-i", ruta,
-                        "-frames:v", "1", "-vf", "scale=%d:%d:force_original_aspect_ratio=decrease" % (lado, lado),
-                        "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "4", "-"],
+    base = ["-ss", "%.2f" % max(0.0, t), "-i", ruta, "-frames:v", "1",
+            "-vf", "scale=%d:%d:force_original_aspect_ratio=decrease" % (lado, lado),
+            "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "4", "-"]
+    if _hw["fallos"] < 3:
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-hwaccel", "cuda"] + base,
+                           capture_output=True, timeout=120, creationflags=rutas.SIN_VENTANA)
+        if r.returncode == 0 and r.stdout:
+            _hw["fallos"] = 0
+            return base64.b64encode(r.stdout).decode()
+        _hw["fallos"] += 1
+    r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error"] + base,
                        capture_output=True, timeout=120, creationflags=rutas.SIN_VENTANA)
     return base64.b64encode(r.stdout).decode() if r.returncode == 0 and r.stdout else None
 
@@ -327,10 +507,19 @@ def _ver_cuadro(nombre, img):
     return et, motivo
 
 
-def instantes(ruta, dur, log=None):
+SIN_MIRAR = "medidas"         # motivo de un cuadro que la IA no miro (sirve = None: ni bueno ni malo)
+
+
+def instantes(ruta, dur, log=None, fuera=None, limite=None, dron=False):
     """(1.5.7) Lo que pasa a lo largo de la toma: [[segundo, [etiquetas], sirve, motivo], ...] cada INSTANTES_CADA_S s
     (motivo: '' si sirve, si no una clave de MOTIVOS). Asi el armado sabe EN QUE SEGUNDO esta el beso, los anillos o el
-    pastel, y en que tramos la camara apunta al techo, sale gente sin cabeza o no se ve ninguna cara."""
+    pastel, y en que tramos la camara apunta al techo, sale gente sin cabeza o no se ve ninguna cara.
+
+    (18-nov) fuera = [(a, b)] tramos que las MEDIDAS ya dejan fuera del montaje (desenfocado, quemado, barrido, temblor,
+    a oscuras: receta.tramos_fuera, las mismas cuentas del armado). Esos cuadros no se le preguntan a la IA (1 de cada
+    5 en la XV del 8-nov): quedan como [segundo, [], None, "medidas"] para que el paso entre cuadros siga igual.
+    limite: la parte mala desde la que la toma entera queda fuera (None: la toma ya esta fuera por las medidas, no importa).
+    Los cuadros salen con ffmpeg aparte y la IA mira PARALELO a la vez, tambien dentro de una misma toma."""
     nombre = modelo(log)
     if not nombre or dur <= 0 or dur < INSTANTES_DESDE_S:
         return None
@@ -339,16 +528,39 @@ def instantes(ruta, dur, log=None):
     while t < dur - 0.3:
         tiempos.append(t)
         t += paso
-    out = []
-    for t in tiempos or [dur / 2.0]:
-        img = _cuadro(ruta, t)
-        if img:
-            try:
-                et, motivo = _ver_cuadro(nombre, img)
-                out.append([round(t, 1), et, not motivo, motivo])
-            except Exception:
-                pass
-    return out
+    tiempos = tiempos or [dur / 2.0]
+
+    def ver(cuadro):
+        rutas.revisar_parada()                    # «Cancelar»: lo que quedaba en fila no se pregunta
+        img = cuadro.result()
+        return _ver_cuadro(nombre, img) if img else None
+    def pedir(t):
+        return _pozo("modelo", PARALELO).submit(ver, cuadros(ruta, [t])[0])
+
+    def recoger(t, tarea):
+        try:
+            r = tarea.result()
+        except rutas.Detenido:
+            raise
+        except Exception:
+            r = None
+        return [round(t, 1), r[0], not r[1], r[1]] if r else None
+    # un cuadro «vale» por medio paso a cada lado: se salta solo si TODO ese tramo ya esta fuera (con medio segundo de
+    # margen se colaban 2 planos en 750 pegados a un cuadro que la IA habia marcado malo; asi, ninguno, y cuesta 40 s)
+    margen = paso / 2.0
+    tareas = [None if any(a <= max(0.0, t - margen) and min(dur, t + margen) <= b for a, b in fuera or ()) else pedir(t)
+              for t in tiempos]
+    out = [[round(t, 1), [], None, SIN_MIRAR] if tarea is None else recoger(t, tarea) for t, tarea in zip(tiempos, tareas)]
+    # «si la mayor parte de la toma no sirve, la toma entera fuera» (parte_mala contra `limite`): si los cuadros saltados
+    # pueden cambiar esa cuenta, tambien se miran (asi la regla da lo mismo que mirandolos todos)
+    saltados = [k for k, x in enumerate(out) if x is not None and x[2] is None]
+    n = sum(1 for x in out if x is not None)
+    if limite and saltados and n >= 2:
+        malos = sum(1 for x in out if x is not None and cuadro_malo(x, dron))
+        if malos / float(n) < limite <= (malos + len(saltados)) / float(n):
+            for k, tarea in [(k, pedir(tiempos[k])) for k in saltados]:
+                out[k] = recoger(tiempos[k], tarea)
+    return [x for x in out if x is not None]
 
 
 def revisar_foto(ruta, log=None):
@@ -386,6 +598,8 @@ def cuadro_malo(x, dron=False):
 
 def parte_mala(ia, dron=False):
     """(parte 0-1 de la toma que la IA vio que no sirve, motivo mas comun) segun sus instantes; (0, '') sin instantes."""
+    # (18-nov) los cuadros saltados por las medidas (sirve = None) cuentan en el total y no como malos: si podian
+    # cambiar el resultado contra el limite, instantes() ya los miro
     inst = [x for x in (ia or {}).get("instantes") or [] if len(x) >= 3]
     if not inst:
         return 0.0, ""
@@ -404,7 +618,12 @@ def describir(tipo, ruta, dur=0.0, log=None):
     if tipo == "foto":
         imgs = [_foto(ruta)]
     else:
-        imgs = [_cuadro(ruta, dur * (k + 1) / 4.0) for k in range(3)] if dur > 0 else [_cuadro(ruta, 0.0)]
+        imgs = []
+        for f in cuadros(ruta, [dur * (k + 1) / 4.0 for k in range(3)] if dur > 0 else [0.0]):    # los 3 a la vez
+            try:
+                imgs.append(f.result())
+            except Exception:
+                pass
     imgs = [x for x in imgs if x]
     if not imgs:
         return None

@@ -137,6 +137,89 @@ def sonorizar(tl, mp, buscar, zonas, fps, cortes, log=print):
     return puestos
 
 
+# (18-nov, la persona: «le falta más SFX de emoción, alegría») Los SFX iban solo por zonas fijas (campanas, entrada,
+# vitores cada 25 s): en el de 1 min, 5. La IA ya marca en cada toma los MOMENTOS CLAVE (beso, anillos, pastel...; en la
+# boda 122 cuadros): cuando un plano del video cae en uno, su SFX de emocion entra en ese corte.
+EMOCION = {"beso": ("cheer_big", "applause"), "pastel": ("cheer_big", "cheer_short"),
+           "primer_baile": ("applause", "cheer_short"), "brindis": ("cheer_short", "applause"),
+           "entrada": ("cheer_flowers", "cheer_short"), "anillos": ("XV_BRILLO",), "votos": ("XV_BRILLO",)}
+EMOCION_CADA_S = (8.0, 14.0)           # separacion minima entre dos: video corto (<= 200 s) / largo
+EMOCION_DUR_S = 4.0
+EMOCION_MAX = 12
+
+
+def emocion(tl, mp, buscar, puestos_plan, fps, propios=None, log=print):
+    """puestos_plan: [(pieza del plan, clip de la linea)] (los mismos de ambiente.poner). Pone el SFX de cada momento
+    clave que la IA vio EN ESE PLANO (it['ia']['instantes']: [t, [etiquetas], ...]), en el corte, sin pisar otros SFX
+    ni la voz original (pasajes de voz de la toma). Devuelve [(sfx, segundo)]."""
+    st = tl.GetStartFrame()
+    S = fps
+    total_s = (tl.GetEndFrame() - st) / float(S)
+    cada = EMOCION_CADA_S[0] if total_s <= 200 else EMOCION_CADA_S[1]
+    pistas = [p for p in (_pista(tl, PISTAS["publico2"]), _pista(tl, PISTAS["publico"])) if p]
+    if not pistas:
+        return []
+    ocupado = {t: [(it.GetStart() - st, it.GetEnd() - st) for it in tl.GetItemListInTrack("audio", t) or []]
+               for t in pistas}
+    cand = []
+    for p, it in puestos_plan:
+        item = p.get("item") or {}
+        if p.get("tipo") != "video" or it is None:
+            continue
+        ini = float(p.get("ini") or 0.0)
+        dur = p.get("dur_f", 0) / float(S)
+        if dur < 1.0:
+            continue
+        pasajes = [(float(x.get("ini", 0)), float(x.get("fin", 0))) if isinstance(x, dict) else tuple(x[:2])
+                   for x in (item.get("pasajes") or [])]   # {'ini', 'fin', 'texto', 'tipo': 'DISCURSO'...}
+        if any(a < ini + dur and ini < b for a, b in pasajes):
+            continue                                       # alguien habla (votos, brindis con voz): no se tapa
+        vistas = set()
+        for x in ((item.get("ia") or {}).get("instantes") or []):
+            if len(x) > 1 and ini - 0.5 <= float(x[0]) <= ini + dur + 0.5:
+                vistas |= set(x[1] or [])
+        claves = [k for k in EMOCION if k in vistas]
+        if claves:
+            cand.append((it.GetStart() - st, claves[0]))
+    hechos, ultimo, usados = [], -1e9, {}
+    for f, clave in sorted(cand):
+        if len(hechos) >= EMOCION_MAX or (f - ultimo) / float(S) < cada:
+            continue
+        if f < FIN_INTRO_S * S:              # (visto) vitores a los 3 s, sobre «UN FILM DE»: en la intro no
+            continue
+        opciones = EMOCION[clave]
+        n = usados.get(clave, 0)
+        nombre = opciones[n % len(opciones)]
+        c = (propios or {}).get(nombre) if nombre.startswith("XV_") else buscar(nombre)
+        if c is None:
+            continue
+        dur = int(min(EMOCION_DUR_S * S, _frames(c, fps), total_s * S - f))
+        if dur < S:
+            continue
+        for t in pistas:
+            if any(a < f + dur and f < b for a, b in ocupado[t]):
+                continue
+            tl.SetTrackLock("audio", t, False)
+            r = mp.AppendToTimeline([{"mediaPoolItem": c, "startFrame": 0, "endFrame": dur - 1, "mediaType": 2,
+                                      "trackIndex": t, "recordFrame": st + int(f)}])
+            if not r:
+                continue
+            try:
+                r[0].SetFades({"FadeIn": int(0.25 * S), "FadeOut": int(min(1.5 * S, dur / 2))})
+                if nombre.startswith("XV_"):
+                    r[0].SetProperty("AudioVolume", -6.0)
+            except Exception:
+                pass
+            ocupado[t].append((f, f + dur))
+            hechos.append((nombre, round(f / float(S), 1), clave))
+            usados[clave] = n + 1
+            ultimo = f
+            break
+    log("  SFX de emoción: %d planos con un momento clave, %d con su sonido%s." % (
+        len(cand), len(hechos), (": " + ", ".join("%s %.0f s (%s)" % h for h in hechos[:6])) if hechos else ""))
+    return [(h[0], h[1]) for h in hechos]
+
+
 def momentos(tl, mp, propios, fps, fotos_intro=(), log=print):
     """Los momentos fuertes, con los SFX propios del programa (propios: {"XV_GOLPE": MediaPoolItem, ...}):
       - entrada de la FIESTA (marcador ACTO ... FIESTA): subida de aire que termina en seco y golpe grave en el cambio;

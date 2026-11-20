@@ -25,6 +25,7 @@ import rutas
 VERSION = 1                     # sube si cambia lo que se escucha: las tomas se vuelven a escuchar solas
 VENTANA_S = 8.0
 PASO_S = 4.0
+PISO_AFINAR = 0.05              # (los umbrales de «se oye» van de 0,2 a 0,3)
 MIN_DUR_S = 2.0
 SIN_RESPUESTA_S = 900           # earshot callado 15 min (la 1a vez baja su modelo, 1 GB): se sigue sin el
 HILOS = max(2, min(8, (os.cpu_count() or 4) * 2 // 3))      # 12 hilos -> 8 (medido: 0,61 s por ventana; con 16, 0,80)
@@ -110,13 +111,33 @@ def escuchar(t):
                 decir(ruta=ruta, error="sin audio")
                 continue
             inicios = np.arange(0.0, max(0.01, dur - ven / 2.0), paso)
-            P = []
-            for k in range(0, len(inicios), 32):
-                trozos = [audio.resample(x[int(a * sr):int((a + ven) * sr)].astype(np.float32) / 32768.0, sr, audio.SR)
-                          for a in inicios[k:k + 32]]
-                P.append(m.probs(trozos, batch=8))
-                decir(vivo=1)
-            P = np.concatenate(P)
+            n = len(inicios)
+
+            def medir(cuales):
+                out = []
+                for k in range(0, len(cuales), 32):
+                    trozos = [audio.resample(x[int(a * sr):int((a + ven) * sr)].astype(np.float32) / 32768.0, sr,
+                                             audio.SR) for a in inicios[cuales[k:k + 32]]]
+                    out.append(np.asarray(m.probs(trozos, batch=8)))
+                    decir(vivo=1)
+                return np.concatenate(out)
+            # primero una ventana si y otra no (sin solape: se oye todo el audio una vez); las de en medio solo donde
+            # una vecina oyo algo de lo que interesa. Lo demas, el promedio de sus vecinas (su audio ya se escucho)
+            pares, nones = list(range(0, n, 2)), list(range(1, n, 2))
+            Pp = medir(pares)
+            P = np.zeros((n, Pp.shape[1]), dtype=np.float32)
+            P[pares] = Pp
+            interes = sorted({i for g in t.get("afinar") or [] for i in grupos.get(g, [])})
+            piso = float(t.get("piso") or 0.0)
+            if interes and piso > 0:
+                algo = P[:, interes].max(1) >= piso
+                oir = [k for k in nones if algo[k - 1] or (k + 1 < n and algo[k + 1])]
+            else:
+                oir = nones
+            if oir:
+                P[oir] = medir(oir)
+            for k in set(nones) - set(oir):
+                P[k] = (P[k - 1] + P[k + 1]) / 2.0 if k + 1 < n else P[k - 1]
             decir(ruta=ruta, dur=round(dur, 2), series={
                 g: [round(float(v), 2) for v in (P[:, idx].max(1) if idx else np.zeros(len(P)))]
                 for g, idx in grupos.items()})
@@ -274,7 +295,9 @@ def escuchar(tomas, log=print):
         if hechas[0] % 10 == 0 or hechas[0] == len(tomas):
             log("  oído %d/%d  %s: %s" % (hechas[0], len(tomas), d.get("nombre", ""),
                                           ", ".join(NOMBRE[g] for g in _oyo(d)) or m.get("error") or "nada especial"))
-    tarea = {"grupos": GRUPOS, "ventana": VENTANA_S, "paso": PASO_S,
+    # (18-nov) «afinar»: las ventanas solapadas solo se escuchan donde una vecina oyo algo (PISO o mas) de lo que cuenta
+    # en el armado. Simulado con lo ya escuchado (XV 8-nov, 922 ventanas): 39 % menos y ninguna deteccion perdida
+    tarea = {"grupos": GRUPOS, "ventana": VENTANA_S, "paso": PASO_S, "afinar": list(UMBRAL), "piso": PISO_AFINAR,
              "tomas": [d["ruta"] for d in sorted(tomas, key=lambda d: -d.get("dur", 0.0))]}
     _correr(tarea, recibir, log, "escuchar")
     cuenta = {g: sum(1 for d in tomas if g in _oyo(d)) for g in UMBRAL}

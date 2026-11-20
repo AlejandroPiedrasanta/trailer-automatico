@@ -14,6 +14,7 @@ Solo PySide6: nada pesado al abrir (regla de arranque).
 """
 import math
 import os
+import sys
 import random
 import re
 import time
@@ -878,13 +879,33 @@ class _Destello(QWidget):
         p.fillRect(r, luz)
 
 
+def tapar_quick(ventana):
+    """(1.7) Las piezas en QML (barra_qml, QQuickWidget transparente) se pintan encima de todo: mientras hay un popup
+    o una hoja encima, se esconden. Devuelve las escondidas (para destapar_quick)."""
+    if "PySide6.QtQuickWidgets" not in sys.modules or ventana is None:
+        return []
+    from PySide6.QtQuickWidgets import QQuickWidget
+    out = [q for q in ventana.findChildren(QQuickWidget) if q.isVisible()]
+    for q in out:
+        q.hide()
+    return out
+
+
+def destapar_quick(escondidas):
+    for q in escondidas or []:
+        try:
+            q.show()
+        except RuntimeError:                            # ya borrada
+            pass
+
+
 class Popup(QWidget):
     """(1.6.1, la persona: «las ventanitas se ven muy viejas, hazlas pop up emergentes»; diseño de Higgsfield,
     docs/capturas/propuesta_popup_1.png) Popup DENTRO de la ventana, en vez de los cuadros del sistema: lo de atras
     queda borroso y oscuro; al centro, una tarjeta de vidrio con filo dorado, el emblema, el titulo, el texto y los
     botones en pastilla (verde el principal). Enter = principal, Esc = el de cancelar. Se usa con preguntar()."""
 
-    def __init__(self, ventana, titulo, texto, botones, tipo="info", primario=0, escape=None):
+    def __init__(self, ventana, titulo, texto, botones, tipo="info", primario=0, escape=None, contenido=None):
         super().__init__(ventana)
         self.elegido = len(botones) - 1 if escape is None else escape
         self._escape, self._primario = self.elegido, primario
@@ -897,6 +918,7 @@ class Popup(QWidget):
             self._fondo = chica.scaled(foto.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
         except Exception:
             self._fondo = None
+        self._tapados = tapar_quick(ventana)        # (1.7) la barra en QML no se ve encima del popup
         self.setGeometry(ventana.rect())
         fuera = QVBoxLayout(self)
         fuera.addStretch(1)
@@ -938,6 +960,8 @@ class Popup(QWidget):
             c.setTextInteractionFlags(Qt.TextSelectableByMouse)        # se puede copiar (el comando de earshot)
             c.setAlignment((Qt.AlignLeft if "•" in texto else Qt.AlignHCenter) | Qt.AlignVCenter)
             v.addWidget(c)
+        if contenido is not None:                   # (18-nov) una pieza propia dentro del popup (canciones, intro)
+            v.addWidget(contenido)
         v.addSpacing(px(22))
         fb = QHBoxLayout()
         fb.setSpacing(px(34))
@@ -1033,6 +1057,7 @@ class Popup(QWidget):
         if self.isVisible():
             self._bucle.exec()
         self._bucle = None
+        destapar_quick(self._tapados)
         self.setParent(None)
         self.deleteLater()
         return self.elegido
@@ -1068,9 +1093,17 @@ class Popup(QWidget):
             p.drawRoundedRect(g, px(64), px(64))
 
 
-def preguntar(ventana, titulo, texto="", botones=("Entendido",), tipo="info", primario=0, escape=None):
-    """Popup moderno dentro de la ventana (Popup). Devuelve el numero del boton elegido (Esc = el ultimo o `escape`)."""
-    pop = Popup(ventana, titulo, texto, list(botones), tipo, primario, escape)
+def preguntar(ventana, titulo, texto="", botones=("Entendido",), tipo="info", primario=0, escape=None, contenido=None):
+    """Popup moderno dentro de la ventana (Popup). Devuelve el numero del boton elegido (Esc = el ultimo o `escape`).
+    (1.7) Sin pieza propia, sale el de QML (barra_qml.PopupQML) si la ventana ya lo tiene y no hay otro abierto."""
+    qml = getattr(ventana, "popup_qml", None)
+    if contenido is None and qml is not None and not qml.abierto():
+        ventana.popup_abierto = qml                 # las pruebas: pop.botones[i].click()
+        try:
+            return qml.preguntar(titulo, texto, botones, tipo, primario, escape)[0]
+        finally:
+            ventana.popup_abierto = None
+    pop = Popup(ventana, titulo, texto, list(botones), tipo, primario, escape, contenido)
     ventana.popup_abierto = pop                     # las pruebas lo encuentran aqui (pop.botones[i].click())
     try:
         return pop.esperar()
@@ -2282,8 +2315,8 @@ class VistaTitulo(QWidget):
         # el lado del titulo un poco mas oscuro para que se lea (como el velo de los titulos del video)
         vel = QLinearGradient(0, 0, r.width(), 0)
         vel.setColorAt(0.0, QColor(0, 0, 0, 0))
-        vel.setColorAt(0.45, QColor(0, 0, 0, 40))
-        vel.setColorAt(1.0, QColor(0, 0, 0, 120))
+        vel.setColorAt(0.40, QColor(0, 0, 0, 90))     # (18-nov) sobre una foto clara del evento la frase no se leia
+        vel.setColorAt(1.0, QColor(0, 0, 0, 175))
         p.fillRect(r, vel)
         script, serif = self._fuentes()
         h, w = r.height(), r.width()

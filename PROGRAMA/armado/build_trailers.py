@@ -119,28 +119,36 @@ VOCES = {"1min": 1, "3min": 2, "15min": 6, "30min": 14}      # pasajes de voz or
 # Voz original por version. En el video largo (30 min) va SIEMPRE; en el de 15 viene activada y en los cortos no
 # (la persona lo cambia en Ajustes > Voz original: llega aqui como VOZ = {"1min": True, ...}).
 VOZ_DEFECTO = {"1min": False, "3min": False, "15min": True, "30min": True}
-VOZ_SIEMPRE = ("30min",)
+VOZ_SIEMPRE = ()             # (18-nov, la persona: «que pueda desactivar el sonido de 30 min») ya ninguna es obligada
 VOZ_LARGO = {"1min": (3.0, 7.0), "3min": (4.0, 9.0), "15min": (6.0, 16.0), "30min": (8.0, 24.0)}   # s de cada pasaje
 # ---- Tomas malas: medidas ABSOLUTAS del analizador ("vista" de cada medio segundo). No se comparan con el propio
 # video: un video entero grabado por accidente (camara colgando, apuntando al piso) ya no puntua como uno bueno.
 FOCO_MIN = 0.20               # enfoque respecto al tipico de ESA camara: por debajo esta desenfocada o movida
 # (16-nov) y respecto a la MEJOR camara del evento: el celular de noche (barridos, gente como manchas) tenia un enfoque
 # tipico de 13,7 contra 35,7 de la camara principal, asi que contra «lo suyo» siempre parecia normal y entraba
-FOCO_ABS_MIN = 0.55           # por debajo de esta parte del enfoque tipico de la mejor camara: borrosa, fuera
+# (18-nov, la persona: «agrega reglas estrictas: no tomas al piso, a paredes, borrosas, quemadas, muy movidas o sin
+# sentido»; visto en la hoja de contacto del de 3 min: un barrido borroso del dron sobre el cesped, DOS veces; el
+# maquillaje en vertical con los lados estirados; 25 s seguidos del mismo encuadre de la mesa) Umbrales mas duros
+# (antes 0,55 / 0,25 / 6,0 / 3,0), regla propia para el dron (FOCO_DRON, BARRIDO_DRON: antes no se le pedia enfoque) y
+# el «estorbo» fuera en TODAS las versiones, sin volver a admitirlo cuando falta material.
+FOCO_ABS_MIN = 0.62           # por debajo de esta parte del enfoque tipico de la mejor camara: borrosa, fuera
 FOCO_ABS_VERTICAL = 0.75      # lo vertical dentro del horizontal se ve chico y con los lados rellenos: mas exigente
 FOCO_ABS_BIEN = 0.9           # desde aqui no resta puntaje
-QUEMADO_MAX = 0.25            # parte de la imagen con las luces reventadas desde la que la toma no se usa
+QUEMADO_MAX = 0.20            # parte de la imagen con las luces reventadas desde la que la toma no se usa
 QUEMADO_SUAVE = 0.02          # desde aqui ya resta puntaje: se prefiere otra toma del mismo momento
-BARRIDO_MAX = 6.0             # px por cuadro (192 de ancho, 10 c/s): la camara barre y no se ve nada (antes 8)
-TEMBLOR_MAX = 3.0             # temblor que ni el estabilizador arregla (antes 5: la camara principal tiene 1,6 tipico y
+BARRIDO_MAX = 4.5             # px por cuadro (192 de ancho, 10 c/s): la camara barre y no se ve nada (antes 8, luego 6)
+TEMBLOR_MAX = 2.6             # temblor que ni el estabilizador arregla (antes 5: la camara principal tiene 1,6 tipico y
 #                               3 en una de cada cuatro tomas; con 5 entraba lo que el estabilizador deformaba)
+FOCO_DRON = 0.65              # el dron, contra SU enfoque tipico: por debajo va borroso (movido al girar o acelerar)
+BARRIDO_DRON = 3.2            # y barre mas despacio que una camara en mano: desde aqui es una pasada borrosa
+PESO_VERTICAL = 0.35          # en el video horizontal, un video vertical (lados rellenos) pesa esto: solo si hace falta
 OSCURA_MAX = 0.07             # luz media con la que ya no se ve nada
 TORCIDA = (25, 0.20, 0.16)    # giro minimo, pico minimo y eje maximo: camara ladeada o apuntando al piso
 ENFOQUE_CAIDA = 0.40           # el enfoque cae a esta parte del de 2 s alrededor: desenfoque momentaneo o tiron
 BORDE_MALO = 0.5              # s que se evitan a cada lado de un tramo malo (la camara aun se esta acomodando)
 VIDEO_ACCIDENTAL = 0.15       # si sirve menos de esta parte del video, el video entero fue un accidente
 PARECIDAS = 10                # bits de diferencia (de 64) con los que dos imagenes son el mismo encuadre
-TOPE_MISMO_ENCUADRE = 0.22    # parte de los planos de una zona que puede venir del mismo video o encuadre
+TOPE_MISMO_ENCUADRE = 0.15    # parte de los planos de una zona que puede venir del mismo video o encuadre (antes 0,22)
 TOPE_DRON = 0.15              # parte de los planos de una zona que puede ser de dron
 # ---- Relleno cuando no alcanzan las tomas buenas (mejor que repetir o meter una toma fea)
 RELLENO_FOTOS = ("30min",)    # versiones que se rellenan con fotos del mismo momento
@@ -312,6 +320,110 @@ def _hora(it, desplazamiento=0.0):
 
 
 # ------------------------------------------------------------------ plan (sin tocar Resolve)
+# Los pasos de cada momento, en el orden en que pasan. Cada paso: las etiquetas (de la IA de vista) que lo muestran.
+HISTORIA = {
+    "xv": {"MAQUILLAJE": [("maquillaje", "peinado"), ("vestido", "zapatos"), ("festejada",)],
+           "IGLESIA": [("entrada", "cortejo"), ("altar", "sacerdote", "votos"), ("familia", "grupo")],
+           "FIESTA": [("entrada",), ("primer_baile",), ("brindis",), ("pastel",), ("baile", "dj"), ("familia", "grupo", "risas")]},
+    "boda": {"MAQUILLAJE": [("maquillaje", "peinado"), ("vestido", "traje"), ("anillos", "zapatos", "detalle")],
+             "IGLESIA": [("entrada", "cortejo"), ("votos", "altar", "sacerdote"), ("anillos",), ("beso",), ("familia", "grupo")],
+             "FIESTA": [("entrada",), ("primer_baile",), ("brindis",), ("pastel",), ("baile", "dj"), ("familia", "grupo", "risas")]},
+    "bautizo": {"MAQUILLAJE": [("vestido", "traje", "detalle"), ("familia",)],
+                "IGLESIA": [("entrada",), ("altar", "sacerdote"), ("familia", "grupo")],
+                "FIESTA": [("mesa", "comida"), ("pastel",), ("niños", "risas"), ("familia", "grupo")]},
+}
+HISTORIA["graduacion"] = HISTORIA["cumpleanos"] = HISTORIA["xv"]
+
+
+def _lo_que_muestra(v):
+    """Etiquetas de la toma: las de la primera vista y los momentos clave de sus cuadros buenos."""
+    ia = v.get("ia") or {}
+    et = set(ia.get("etiquetas") or [])
+    for x in ia.get("instantes") or []:
+        if len(x) > 2 and x[2] is not False:
+            et.update(x[1] or [])
+    return et
+
+
+def factor_planos():
+    """(18-nov, la persona: «que exista un slider para decir cuántas tomas, ya que hay muchas tomas y estresa») estado
+    tomas_ritmo 0-100 (50 = como siempre): 0 = pocas tomas (planos hasta 2 veces mas largos), 100 = muchas (30 % mas
+    cortos como mucho: mas cortos se vuelve un parpadeo). Multiplica el largo de cada plano; los cortes siguen al ritmo."""
+    try:
+        v = float(_modulo("motor").leer_estado().get("tomas_ritmo", 50))
+    except Exception:
+        return 1.0
+    v = max(0.0, min(100.0, v))
+    return 1.0 + (50.0 - v) / 50.0 if v < 50 else 1.0 - 0.3 * (v - 50.0) / 50.0
+
+
+def id_plano(p):
+    """Como se reconoce un plano entre el plan que se ve y el que se arma: archivo y segundo de la toma."""
+    return "%s@%.1f" % ((p.get("item") or {}).get("nombre", ""), float(p.get("ini") or 0.0))
+
+
+def aplicar_orden(zonas, clave, fps):
+    """(18-nov, la persona: «que pueda mover el orden de las tomas para hacer la corrección del video de una vez») El
+    orden que la persona arrastro en «Qué entra al video» (estado orden_planos[clave] = [id_plano...]): cada HUECO del
+    plan conserva su duracion y su corte a la musica y recibe la toma que la persona puso en esa posicion; las que no
+    estan en su lista siguen en su orden. Devuelve cuantos planos cambiaron de lugar."""
+    try:
+        orden = (_modulo("motor").leer_estado().get("orden_planos") or {}).get(clave) or []
+    except Exception:
+        orden = []
+    if not orden:
+        return 0
+    huecos = [(zi, pi) for zi, z in enumerate(zonas) for pi, p in enumerate(z[3]) if p.get("tipo") != "foto"]
+    piezas = [zonas[zi][3][pi] for zi, pi in huecos]
+    por_id = {}
+    for p in piezas:
+        por_id.setdefault(id_plano(p), []).append(p)
+    nueva, usadas = [], set()
+    for i in orden:
+        if por_id.get(i):
+            p = por_id[i].pop(0)
+            nueva.append(p)
+            usadas.add(id(p))
+    nueva += [p for p in piezas if id(p) not in usadas]
+    movidos = 0
+    for (zi, pi), contenido in zip(huecos, nueva):
+        viejo = zonas[zi][3][pi]
+        if contenido is viejo:
+            continue
+        p = dict(contenido)
+        p["dur_f"] = viejo["dur_f"]                     # el hueco manda: duracion y corte a la musica
+        dur_toma = float((p.get("item") or {}).get("dur") or 0.0)
+        hace_falta = p["dur_f"] * float(p.get("vel") or 1.0) / float(fps)
+        if dur_toma > 0:
+            p["ini"] = max(0.0, min(float(p.get("ini") or 0.0), dur_toma - hace_falta))
+        zonas[zi][3][pi] = p
+        movidos += 1
+    return movidos
+
+
+def decisiones(items):
+    """(18-nov, «Qué entra al video» de Material) Lo que la persona decidio a mano manda sobre el analisis: las tomas
+    de «No la uses» (estado tomas_no) quedan fuera y las de «Úsala de todos modos» (tomas_si) vuelven a entrar aunque
+    el analisis las hubiera descartado enteras (sus tramos malos siguen sin usarse)."""
+    try:
+        est = _modulo("motor").leer_estado()
+        no = {str(n).upper() for n in est.get("tomas_no") or []}
+        si = {str(n).upper() for n in est.get("tomas_si") or []}
+    except Exception:
+        return items
+    if not (no or si):
+        return items
+    out = []
+    for i in items:
+        n = str(i.get("nombre", "")).upper()
+        if n in no:
+            i = dict(i, descartar=True, a_mano="no")
+        elif n in si:
+            i = dict(i, descartar=False, forzada=True, a_mano="si")
+        out.append(i)
+    return out
+
+
 class Planificador:
     def __init__(self, items, fps):
         self.fps = fps
@@ -323,7 +435,9 @@ class Planificador:
         n_vert = len(validos) - len(horizontales)
         fotos = [i for i in items if i["tipo"] == "foto" and not i.get("descartar")]
         if VERTICAL:                                     # 9:16: solo lo grabado en vertical
-            self.vids = [i for i in validos if not i.get("horizontal", True)]
+            # (19-nov, la persona: «testea con tomas aéreas de dron... si es vertical, vertical») y el dron, recortado
+            # al centro: un vuelo 4K llena el 9:16 de sobra (1215 x 2160) y el paisaje aguanta el recorte
+            self.vids = [i for i in validos if not i.get("horizontal", True) or i["tipo"] == "dron"]
             fotos_v = [i for i in fotos if not i.get("horizontal", True)]
             if len(fotos_v) > len(INTRO_CORTES):         # alcanzan para la intro y el final
                 fotos = fotos_v
@@ -355,7 +469,7 @@ class Planificador:
         self._refs = self._enfoque_tipico(self.vids)
         self._ref_evento = self._enfoque_evento(self.vids)
         # videos grabados por accidente (camara colgando, desenfocada, apuntando al piso): no entran al montaje
-        accidentes = [v for v in self.vids if (v.get("vista") or {}).get("nit") and self.parte_buena(v) < (
+        accidentes = [v for v in self.vids if not v.get("forzada") and (v.get("vista") or {}).get("nit") and self.parte_buena(v) < (
             ACCIDENTAL_SIN_CARAS if v["tipo"] == "video" and v.get("caras") == [] else VIDEO_ACCIDENTAL)]
         self.accidentales = []
         if accidentes and len(accidentes) < len(self.vids):
@@ -430,7 +544,10 @@ class Planificador:
             cerca = max(nit[max(0, i - 4):i + 5])
             tiron = cerca > 0 and nit[i] < ENFOQUE_CAIDA * cerca and cerca >= 0.4 * ref
             m = (foco < FOCO_MIN or foco_ev < abs_min or q >= QUEMADO_MAX or p > BARRIDO_MAX or t > TEMBLOR_MAX
-                 or luz < OSCURA_MAX or torcida or tiron or i in ia_malo)
+                 or luz < OSCURA_MAX or torcida or tiron or i in ia_malo
+                 or (dron and (foco < FOCO_DRON or p > BARRIDO_DRON)))
+            if m and v.get("forzada") and i not in ia_malo:
+                m = False        # (18-nov) «Úsala de todos modos»: la persona la vio y la quiere; solo manda lo que vio la IA
             malo.append(m)
             if m:
                 factor.append(0.0)
@@ -441,6 +558,13 @@ class Planificador:
                 fp = 1.0 - 0.4 * _lim((p - 3.0) / (BARRIDO_MAX - 3.0), 0.0, 1.0)
                 ft = 1.0 - PESO_TEMBLOR * _lim((t - 0.5) / (TEMBLOR_MAX - 0.5), 0.0, 1.0)     # (1.5.7) firme gana
                 factor.append(fq * ff * fp * ft)
+        if ia_malo and len(malo) * PASO_CALIDAD < float(v.get("dur") or 0.0):
+            # (19-nov) sin las medidas de cada medio segundo (vino solo el resumen) lo que vio la IA quedaba SIN
+            # aplicar: sus cuadros malos cuentan igual hasta el final de la toma
+            for i in range(len(malo), int(math.ceil(float(v.get("dur") or 0.0) / PASO_CALIDAD))):
+                m = i in ia_malo
+                malo.append(m)
+                factor.append(0.0 if m else 1.0)
         tramos, i = [], 0
         while i < len(malo):
             if malo[i]:
@@ -861,7 +985,10 @@ class Planificador:
         pesos, topes = [], []
         for v, ls in cand:
             largo = sum(b - a for a, b in ls)
-            pesos.append(largo * (0.2 + self.puntaje(v, 0, v["dur"])))
+            peso = largo * (0.2 + self.puntaje(v, 0, v["dur"]))
+            if not VERTICAL and not v.get("horizontal", True):
+                peso *= PESO_VERTICAL            # (18-nov) lo vertical dentro del horizontal, solo si falta material
+            pesos.append(peso)
             topes.append(int(largo // (lo + SEPARACION)))
         # variedad: los videos del mismo encuadre (la camara en el tripode, varios archivos seguidos) cuentan como uno
         # y todo el dron junto tiene su propio tope (es bonito, pero no es el evento)
@@ -912,6 +1039,27 @@ class Planificador:
         cuenta = repartir([min(t, por_toma) for t in topes])
         if sum(cuenta) < len(cortes):
             cuenta = repartir(topes)
+        # (18-nov, «crear historias con el video: tú sabes cómo es el proceso de una boda y de unos quince años») Los
+        # PASOS del momento (HISTORIA: maquillaje, vestido... entrada, vals, brindis, pastel, baile) que el material
+        # tiene no se quedan fuera: si ninguna toma elegida muestra un paso, entra la mejor que lo muestra, quitandole
+        # un plano a la que mas tiene. El orden sigue siendo el de la hora (la historia del dia).
+        if len(momentos) == 1 and len(cortes) >= 2:
+            pasos = (HISTORIA.get(TIPO_EVENTO) or HISTORIA["xv"]).get(momentos[0]) or []
+            falta_h = []
+            for paso in pasos:
+                con = [i for i, (v, _ls) in enumerate(cand) if set(paso) & _lo_que_muestra(v)]
+                if not con or any(cuenta[i] > 0 for i in con):
+                    continue
+                mejor = max((i for i in con if topes[i] >= 1), key=lambda i: pesos[i], default=None)
+                dona = max(range(len(cand)), key=lambda i: cuenta[i]) if cand else None
+                if mejor is not None and dona is not None and cuenta[dona] >= 2:
+                    cuenta[dona] -= 1
+                    cuenta[mejor] = 1
+                else:
+                    falta_h.append(paso[0])
+            self.historia = {"pasos": [p[0] for p in pasos],
+                             "hay": [p[0] for p in pasos if any(set(p) & _lo_que_muestra(v) for v, _ in cand)],
+                             "sin_sitio": falta_h}
         piezas, pendientes, cola = [], [], list(cortes)
         for (v, ls), n in zip(cand, cuenta):
             if n <= 0:
@@ -924,7 +1072,7 @@ class Planificador:
         self.relleno = {"dron": 0, "fotos": 0}
         if pendientes:                          # no alcanzan las tomas buenas: dron, fotos y, al final, repetir
             hay = sum(1 for p in piezas if p["tipo"] == "dron")
-            pendientes = self._rellenar_dron(pendientes, piezas, max(0, int(len(cortes) * TOPE_DRON) - hay))
+            pendientes = self._rellenar_dron(pendientes, piezas, max(0, int(len(cortes) * TOPE_DRON) - hay), filtro)
         if pendientes and con_fotos:            # primero las fotos de ese momento; si se acaban, las de los demas
             pendientes = self._rellenar_fotos(pendientes, piezas, filtro or momentos)
             if pendientes:
@@ -944,15 +1092,17 @@ class Planificador:
         self.separar(piezas)
         return piezas, reusos
 
-    def _rellenar_dron(self, largos, piezas, cupo):
-        """Planos de dron que aun no se usaron (de cualquier momento) para lo que falta, hasta `cupo`. Devuelve los
-        largos que siguen sin llenar."""
+    def _rellenar_dron(self, largos, piezas, cupo, momentos=None):
+        """Planos de dron que aun no se usaron para lo que falta, hasta `cupo`. Devuelve los largos que siguen sin
+        llenar. (19-nov, la persona: «no vas a poner una toma del dron del día si van por la fiesta... sé coherente
+        dónde va en el orden») solo el dron de ESOS momentos; antes, de cualquiera."""
         faltan = []
         for lf in sorted(largos, reverse=True):
             l = lf / float(self.fps)
             puesto = None
             if cupo > 0:
-                for v in sorted((d for d in self.vids if d["tipo"] == "dron"), key=lambda d: -self.puntaje(d, 0, d["dur"])):
+                for v in sorted((d for d in self.vids if d["tipo"] == "dron" and (not momentos or d.get("momento") in momentos)),
+                                key=lambda d: -self.puntaje(d, 0, d["dur"])):
                     ls = [x for x in self.libres(v) if x[1] - x[0] >= l]
                     if ls:
                         puesto, _ = self._colocar(v, ls, [lf])
@@ -1179,7 +1329,8 @@ PESO_SONRISA = 1.3            # (17-nov) un tramo donde la vista ve sonreir a la
 PESO_ESTORBO = 0.12         # cuanto vale un tramo con estorbo frente a uno limpio (16-nov: con 0,35 el de 15 min metia
 #                               9 veces en un minuto el hombro borroso con huipil: ahora queda bajo UMBRAL_PLANO y el
 #                               armado prefiere repetir una toma buena o rellenar, como pide la regla del montaje)
-ESTORBO_DURO_HASTA_S = int(os.environ.get("TRAILER_ESTORBO_DURO_S", 180))    # (16-nov) en las versiones de hasta 3 min el estorbo queda fuera del todo (solo lo limpio)
+ESTRICTO = os.environ.get("TRAILER_ESTRICTO", "1") != "0"     # (18-nov) reglas estrictas: nada dudoso aunque falte material
+ESTORBO_DURO_HASTA_S = int(os.environ.get("TRAILER_ESTORBO_DURO_S", 99999 if ESTRICTO else 180))    # (16-nov) en las versiones de hasta 3 min el estorbo queda fuera del todo (solo lo limpio)
 
 
 def objetivos_de_luz(items):
@@ -1611,6 +1762,85 @@ def legibilidad_plantilla(tl):
 
 
 ZOOM_TITULO_VERTICAL = 1.5        # cuanto se agrandan en 9:16 los titulos de la plantilla ya ajustados al ancho
+# (18-nov, boda vista cuadro a cuadro) con 1,5 para todos «NUESTRA BODA» (mayusculas, ocupa el ancho del 16:9) se salia
+# por los lados y «Un sueño que empieza» / «Cindy & Dereck» (manuscrita, un tercio del ancho) quedaban diminutos
+ZOOM_TITULO_V_ANCHO = 1.12        # titulos en MAYUSCULAS (ocupan todo el ancho): enteros dentro del 9:16
+# frases y nombres (minusculas / manuscrita): segun su largo, que ocupen ~88 % del ancho. MEDIDO en DaVinci (boda):
+# «Un sueño que empieza» (20 letras) a 2,3 ocupaba 1,15 del ancho y se cortaba -> ancho = 0,025 x letras x zoom
+ANCHO_POR_LETRA_V = 0.025
+ANCHO_FRASE_V = 0.88
+# titulos propios (disenar_titulo) en 9:16: el Size de Text+ va contra el ANCHO del cuadro. MEDIDO (boda): «Cindy &
+# Dereck» (14 letras) a 0,30 ocupaba ~105 % del ancho (se salia) -> ancho = 0,25 x letras x tamano
+ANCHO_SCRIPT_V = 0.25
+TAM_V_MAX = 0.30
+SUB_V = 1.6                       # el subtitulo en mayusculas espaciadas, tambien mas grande en 9:16
+FRASE_UNA_LINEA_V = 20            # frase mas larga que esto: en dos lineas en 9:16
+Y_FRASE_V = 0.27                  # altura de las frases en 9:16 (0,19 quedaba bajo los botones del celular)
+ZOOM_TITULO_V_MIN = 1.0
+ZOOM_TITULO_V_MAX = 2.2
+
+
+def _zoom_vertical(comp):
+    """Cuanto agrandar en 9:16 un titulo de la plantilla segun su texto (ver ZOOM_TITULO_V_*)."""
+    textos = []
+    try:
+        for herr in (comp.GetToolList(False, "TextPlus") or {}).values():
+            txt = herr.GetInput("StyledText")
+            if isinstance(txt, str) and txt.strip():
+                textos.append(txt.strip())
+    except Exception:
+        pass
+    if not textos:                  # macros (mWedding): el texto esta en una entrada «...StyledText» de la macro
+        try:
+            for herr in (comp.GetToolList(False) or {}).values():
+                for inp in (herr.GetInputList() or {}).values():
+                    iid = (inp.GetAttrs() or {}).get("INPS_ID", "")
+                    if iid.endswith("StyledText"):
+                        txt = herr.GetInput(iid)
+                        if isinstance(txt, str) and txt.strip():
+                            textos.append(txt.strip())
+        except Exception:
+            pass
+    if not textos:
+        return ZOOM_TITULO_VERTICAL
+    principal = max(textos, key=len)
+    letras = [c for c in principal if c.isalpha()]
+    if letras and sum(c.isupper() for c in letras) > 0.8 * len(letras):
+        return ZOOM_TITULO_V_ANCHO
+    z = ANCHO_FRASE_V / (ANCHO_POR_LETRA_V * max(1, len(principal)))
+    return max(ZOOM_TITULO_V_MIN, min(ZOOM_TITULO_V_MAX, z))
+
+
+ZOOM_MULTITEXT_V = 1.6            # (18-nov, mirado en DaVinci) «UN FILM DE / CINEMA PRODUCTIONS» a ~75 % del ancho
+ESPACIO_LINEAS_V = 0.037          # entre las lineas apiladas del MultiText (en 16:9 iban desplazadas de lado)
+SIN_EN_VERTICAL = ("CINE BARS",)  # franjas de cine 2,39:1: en 9:16 dejaban la imagen en una franja delgada
+
+
+def _multitext_a_vertical(it):
+    """El credito de la intro (macro MultiText: «UN FILM DE» a la izquierda y «CINEMA PRODUCTIONS» a la derecha, zoom
+    0,5 y corrido de lado): en 9:16 salia chico y torcido. Sus lineas se apilan centradas (en su orden de arriba abajo),
+    sin corrimiento y mas grandes. Devuelve True si lo cambio."""
+    comp = it.GetFusionCompByIndex(1) if it.GetFusionCompCount() else None
+    h = comp.FindTool("Template") if comp is not None else None
+    if h is None:
+        return False
+    lineas = []
+    for k in range(1, 9):
+        txt = h.GetInput("Text%d.StyledText" % k)
+        c = h.GetInput("Text%d.Center" % k)
+        if not isinstance(txt, str) or not txt.strip() or not isinstance(c, dict):
+            continue
+        lineas.append((float(c.get(2, 0.5)), k, txt))
+    if not lineas:
+        return False
+    lineas.sort(reverse=True)                          # la de mas arriba primero
+    y0 = 0.5 + ESPACIO_LINEAS_V * (len(lineas) - 1) / 2.0
+    for n, (_, k, txt) in enumerate(lineas):
+        h.SetInput("Text%d.StyledText" % k, txt.strip())
+        h.SetInput("Text%d.Center" % k, {1: 0.5, 2: y0 - n * ESPACIO_LINEAS_V, 3: 0.0})
+    for prop, v in (("Pan", 0.0), ("Tilt", 0.0), ("ZoomX", ZOOM_MULTITEXT_V), ("ZoomY", ZOOM_MULTITEXT_V)):
+        it.SetProperty(prop, v)
+    return True
 
 
 def titulos_a_vertical(tl):
@@ -1625,6 +1855,14 @@ def titulos_a_vertical(tl):
             continue
         for it in tl.GetItemListInTrack("video", t) or []:
             try:
+                nombre_it = (it.GetName() or "").strip().upper()
+                if nombre_it in SIN_EN_VERTICAL:
+                    it.SetClipEnabled(False)
+                    n += 1
+                    continue
+                if nombre_it == "MULTITEXT":
+                    n += bool(_multitext_a_vertical(it))
+                    continue
                 comp = it.GetFusionCompByIndex(1) if it.GetFusionCompCount() else None
                 cajas = (comp.GetToolList(False, "Letterbox") or {}) if comp is not None else {}
                 if not cajas:
@@ -1632,8 +1870,9 @@ def titulos_a_vertical(tl):
                 for caja in cajas.values():
                     caja.SetInput("Mode", 0)
                 if abs(float(it.GetProperty("ZoomX") or 1.0) - 1.0) < 0.01:      # sin zoom propio en la plantilla
-                    it.SetProperty("ZoomX", ZOOM_TITULO_VERTICAL)
-                    it.SetProperty("ZoomY", ZOOM_TITULO_VERTICAL)
+                    z = _zoom_vertical(comp)
+                    it.SetProperty("ZoomX", z)
+                    it.SetProperty("ZoomY", z)
                 n += 1
             except Exception:
                 pass
@@ -1666,7 +1905,8 @@ def sfx_propios(mp, root):
     return res
 
 
-ESTAB_PARALELO = 4           # planos que se miden a la vez (ffmpeg + numpy; DaVinci no se toca mientras)
+ESTAB_PARALELO = 8           # planos que se miden a la vez (ffmpeg con la GPU + numpy; DaVinci no se toca mientras)
+#                              (18-nov, medido: 4 a la vez con el procesador 1,0 s por plano; 8 con la tarjeta, ~0,45)
 
 
 def _lento_de_verdad(p):
@@ -1726,6 +1966,10 @@ def estabilizar(puestos, fps=24, limite_s=None):
             return None
     with ThreadPoolExecutor(ESTAB_PARALELO) as ex:
         medidas = list(ex.map(medir, zip(orden, velocidades)))
+    try:
+        est.guardar()                            # (18-nov) lo medido queda para el proximo armado
+    except Exception:
+        pass
     n, antes, despues, zooms = 0, [], [], []
     for (p, x), c, vel in zip(orden, medidas, velocidades):
         if not c or (limite_s and time.time() - t0 > limite_s):
@@ -2316,6 +2560,23 @@ def disenar_titulo(it, principal, secundario, frase=False, abajo=False):
             if abajo:
                 tam *= 0.86
                 y -= 0.275
+        sube_abajo = 0.26                  # cuanto baja el subtitulo de la tarjeta final
+        if VERTICAL:                       # (18-nov) en 9:16 el mismo tamano quedaba diminuto: ~80 % del ancho
+            if frase and len(principal) > FRASE_UNA_LINEA_V and "\n" not in principal:
+                # «El amor es paciente, el amor es bondadoso» en una linea salia diminuta: en dos, por el espacio mas
+                # cercano a la mitad
+                medio = len(principal) // 2
+                cortes = [i for i, ch in enumerate(principal) if ch == " "]
+                if cortes:
+                    i = min(cortes, key=lambda k: abs(k - medio))
+                    principal = principal[:i].rstrip() + "\n" + principal[i + 1:].lstrip()
+            largo = max(len(l) for l in principal.split("\n"))
+            tam = max(tam, min(TAM_V_MAX, (0.70 if frase else 0.80) / (ANCHO_SCRIPT_V * max(1, largo))))
+            if frase:
+                y = Y_FRASE_V                  # sobre los botones de Reels / TikTok, que tapan lo de abajo
+            if abajo:
+                y += 0.075                     # la fecha quedaba casi en el borde de abajo
+                sube_abajo = 0.185
         t1.SetInput("StyledText", principal)
         t1.SetInput("Font", FUENTE_TITULO)
         t1.SetInput("Style", "Regular")
@@ -2340,8 +2601,8 @@ def disenar_titulo(it, principal, secundario, frase=False, abajo=False):
         t2.SetInput("StyledText", secundario.upper())
         t2.SetInput("Font", FUENTE_SUB)
         t2.SetInput("Style", ESTILO_SUB)
-        t2.SetInput("Size", 0.031)
-        t2.SetInput("Center", {1: 0.5, 2: 0.405 - (0.26 if abajo else 0.0), 3: 0.0})
+        t2.SetInput("Size", 0.031 * (SUB_V if VERTICAL else 1.0))
+        t2.SetInput("Center", {1: 0.5, 2: 0.405 - (sube_abajo if abajo else 0.0), 3: 0.0})
         try:                                                  # el subtitulo se va abriendo
             t2.AddModifier("CharacterSpacing", "BezierSpline")
             t2.SetInput("CharacterSpacing", 1.22, 0)
@@ -2874,6 +3135,9 @@ def metadatos_davinci(pool, items):
             continue
         try:
             campos = mt.campos_de(i, voces.get(esc._clave(i["ruta"])) if esc else None)
+            escrito = mt.leer(i["ruta"])         # lo que el analisis dejo en el archivo (con la receta): lo mismo aqui
+            if escrito.get("comentario"):
+                campos["comentario"] = escrito["comentario"]
             nuevo = {"Description": campos["titulo"], "Comments": campos["comentario"],
                      "Keywords": campos["etiquetas"].replace("; ", ","), "Scene": campos["descripcion"]}
             if (c.GetMetadata("Comments") or "") == nuevo["Comments"]:
@@ -2923,7 +3187,8 @@ def main():
         aviso("No hay proyecto abierto en Resolve.")
         return
     analisis = globals().get("ANALISIS") or _modulo("analizar_material").analizar(BASE, log=print)
-    items = analisis.get("items") or []
+    items = decisiones(analisis.get("items") or [])
+    analisis = dict(analisis, items=items)
     if not any(i["tipo"] == "foto" for i in items) or not any(i["tipo"] != "foto" for i in items):
         aviso("Faltan fotos o videos en las carpetas.")
         return
@@ -2979,7 +3244,11 @@ def main():
         reporte["versiones"] = []
         plan = Planificador(items, fps)
         planes = []
+        largo_planos = factor_planos()
         for k, (ver, tpl) in enumerate(pendientes):
+            if abs(largo_planos - 1.0) > 0.01:          # (18-nov) el slider «Cuántas tomas» de «Qué entra al video»
+                ver = dict(ver, corte=tuple(x * largo_planos for x in ver["corte"]),
+                           apertura=tuple(x * largo_planos for x in ver["apertura"]))
             rng = random.Random(2000 + k)
             total_f = int(ver["seg"] * fps)
             golpes = []
@@ -3001,7 +3270,24 @@ def main():
                     # el resumen inicial muestra los mejores momentos: en las versiones largas NO los reserva,
                     # porque luego se cuentan completos en su zona (en 1 y 3 min si, para no repetir planos)
                     reservados = {k: list(v) for k, v in plan.usados.items()}
-                    piezas, reusos = plan.zona(ZONAS, z1 - z0, ver["apertura"], rng, True)
+                    # (18-nov, la persona: «mejora el armado para crear historias») el resumen tambien cuenta el dia
+                    # EN ORDEN: una parte de preparativos, otra de ceremonia y otra de fiesta (segun lo que haya de
+                    # cada una), no «lo mejor de todo» junto (abria con el pastel y luego volvia al maquillaje)
+                    con = [m for m in ZONAS if capacidad.get(m, 0) > 0]
+                    if len(con) >= 2:
+                        peso = {"MAQUILLAJE": 0.25, "IGLESIA": 0.30, "FIESTA": 0.45}
+                        total_p = sum(peso[m] for m in con)
+                        piezas, reusos, queda = [], 0, z1 - z0
+                        for n_m, m in enumerate(con):
+                            parte = queda if n_m == len(con) - 1 else int(round((z1 - z0) * peso[m] / total_p))
+                            if parte < int(ver["apertura"][0] * fps):
+                                continue
+                            p_m, r_m = plan.zona([m], parte, ver["apertura"], rng, n_m == 0)
+                            piezas += p_m
+                            reusos += r_m
+                            queda -= sum(p["dur_f"] for p in p_m)
+                    else:
+                        piezas, reusos = plan.zona(ZONAS, z1 - z0, ver["apertura"], rng, True)
                     if ver["seg"] > 180:
                         plan.usados = reservados
                     lo = ver["apertura"][0]
@@ -3009,7 +3295,7 @@ def main():
                     antes_u = {k: list(v) for k, v in plan.usados.items()}
                     piezas, reusos = plan.zona([nombre], z1 - z0, ver["corte"], rng, nombre != "MAQUILLAJE",
                                                ver["sufijo"] in RELLENO_FOTOS)
-                    if reusos and plan.estorbo_duro:
+                    if reusos and plan.estorbo_duro and not ESTRICTO:
                         # (17-nov) en 1 y 3 min el «estorbo» (alguien delante, pegado al lente) queda fuera, pero la
                         # vista lo marca de mas (328 de 1368 cuadros; de 12 mirados, la mitad eran tomas buenas): si
                         # sin esas tomas hay que REPETIR, entran (con su peso bajo) antes que repetir
@@ -3060,6 +3346,9 @@ def main():
                         zonas[-1] = (nombre_z, z0, z1, quedan + [h])
             except Exception as ex:
                 aviso("%s: no se pudo preparar el plano final (%s)" % (ver["sufijo"], ex))
+            movidos = aplicar_orden(zonas, ("V " if VERTICAL else "") + str(ver["sufijo"]), fps)
+            if movidos:
+                print("%s: %d planos en el orden que pusiste a mano." % (ver["sufijo"], movidos))
             lentos, estab = plan.marcar_efectos(zonas, fps, LENTOS.get(ver["sufijo"], 2))
             planes.append((ver, tpl, intro, zonas))
             reporte["versiones"].append({"timeline": rutas.nombre_linea(evento, etiqueta(ver)), "zonas": info_z,
@@ -3364,6 +3653,11 @@ def main():
             info["ambiente"] = _modulo("ambiente").poner(tl, mp, pool, puestos, fps, print)
         except Exception as ex:
             aviso("%s: no se pudo poner el ambiente real (%s)" % (nombre, ex))
+        try:                                     # (18-nov) SFX de emocion donde la IA vio el beso, el pastel, los anillos...
+            info["emocion"] = _modulo("sfx").emocion(tl, mp, lambda k: buscar_clip(root, k), puestos, fps,
+                                                     propios, print)
+        except Exception as ex:
+            aviso("%s: no se pudieron poner los SFX de emoción (%s)" % (nombre, ex))
         try:                                     # (17-nov) el nombre DETRAS de la persona (recorte local, sin Mascara
             pd_mod = _modulo("persona_delante")  # Magica): solo si tapa una parte de las letras; en 9:16 aun no
             if pd_mod.activo() and not VERTICAL:
@@ -3437,5 +3731,6 @@ def main():
     pm.SaveProject()
 
 
-main()
+if not globals().get("SOLO_DEFINIR"):     # (18-nov) receta.tramos_fuera usa las cuentas (Planificador.vista) sin armar nada
+    main()
 result = reporte

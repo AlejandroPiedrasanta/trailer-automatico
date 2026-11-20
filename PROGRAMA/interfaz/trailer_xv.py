@@ -347,9 +347,9 @@ def app():
     QPushButton#pill:hover { color: %(t)s; border-color: #22C47E; }
     QPushButton#pill:checked { background: rgba(34,196,126,0.30); color: #B9FFE0; border-color: #22C47E; }
     QPushButton#pill:disabled { color: rgba(143,163,168,0.5); }
-    QPushButton#chip { background: rgba(14, 30, 38, 0.80); border: 1px solid rgba(201,162,103,0.45);
-                       border-radius: 14px; padding: 7px 16px; color: #EBCB8F; font-weight: 600; }
-    QPushButton#chip:hover { background: rgba(201,162,103,0.15); }
+    QPushButton#chip { background: rgba(14, 30, 38, 0.80); border: 1px solid rgba(255,255,255,0.26);
+                       border-radius: 9px; padding: 8px 18px; color: #F1F5F6; font-weight: 500; }
+    QPushButton#chip:hover { background: rgba(255,255,255,0.08); }
     QFrame#vidrio { background: rgba(12, 26, 34, 0.80); border: 1px solid rgba(201,162,103,0.25);
                     border-radius: 18px; }
     QFrame#carpeta { background: rgba(12, 26, 34, 0.80); border: 1px solid rgba(34,196,126,0.35);
@@ -471,7 +471,16 @@ def app():
                         border-radius: {ch_r}px; background: rgba(255,255,255,0.035);
                         border: 1px solid rgba(255,255,255,0.20); }}
     QPushButton#chip2:hover {{ border-color: rgba(120, 230, 180, 0.6); }}
-    QPushButton#chip2[tipo="falta"] {{ border-color: rgba(242,184,75,0.85); color: #F2B84B; }}
+    QPushButton#barra_c {{ font-size: {g}px; font-weight: 400; color: #F1F5F6; padding: {ch_v}px {ch_h}px;
+                          padding-left: {ch_e}px; text-align: left; background: transparent; border: none;
+                          border-right: 1px solid rgba(140, 215, 200, 0.30); border-radius: 0px; }}
+    QPushButton#barra_c:hover {{ background: rgba(255,255,255,0.05); }}
+    QPushButton#barra_c[centro="1"] {{ text-align: center; padding-left: {ch_h}px; }}
+    QPushButton#barra_c[lado="izq"] {{ border-top-left-radius: {dock_r}px; border-bottom-left-radius: {dock_r}px; }}
+    QPushButton#barra_trailer {{ font-size: {g}px; font-weight: 500; color: #FFFFFF; padding: {ch_v}px {ch_h}px;
+                                background: {verde}; border: none; border-radius: 0px;
+                                border-top-right-radius: {dock_r}px; border-bottom-right-radius: {dock_r}px; }}
+    QPushButton#barra_trailer:hover {{ background: #26BE80; }}    QPushButton#chip2[tipo="falta"] {{ border-color: rgba(242,184,75,0.85); color: #F2B84B; }}
     QPushButton#chip2[tipo="oro"] {{ text-align: left; padding-left: {ch_e}px; color: #F1F5F6;
                                     border-color: rgba(255,255,255,0.20); }}
     QFrame#seg {{ background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.20);
@@ -510,6 +519,7 @@ def app():
     QPushButton#pill_tipo {{ font-size: {pt}px; font-weight: 400; color: #E3EBED; padding: {pt_v}px {pt_h}px;
                             border-radius: {pt_r}px; background: rgba(255,255,255,0.03);
                             border: 1px solid rgba(255,255,255,0.20); }}
+    QPushButton#pill_tipo:hover, QPushButton#pill_vista:hover {{ background: rgba(255,255,255,0.08); }}
     QPushButton#pill_tipo:checked {{ background: {verde}; color: #FFFFFF; border: 1px solid #44D894;
                                     font-weight: 600; }}
     QPushButton#pill_vista {{ font-size: {pv}px; font-weight: 500; color: #E3EBED; padding: {pv_v}px {pv_h}px;
@@ -518,7 +528,7 @@ def app():
     QPushButton#pill_vista:checked {{ background: {verde}; color: #FFFFFF; border: 1px solid #44D894;
                                      font-weight: 600; }}
     QLabel#nota_t {{ font-size: {nt}px; color: #9DB0B6; }}
-    QFrame#tarjeta {{ background: rgba(16, 36, 44, 0.76); border: 1px solid rgba(160, 210, 210, 0.24);
+    QFrame#tarjeta {{ background: rgba(13, 30, 38, 0.93); border: 1px solid rgba(160, 210, 210, 0.24);
                      border-radius: {tj_r}px; }}
     QLabel#tarjeta_t {{ font-size: {tj_t}px; font-weight: 700; }}
     QLabel#fila_aj {{ font-size: {fa}px; }}
@@ -528,6 +538,7 @@ def app():
     QPushButton#borde {{ font-size: {fa}px; font-weight: 400; padding: {bo_v}px {bo_h}px; border-radius: {bo_r}px;
                         background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.26); }}
     QPushButton#borde:hover {{ background: rgba(255,255,255,0.08); }}
+    QPushButton#chip {{ font-size: {g}px; padding: {bo_v}px {bo_h}px; border-radius: {bo_r}px; }}
     QPushButton#cancelar {{ font-size: {cn}px; font-weight: 500; color: #FFFFFF; padding: {cn_v}px {cn_h}px;
                            border-radius: {cn_r}px; background: rgba(255,255,255,0.03);
                            border: 1px solid rgba(255,255,255,0.40); }}
@@ -540,12 +551,13 @@ def app():
     """.format(
             verde=verde, a=p(32), b=p(30), c=p(28), d=p(30), g=p(36), h1=p(56),
             nav_r=p(34), tab_v=p(12), tab_h=p(40), tab_r=p(30), e_v=p(12), e_h=p(26), e_r=p(28), ctl_r=p(10),
-            dock_r=p(40), ch_v=p(22), ch_h=p(30), ch_r=p(16), ch_e=p(36), seg_r=p(16), sb_v=p(16), sb_h=p(26),
+            # (18-nov, la persona: «botones con dos diseños») TODOS los botones de esquina con el mismo radio (14)
+            dock_r=p(40), ch_v=p(22), ch_h=p(30), ch_r=p(14), ch_e=p(36), seg_r=p(16), sb_v=p(16), sb_h=p(26),
             sb_r=p(12), pl_v=p(16), pl_h=p(22), pl_r=p(14), bv_v=p(18), bv_h=p(46), bv_r=p(14), st_r=p(28),
             st_t=p(36), st_n=p(80), ok_f=p(34), ok_v=p(10), ok_h=p(30), ok_r=p(28), vd_r=p(30), tc=p(50), ay=p(28),
-            ec=p(34), le=p(36), le_v=p(20), le_h=p(30), le_r=p(14), pt=p(25), pt_v=p(16), pt_h=p(18), pt_r=p(16),
-            pv=p(28), pv_v=p(16), pv_h=p(50), pv_r=p(18), nt=p(26), tj_r=p(28), tj_t=p(44), fa=p(32), sa=p(36),
-            ce_r=p(14), bo_v=p(16), bo_h=p(30), bo_r=p(14), cn=p(34), cn_v=p(14), cn_h=p(46), cn_r=p(16),
+            ec=p(34), le=p(36), le_v=p(20), le_h=p(30), le_r=p(14), pt=p(25), pt_v=p(16), pt_h=p(18), pt_r=p(14),
+            pv=p(28), pv_v=p(16), pv_h=p(50), pv_r=p(14), nt=p(26), tj_r=p(28), tj_t=p(44), fa=p(32), sa=p(36),
+            ce_r=p(14), bo_v=p(16), bo_h=p(30), bo_r=p(14), cn=p(34), cn_v=p(14), cn_h=p(46), cn_r=p(14),
             sl_g=p(10), sl_gr=p(5), sl_b=p(4), sl_h=p(36), sl_m=p(13), sl_hr=p(18))
 
     # ------------------------------------------------------------------ trabajos en segundo plano
@@ -765,6 +777,8 @@ def app():
                 self.fila_b.addStretch(1)
             repulir(self.tarjeta, modo=modo)
             self.setGeometry(self.parentWidget().rect())
+            if not self.isVisible():                  # (1.7) la barra en QML no se ve encima de la hoja
+                self._tapados = piezas.tapar_quick(self.window())
             self.show()
             self.raise_()
 
@@ -772,6 +786,8 @@ def app():
             if modo is None or self.modo == modo:
                 self.modo = None
                 self.hide()
+                piezas.destapar_quick(getattr(self, "_tapados", None))
+                self._tapados = []
 
         def paintEvent(self, _):
             QPainter(self).fillRect(self.rect(), QColor(3, 9, 13, 190))
@@ -805,10 +821,25 @@ def app():
             self._reloj.start(self.PASO_MS)
 
         PASO_MS = 50        # 20 por segundo: repintar TODA la ventana cuesta 8-12 ms (medido); las nebulosas van lentas
+        # (18-nov, la persona: «las animaciones de fondo nada fluido y sin sentido», «va algo trabado y lagueado») El
+        # video del cielo (nebulosas a 8 cuadros por segundo, fundidas) obligaba a repintar TODA la ventana 20 veces
+        # por segundo, con todo lo de encima: eso frenaba botones, paginas y el astrolabio. Ahora el cielo es la imagen
+        # quieta y solo titilan unas estrellas, repintando nada mas sus pocos pixeles. VIDEO = True lo trae de vuelta.
+        VIDEO = False
+        TITILAN = 26
 
         def _tic(self):
             self.t += self.PASO_MS / 1000.0
             ver = self.isVisible() and not self.window().isMinimized()      # minimizada no se pinta nada
+            if not self.VIDEO:
+                if ver and self.window().isActiveWindow():
+                    from PySide6.QtGui import QRegion
+                    from PySide6.QtCore import QRect
+                    w, h, zona = self.width(), self.height(), QRegion()
+                    for x, y, _r, _f, _v in self.estrellas[:self.TITILAN]:
+                        zona += QRect(int(x * w) - 4, int(y * h) - 4, 8, 8)
+                    self.update(zona)
+                return
             if self._peli is not None:
                 self._peli.pausar(not ver)
                 self._peli.lento(not self.window().isActiveWindow())
@@ -819,7 +850,7 @@ def app():
 
         def showEvent(self, e):
             super().showEvent(e)
-            if self._peli is None:              # un rato despues de abrir (regla de arranque)
+            if self.VIDEO and self._peli is None:          # un rato despues de abrir (regla de arranque)
                 QTimer.singleShot(1500, self._video)
 
         def _video(self):
@@ -912,10 +943,10 @@ def app():
                 p.drawPixmap(0, 0, self._fondo[3])
             p.setRenderHint(QPainter.Antialiasing)
             p.setPen(Qt.NoPen)
-            for x, y, r, fase, vel in self.estrellas[:70]:          # (1.6.0) unas pocas titilan sobre la imagen
-                a = 20 + 90 * (0.5 + 0.5 * math.sin(self.t * vel + fase))
+            for x, y, r, fase, vel in self.estrellas[:70 if self.VIDEO else self.TITILAN]:    # unas pocas titilan
+                a = 30 + 170 * (0.5 + 0.5 * math.sin(self.t * vel + fase))
                 p.setBrush(QColor(220, 240, 245, int(a)))
-                p.drawEllipse(QPointF(x * w, y * h), r * 0.5, r * 0.5)
+                p.drawEllipse(QPointF(int(x * w), int(y * h)), r * 0.9, r * 0.9)
 
     def icono_app():
         """El icono del programa (icono_app.py) en varios tamanos: la barra de tareas elige el que le toca."""
@@ -988,12 +1019,19 @@ def app():
             hn.setSpacing(2)
             self.grupo_tabs = QButtonGroup(self)
             self.tabs = {}
-            for i, txt in enumerate(("Inicio", "Material", "Textos", "Ajustes")):
+            # el numero de cada pestaña es el de su pagina (self.paginas); el orden a la vista va aparte
+            for i, txt in enumerate(("Inicio", "Material", "Textos", "Ajustes", "Tráilers", "Plantillas")):
                 b = QPushButton(txt, objectName="tab", checkable=True)
                 b.setCursor(Qt.PointingHandCursor)
                 self.grupo_tabs.addButton(b, i)
                 self.tabs[txt] = b
-                hn.addWidget(b)
+            # (19-nov, la persona: «la página de Textos elimínala» y «crea una página para plantillas y otra de
+            # tráilers súper minimalista, solo de escoger el estilo; la de Material elimínala») Textos y Material sin
+            # pestaña: sus piezas siguen por dentro (el armado lee los nombres; el material se suelta en la ventana)
+            for txt in ("Inicio", "Tráilers", "Plantillas", "Ajustes", "Material", "Textos"):
+                hn.addWidget(self.tabs[txt])
+            self.tabs["Material"].hide()
+            self.tabs["Textos"].hide()
             self.tabs["Inicio"].setChecked(True)
             self.punto = QLabel("●")
             self.punto.setStyleSheet("color:%s; font-size:16px; padding: 0 10px;" % TENUE)
@@ -1055,7 +1093,8 @@ def app():
             raiz.addLayout(medio, 1)
             self.paginas.addWidget(self._pagina_inicio())
             _tiempo("  pagina Inicio")
-            for pag in (self._pagina_material(), self._pagina_textos(), self._pagina_ajustes()):
+            for pag in (self._pagina_material(), self._pagina_textos(), self._pagina_ajustes(),
+                        self._pagina_trailers(), self._pagina_plantillas()):
                 sa = QScrollArea()                       # en una pantalla chica se desplazan en vez de agrandar la ventana
                 sa.setWidgetResizable(True)
                 sa.setFrameShape(QFrame.NoFrame)
@@ -1102,12 +1141,13 @@ def app():
             self.t_dv.start(10000)
             QApplication.instance().installEventFilter(self)       # bordes para cambiar el tamano
             self._sin_recorte()                                    # (al final: mide texto, y las fuentes ya cargaron)
-            self._chips_editable(bool(self.est.get("evento") and self.est.get("timelines")))
+            self._chips_editable()
             self.t_eta = QTimer(self)                # «Listo a las 17:40» sigue al reloj
             self.t_eta.timeout.connect(self._sub_material)
             self.t_eta.start(60000)
             _tiempo("  final")
             QTimer.singleShot(300, self._arranque)
+            QTimer.singleShot(700, self._barra_a_qml)    # (1.7) con la ventana ya a la vista
 
         # ============================================================== paginas
         def _pagina_inicio(self):
@@ -1153,8 +1193,9 @@ def app():
             v.addSpacing(4)
             # chips de lo ya hecho: abrir videos, editar en DaVinci, renderizar lo editado, cancelar la copia
             fila_c = QHBoxLayout()
+            fila_c.setSpacing(14)                   # (18-nov) iban pegados y con letra chica
             fila_c.addStretch(1)
-            self.chip_videos = QPushButton("Abrir videos terminados", objectName="chip")
+            self.chip_videos =QPushButton("Abrir videos terminados", objectName="chip")
             self.chip_videos.setCursor(Qt.PointingHandCursor)
             self.chip_videos.clicked.connect(self._abrir_videos)
             self.chip_videos.hide()
@@ -1162,8 +1203,8 @@ def app():
             # la linea de cada evento queda editable en DaVinci: retocar y volver a sacar el video sin rearmar
             self.chip_editar = QPushButton("Editar en DaVinci", objectName="chip")
             self.chip_editar.setCursor(Qt.PointingHandCursor)
-            self.chip_editar.setToolTip("Abre DaVinci en la página Edición con la línea de este evento: retoca lo que "
-                                        "no te guste (cortes, textos, color, música).")
+            self.chip_editar.setToolTip("Elige un video y DaVinci abre SOLO su proyecto, con su línea en Edición: "
+                                        "retoca lo que no te guste (cortes, textos, color, música).")
             self.chip_editar.clicked.connect(self._editar_en_davinci)
             fila_c.addWidget(self.chip_editar)
             self.chip_render = QPushButton("Renderizar lo editado", objectName="chip")
@@ -1181,50 +1222,68 @@ def app():
             fila_c.addWidget(self.chip_cancelar)
             fila_c.addStretch(1)
             v.addLayout(fila_c)
-            v.addSpacing(4)
+            v.addSpacing(12)
             # (1.6.0) el panel de abajo (el «dock» del diseño): lo que hay, el evento, el formato, las duraciones y la
             # hora en que estara listo. Los dos formatos guardan sus duraciones; el selector muestra las de uno
             px = piezas.px
             self.dock = QFrame(objectName="dock")
             dv = QVBoxLayout(self.dock)
-            dv.setContentsMargins(px(46), px(40), px(46), px(44))
-            dv.setSpacing(px(34))
+            dv.setContentsMargins(0, 0, 0, 0)
+            dv.setSpacing(0)
+            # (19-nov, la persona: «más minimalista, 3 botones: tráiler, plantillas y el nombre») el panel es UNA barra:
+            # el nombre | Plantillas | Tráiler (verde). Lo demás (formato, duraciones, material, la hora, evento
+            # nuevo) va dentro de sus popups
             f1 = QHBoxLayout()
-            f1.setSpacing(px(32))
+            f1.setSpacing(0)
+            self.b_nombre = piezas.Chip("", "lapiz", "#EBCB8F", nombre="barra_c", lado=46)
+            self.b_nombre.setProperty("lado", "izq")
+            self.b_nombre.setToolTip("Los nombres del XV o de los novios")
+            self.b_nombre.clicked.connect(self._editar_nombre)
+            f1.addWidget(self.b_nombre, 16)
+            self.b_plantillas = piezas.Chip("   Plantillas", "claqueta", "#EEF3F4", nombre="barra_c", lado=46)
+            self.b_plantillas.setProperty("centro", "1")
+            self.b_plantillas.setToolTip("Cada video terminado, editable en DaVinci: abrirlo o sacarlo de nuevo")
+            self.b_plantillas.clicked.connect(self._plantillas)
+            f1.addWidget(self.b_plantillas, 10)
+            self.b_trailer = piezas.Chip("   Tráiler", "play", "#FFFFFF", nombre="barra_trailer", lado=40)
+            self.b_trailer.setToolTip("Qué videos salen y empezar a armarlos")
+            self.b_trailer.clicked.connect(self._trailer)
+            f1.addWidget(self.b_trailer, 10)
+            # (1.7) la barra en QML entra un momento despues de abrir (_barra_a_qml): crearla cuesta ~0,5 s
+            self.barra_qml = None
+            self._f1_barra = f1
+            dv.addLayout(f1)
+            # las piezas de antes siguen (las llenan _pintar_evento y _sub_material) pero ya no se ven
             self.chips_mat = {}
             for tipo in ("foto", "video", "dron"):
-                ch = piezas.Chip("", tipo, "#EEF3F4", lado=50)
-                ch.setMinimumWidth(px({"foto": 295, "video": 302, "dron": 270}[tipo]))
-                ch.setToolTip("Ver el material")
-                ch.clicked.connect(lambda *_: self._ir("Material"))
-                f1.addWidget(ch)
+                ch = piezas.Chip("", tipo, "#EEF3F4", self.dock, lado=50)
+                ch.hide()
                 self.chips_mat[tipo] = ch
-            f1.addWidget(piezas.separador_v(84))
-            self.chip_evento =piezas.Chip("", "lapiz", "#EEF3F4", lado=46)
-            self.chip_evento.setProperty("tipo", "oro")
-            self.chip_evento.setToolTip("Escribir los nombres y los textos del video")
-            self.chip_evento.clicked.connect(lambda: self._ir("Textos"))
-            f1.addWidget(self.chip_evento, 1)
-            # (1.6.1, la persona: «un botón para refrescar para un nuevo proyecto») deja el programa en blanco para otro
-            # evento: quita las carpetas de la lista y los textos. No borra nada
-            self.chip_nuevo = piezas.ChipGiro("", "refrescar", "#EEF3F4", lado=46)
-            self.chip_nuevo.setToolTip("Proyecto nuevo: empezar otro evento desde cero\n"
-                                       "(no borra nada: las carpetas y los videos terminados se quedan donde están)")
-            self.chip_nuevo.setFixedWidth(px(84))
-            self.chip_nuevo.clicked.connect(self._proyecto_nuevo)
-            f1.addWidget(self.chip_nuevo)
-            dv.addLayout(f1)
-            dv.addWidget(piezas.separador_h())
+            self.chip_mat = piezas.Chip("", "video", "#EEF3F4", self.dock, lado=50)
+            self.chip_evento = piezas.Chip("", "lapiz", "#EEF3F4", self.dock, lado=46)
+            self.chip_que = piezas.Chip("", "pelicula", "#EEF3F4", self.dock, lado=46)
+            self.l_eta = QLabel("", self.dock, objectName="eta")
+            self.chip_nuevo = piezas.ChipGiro("", "refrescar", "#EEF3F4", self.dock, lado=46)
+            for x in (self.chip_mat, self.chip_evento, self.chip_que, self.l_eta, self.chip_nuevo):
+                x.hide()
+            self.caja_videos = QWidget(self.dock)    # va dentro del popup de chip_que; aqui, guardada sin verse
+            self.caja_videos.hide()
+            cv = QVBoxLayout(self.caja_videos)       # arriba el formato, abajo sus duraciones (en el popup no caben juntos)
+            cv.setContentsMargins(0, 0, 0, 0)
+            cv.setSpacing(px(24))
+            f_fmt = QHBoxLayout()
             f2 = QHBoxLayout()
             f2.setSpacing(px(18))
+            cv.addLayout(f_fmt)
+            cv.addLayout(f2)
             self.seg_formato = piezas.Segmentado(["Horizontal", "Vertical"], 0)
             self.seg_formato.setToolTip("Horizontal 16:9: usa los videos horizontales y también los verticales.\n"
                                         "Vertical 9:16 para celular: solo los videos grabados en vertical.")
             self.seg_formato.cambio.connect(self._ver_formato)
-            f2.addWidget(self.seg_formato)
-            f2.addSpacing(px(26))
-            f2.addWidget(piezas.separador_v(76))
-            f2.addSpacing(px(26))
+            f_fmt.addStretch(1)
+            f_fmt.addWidget(self.seg_formato)
+            f_fmt.addStretch(1)
+            f2.addStretch(1)
             eleg_h, eleg_v = versiones_guardadas(self.est)
             self._palomita = piezas.qicono("palomita", "#FFFFFF", px(30))   # dibujada: «✓» no esta en la fuente
             self.pills, self.pills_v, self.etqs_formato, self.bs_todas = {}, {}, [], []
@@ -1242,15 +1301,6 @@ def app():
                     pills[ver] = b
                     f2.addWidget(b)
             f2.addStretch(1)
-            f2.addWidget(piezas.separador_v(76))
-            f2.addSpacing(px(40))
-            reloj = QLabel()
-            reloj.setPixmap(piezas.icono("reloj", "#EEF3F4", px(48)))
-            f2.addWidget(reloj)
-            f2.addSpacing(px(10))
-            self.l_eta = QLabel("", objectName="eta")
-            f2.addWidget(self.l_eta)
-            dv.addLayout(f2)
             fila_d = QHBoxLayout()
             fila_d.setContentsMargins(px(90), 0, px(90), 0)
             fila_d.addWidget(self.dock, 1)
@@ -1266,6 +1316,7 @@ def app():
             self.versiones = piezas.Versiones()
             self.versiones.cancelar.connect(self._cancelar)
             pt.addWidget(self.versiones)
+            self._pt_trabajo, self.trabajo_qml = pt, None    # (1.7) _barra_a_qml los cambia por la de QML
             fila_p = QHBoxLayout()
             fila_p.addStretch(1)
             fila_p.addWidget(self.panel_trabajo, 10)
@@ -1276,6 +1327,276 @@ def app():
             self._ver_formato(0)
             self._pintar_evento()
             return w
+
+        def _barra_a_qml(self):
+            """(1.7, la persona: «quédate con QML / Qt Quick por partes; es más rápido») la barra del Inicio pasa a
+            la de QML (barra_qml.py, la pinta la tarjeta grafica). Va despues de abrir: crearla y su primer cuadro
+            cuestan ~0,5 s; hasta entonces se ven los tres botones de siempre (mismo diseño). Si Qt Quick no carga,
+            se quedan esos."""
+            if self.barra_qml is not None:
+                return
+            try:
+                import barra_qml
+                if not barra_qml.disponible():
+                    return
+                self.barra_qml = barra_qml.BarraQML(self.dock, self._editar_nombre, self._plantillas, self._trailer)
+                f1 = self._f1_barra
+                for b in (self.b_nombre, self.b_plantillas, self.b_trailer):
+                    f1.removeWidget(b)
+                    b.hide()
+                f1.addWidget(self.barra_qml.widget, 1)
+                self.dock.setStyleSheet("QFrame#dock { background: transparent; border: none; }")
+                self._pintar_evento()
+            except Exception as ex:
+                registro.info("La barra en QML no cargó (quedan los botones de siempre): %s" % ex)
+                self.barra_qml = None
+            # (1.7, parte 2) la pantalla de trabajo: los pasos y las versiones en QML (qml/Trabajo.qml). Los adaptadores
+            # tienen la misma API que piezas.Pasos / piezas.Versiones: el resto de la ventana no cambia
+            if self.barra_qml is not None and self.trabajo_qml is None:
+                try:
+                    t = barra_qml.TrabajoQML(self.panel_trabajo, PASOS_VISTA, self._cancelar, self.pasos, self.versiones)
+                    viejo = self.versiones.b_cancelar
+                    t.versiones.b_cancelar.setEnabled(viejo.isEnabled())
+                    t.versiones.b_cancelar.setText(viejo.text())
+                    t.versiones.poner_eta(self.versiones.l_eta.text())
+                    for w in (self.pasos, self.versiones):
+                        self._pt_trabajo.removeWidget(w)
+                        w.hide()
+                        w.deleteLater()
+                    self._pt_trabajo.addWidget(t.widget)
+                    self.trabajo_qml, self.pasos, self.versiones = t, t.pasos, t.versiones
+                except Exception as ex:
+                    registro.info("La pantalla de trabajo en QML no cargó (queda la de siempre): %s" % ex)
+            # (1.7, parte 3) los popups en QML (qml/Popup.qml): se crea ya, asi el primero no tarda
+            if self.barra_qml is not None and getattr(self, "popup_qml", None) is None:
+                try:
+                    self.popup_qml = barra_qml.PopupQML(self)
+                except Exception as ex:
+                    self.popup_qml = None
+                    registro.info("Los popups en QML no cargaron (quedan los de siempre): %s" % ex)
+            # (1.7, parte 4) las paginas Tráilers, Plantillas y Ajustes en QML. Los widgets de siempre siguen (sin
+            # verse) guardando el estado; la pagina QML los lee (PaginaQML.leer) y les pide (acciones)
+            if self.barra_qml is not None and not getattr(self, "paginas_qml", None):
+                self.paginas_qml = {}
+                for indice, archivo, poner, leer, acciones, soltar in (
+                        (4, "Trailers.qml", self._pag_trailers, self._datos_trailers, self._acciones_trailers(), None),
+                        (5, "Plantillas.qml", self._pag_plantillas, self._datos_plantillas, self._acciones_plantillas(),
+                         self._soltar_plantillas),
+                        (3, "Ajustes.qml", None, self._datos_ajustes, self._acciones_ajustes(), None)):
+                    try:
+                        if poner is not None:
+                            pag, lay = poner
+                            p = barra_qml.PaginaQML(archivo, pag, leer, acciones, soltar)
+                            for c in pag.findChildren(QWidget, options=Qt.FindDirectChildrenOnly):
+                                if c is not p.widget:
+                                    c.hide()
+                            lay.setContentsMargins(0, 0, 0, 0)
+                            lay.insertWidget(0, p.widget, 10)
+                        else:
+                            p = barra_qml.PaginaQML(archivo, self.aj_mas.parentWidget(), leer, acciones, soltar)
+                            for c in (self.aj_principal, self.aj_mas, self.b_mas_aj):
+                                c.hide()
+                            self._aj_der.insertWidget(0, p.widget)
+                        self.paginas_qml[indice] = p
+                    except Exception as ex:
+                        registro.info("La página %s en QML no cargó (queda la de siempre): %s" % (archivo, ex))
+                self.paginas.currentChanged.connect(
+                    lambda i: self.paginas_qml[i].entrar() if i in self.paginas_qml else None)
+
+        # ---- (1.7) lo que muestran las paginas QML y lo que piden (las piezas de siempre, sin verse, mandan)
+        def _datos_trailers(self):
+            m = getattr(self, "seg_musica", None)
+            return {"estilos": [b.text() for b in m.botones] if m else [], "estilo": m.actual() if m else -1,
+                    "intros": [b.text() for b in self.seg_intro.botones], "intro": self.seg_intro.actual()}
+
+        def _acciones_trailers(self):
+            return {"estilo": lambda i: self.seg_musica.botones[int(i)].click(),
+                    "intro": lambda i: self.seg_intro.botones[int(i)].click(),
+                    "oir": lambda i: self._ver_canciones(int(i)),
+                    "ver_intro": lambda i: self._ver_intro(int(i))}
+
+        PLANTILLAS_OPCIONES = {"plantillas_texto": "Título con los nombres", "plantillas_destellos": "Destellos de luz",
+                               "plantillas_fundidos": "Transiciones"}
+
+        def _datos_plantillas(self):
+            from PySide6.QtCore import QUrl
+            lista = []
+            for i in self.plantillas.infos:
+                portada = os.path.join(i.get("carpeta", ""), "portada.jpg")
+                lista.append({"nombre": i.get("nombre", ""), "dur": round(float(i.get("dur") or 0), 1),
+                              "planos": len(i.get("planos") or []),
+                              "portada": QUrl.fromLocalFile(portada).toString() if os.path.isfile(portada) else ""})
+            return {"lista": lista, "marcadas": sorted(self.plantillas.marcadas),
+                    "opciones": [{"clave": k, "texto": self.PLANTILLAS_OPCIONES.get(k, k), "si": ch.isChecked()}
+                                 for k, ch in self.ch_pl.items()]}
+
+        def _acciones_plantillas(self):
+            def marcar(nombre):
+                marcadas = set(self.plantillas.marcadas) ^ {nombre}
+                self.plantillas.elegidas(sorted(marcadas))
+                self._plantillas_elegidas(sorted(marcadas))
+            return {"marcar": marcar,
+                    "opcion": lambda v: self.ch_pl[v["clave"]].setChecked(bool(v["si"])),
+                    "agregar": lambda _v: self._elegir_plantilla()}
+
+        def _soltar_plantillas(self, archivos):
+            import plantillas_ui
+            videos = [a for a in archivos if a.lower().endswith(plantillas_ui.VIDEO_EXT)]
+            if videos:
+                self._importar_plantillas(videos)
+            else:
+                self._avisar("Para una plantilla suelta un video (Reel, TikTok, CapCut).", "warn")
+
+        def _datos_ajustes(self):
+            ia, oido = self.l_ia.text(), self.l_oido.text()
+            return {"interruptores": [{"clave": k, "texto": t, "si": ch.isChecked()} for k, t, ch in (
+                        ("render", "Renderizar al terminar", self.ch_render), ("igualar", "Igualar luz y color", self.ch_igualar),
+                        ("vert", "Usar videos verticales", self.ch_vert),
+                        ("liberar", "Cerrar programas pesados al armar", self.ch_liberar))],
+                    "voz": [{"clave": k, "texto": b.text(), "si": b.isChecked()} for k, b in self.ch_voz.items()],
+                    "ruido": self.s_ruido.value(),
+                    "ia": {"texto": ia, "ok": "Lista" in ia, "boton": "" if self.b_ia.isHidden() else self.b_ia.text()},
+                    "oido": {"texto": oido, "ok": "Listo" in oido,
+                             "boton": "" if self.b_oido.isHidden() else self.b_oido.text()},
+                    "cache": {"texto": self.l_cache.text(), "frac": round(float(self.barra_cache.frac), 3)},
+                    "version": self.l_version.text(), "act": "" if self.l_act.isHidden() else self.l_act.text()}
+
+        def _acciones_ajustes(self):
+            ch = {"render": self.ch_render, "igualar": self.ch_igualar, "vert": self.ch_vert, "liberar": self.ch_liberar}
+            return {"interruptor": lambda v: ch[v["clave"]].setChecked(bool(v["si"])),
+                    "voz": lambda v: self.ch_voz[v["clave"]].setChecked(bool(v["si"])),
+                    "ruido": lambda v: self.s_ruido.setValue(int(v)),
+                    "instalar_ia": lambda _v: self._instalar_ia(),
+                    "instalar_oido": lambda _v: self._instalar_oido(),
+                    "borrar_cache": lambda _v: self._borrar_cache(),
+                    "buscar": lambda _v: self._buscar_actualizacion(manual=True)}
+
+        def _elegir_videos(self, titulo="¿Qué videos salen?",
+                           texto="Horizontal para pantalla y YouTube; vertical para el celular. Marca las duraciones.",
+                           botones=("Listo",)):
+            """(19-nov) El formato y las duraciones, en un popup (antes, una fila fija en el Inicio). Devuelve el boton."""
+            if self.trabajo is not None:
+                return None
+            qml = getattr(self, "popup_qml", None)
+            if qml is not None and not qml.abierto():  # (1.7) en QML: el formato y sus duraciones, en pastillas
+                datos = {"formato": max(0, self.seg_formato.actual()), "h": self._versiones(), "v": self._versiones_v(),
+                         "versiones": [[k, VERSION_TEXTO[k]] for k in motor.VERSIONES]}
+                r, res = qml.preguntar(titulo, texto, botones, "info", 0, None, "trailer", datos)
+                if r == 0:
+                    for pills, quiero in ((self.pills, res.get("h") or []), (self.pills_v, res.get("v") or [])):
+                        for k, b in pills.items():
+                            b.blockSignals(True)
+                            b.setChecked(k in quiero)
+                            b.blockSignals(False)
+                    f = int(res.get("formato") or 0)
+                    self.seg_formato.poner(f)
+                    self._ver_formato(f)
+                    self._cambio_plantillas()          # palomitas, texto y la hora en que estara listo
+                self._sub_material()
+                return r
+            if not self.caja_videos.styleSheet():   # el popup pone su estilo a todos los botones: aqui, el de la ventana
+                self.caja_videos.setStyleSheet(QApplication.instance().styleSheet())
+            self.caja_videos.show()
+            piezas.sin_recorte(self.seg_formato.botones + self._pastillas())    # cada boton, del ancho de su texto
+            try:
+                r = piezas.preguntar(self, titulo, texto, botones, "info", 0, contenido=self.caja_videos)
+            finally:
+                self.caja_videos.setParent(self.dock)            # el popup se borra: las pastillas vuelven aqui
+                self.caja_videos.hide()
+            self._sub_material()
+            return r
+
+        # (19-nov, la persona: «3 botones: tráiler, plantillas y el nombre») los tres de la barra del Inicio
+        def _trailer(self):
+            """Tráiler: qué videos salen, lo que hay de material y la hora en que estará; «Empezar» arma (▶)."""
+            if self.trabajo is not None:
+                self.b_log.setChecked(True)
+                return
+            self._sub_material()
+            m = self.material
+            c = m["cuenta"]
+            falta = [_cuantos(n, t) for t, n in dict(m["faltan"]).items() if n]
+            hay = [_cuantos(c.get(t, 0), t) for t in ("foto", "video", "dron") if c.get(t)]
+            texto = "Falta " + " y ".join(falta) if falta else " · ".join(hay) if hay else "Todavía no hay material"
+            if self.l_eta.text():
+                texto += "  ·  " + self.l_eta.text().lower()
+            if self._elegir_videos("¿Qué videos salen?", texto, ("Empezar", "Cancelar")) == 0:
+                self._play()
+
+        def _editar_nombre(self):
+            """El nombre del XV o de los novios (y de qué es el evento). «Evento nuevo» deja el programa en blanco."""
+            qml = getattr(self, "popup_qml", None)
+            if qml is not None and not qml.abierto():      # (1.7) en QML: el tipo en pastillas y el nombre
+                r, res = qml.preguntar("¿De quién es el evento?", "El nombre sale en los títulos del video.",
+                                       ("Guardar", "Evento nuevo", "Cancelar"), "info", 0, 2, "nombre",
+                                       {"tipos": [t for _, t in TIPOS], "tipo_i": self.c_tipo.currentIndex(),
+                                        "nombre": self.e_nombre.text()})
+                self._nombre_elegido(r, res.get("tipo_i", self.c_tipo.currentIndex()), res.get("nombre", ""))
+                return
+            px = piezas.px
+            caja = QWidget()
+            caja.setStyleSheet(QApplication.instance().styleSheet())    # el popup pone su estilo: aqui, el de la ventana
+            v = QVBoxLayout(caja)
+            v.setContentsMargins(0, 0, 0, 0)
+            v.setSpacing(px(26))
+            tipos = piezas.Pastillas([t for _, t in TIPOS], self.c_tipo.currentIndex(), nombre="pill_tipo", espacio=10)
+            piezas.sin_recorte(tipos.botones)
+            v.addWidget(tipos, 0, Qt.AlignHCenter)
+            e = QLineEdit(self.e_nombre.text())
+            e.setPlaceholderText("Valeria  ·  Ana y Luis")
+            v.addWidget(e)
+            e.returnPressed.connect(lambda: self.popup_abierto is not None and self.popup_abierto.botones[0].click())
+            QTimer.singleShot(250, e.setFocus)
+            r = piezas.preguntar(self, "¿De quién es el evento?", "El nombre sale en los títulos del video.",
+                                 ("Guardar", "Evento nuevo", "Cancelar"), "info", 0, escape=2, contenido=caja)
+            self._nombre_elegido(r, tipos.actual(), e.text())
+
+        def _nombre_elegido(self, r, tipo_i, nombre):
+            """Lo que se eligio en el popup del nombre: guardar, evento nuevo o nada."""
+            if r == 0:
+                self.c_tipo.setCurrentIndex(max(0, int(tipo_i)))
+                self.e_nombre.setText((nombre or "").strip())
+                try:                                        # que quede guardado aunque no se arme todavia
+                    d = motor.leer_estado()
+                    d.update({"tipo_evento": self.c_tipo.currentData(), "nombre_xv": self.e_nombre.text().strip()})
+                    motor.guardar_estado(d)
+                except Exception as ex:
+                    registro.info("No se guardo el nombre: %s" % ex)
+            elif r == 1:
+                self._proyecto_nuevo()
+
+        def _plantillas(self):
+            """Plantillas: cada video terminado tiene su proyecto de DaVinci. Se marca uno y se abre, o se sacan de
+            nuevo los marcados (sin volver a armar). Junta «Editar en DaVinci» y «Renderizar lo editado»."""
+            if self.trabajo is not None:
+                self._avisar("Espera a que termine: después podrás editar sus plantillas.", "warn")
+                return
+            est = motor.leer_estado()
+            evento = est.get("evento")
+            if not (evento and est.get("timelines") and motor.evento_terminado()):
+                self._popup("Todavía no hay plantillas. Pulsa «Tráiler»: al terminar, cada video queda con su propia "
+                            "plantilla para retocarlo en DaVinci.", ("Entendido",), "info", titulo="Plantillas")
+                return
+            videos = motor.videos_editables(evento)
+            if not videos:                       # eventos de antes: una sola linea en EVENTOS CINEMA
+                r = self._popup("Abre la línea de «%s» en DaVinci para retocarla, o saca de nuevo los videos con lo "
+                                "que cambiaste." % evento, ("Abrir en DaVinci", "Renderizar lo editado", "Cancelar"),
+                                "pregunta", titulo="Plantillas")
+                if r == 0:
+                    self._editar_en_davinci()
+                elif r == 1:
+                    self._renderizar_editado()
+                return
+            abiertos = [v for v in est.get("editando") or [] if v in videos
+                        and est.get("editando_evento") in (None, evento)]
+            r, elegidos = self._elegir_de_videos(
+                "Plantillas de %s" % evento, "Abre un video en DaVinci para retocarlo: solo su proyecto, con su línea "
+                "en Edición. «Renderizar» saca de nuevo los marcados, sin volver a armar.",
+                videos, abiertos[-1:] or videos[:1], True, ("Abrir en DaVinci", "Renderizar", "Cancelar"))
+            if r == 0 and elegidos:
+                self._editar_en_davinci(elegidos[0])
+            elif r == 1 and elegidos:
+                self._renderizar_editado(elegidos)
 
         def _ver_formato(self, i):
             """El selector Horizontal | Vertical muestra las duraciones de ese formato (las dos se guardan)."""
@@ -1322,6 +1643,221 @@ def app():
             d = QFileDialog.getExistingDirectory(self, "Agregar la carpeta del evento", os.path.expanduser("~"))
             if d:
                 self._recibir([d])
+
+        def _minis_plan(self, pedidos):
+            import miniaturas
+
+            def listo(res, error):
+                if error is None and res:
+                    self.plan_v.poner_minis({r: QPixmap(j) for r, j in res.items()})
+            for k in range(0, len(pedidos), 24):         # por tandas: las primeras se ven enseguida
+                tanda = pedidos[k:k + 24]
+                qt_kit.correr_en_hilo(self, lambda t=tanda: miniaturas.varias(t), listo, baja=True)
+
+        def _cargar_plan(self):
+            """«Qué entra al video»: el plan de cada version y lo que queda fuera (receta.plan_ventana), en un hilo."""
+            import analizar_material as am
+
+            def calcular():
+                import json
+                import importlib.util
+                with open(am._cache_ruta(), encoding="utf-8") as f:
+                    j = json.load(f)
+                spec = importlib.util.spec_from_file_location("receta", rutas.codigo("receta.py"))
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod.plan_ventana({"items": j.get("items") or [], "fecha": j.get("fecha")},
+                                        motor.leer_estado().get("tipo_evento", "xv"))
+
+            def listo(res, error):
+                if error is not None or not res:
+                    if error is not None:
+                        registro.error("Qué entra al video: %s" % error)
+                    return
+                hay = {c for c, _ in res.get("versiones") or []}
+                # (19-nov) las pestañas de reserva toman el nombre de cada plantilla elegida
+                fijas = 6
+                plantillas = [(c, t) for c, t in res.get("versiones") or [] if c.startswith("PLANTILLA") or
+                              c not in {x for x, _ in self.VERS_PLAN[:fijas]}]
+                for k in range(fijas, len(self.VERS_PLAN)):
+                    par = plantillas[k - fijas] if k - fijas < len(plantillas) else ("__plantilla%d" % (k - fijas), "")
+                    self.VERS_PLAN[k] = par
+                    self.seg_plan.botones[k].setText(par[1])
+                if res.get("error_plantillas"):
+                    registro.error("Qué entra al video (plantillas): %s" % res["error_plantillas"])
+                for (clave, _t), b in zip(self.VERS_PLAN, self.seg_plan.botones):
+                    b.setVisible(clave in hay)
+                self.plan_v.editable = self.trabajo is None
+                self.plan_v.poner(res)
+                actual = next((n for n, (c, _) in enumerate(self.VERS_PLAN) if c == self.plan_v.clave), 0)
+                self.seg_plan.poner(actual)
+            qt_kit.correr_en_hilo(self, calcular, listo, baja=True)
+
+        def _toma_decidida(self, nombre, que):
+            """La persona quito una toma del video o pidio usar una descartada: al estado, y el plan se rehace."""
+            est = motor.leer_estado()
+            no = [n for n in est.get("tomas_no") or [] if n != nombre]
+            si = [n for n in est.get("tomas_si") or [] if n != nombre]
+            if que == "no":
+                no.append(nombre)
+            elif que == "si":
+                si.append(nombre)
+            est["tomas_no"], est["tomas_si"] = no, si
+            self.est["tomas_no"], self.est["tomas_si"] = no, si
+            motor.guardar_estado(est)
+            self._avisar({"no": "Listo: «%s» no entra al video.", "si": "Listo: «%s» se usa de todos modos.",
+                          "auto": "Listo: «%s» vuelve a lo que decidió el programa."}[que] % nombre)
+            self._cargar_plan()
+
+        def _tarjeta_plantillas(self):
+            """Material > «Plantillas de video» (la persona, 18-nov: «crea una sección para escoger qué plantilla quiero
+            usar en la página de Material»)."""
+            import plantillas_ui
+            px = piezas.px                 # (19-nov) sin esto la 1.6.19 se caia al abrir (NameError en Material)
+            tarjeta = QFrame(objectName="vidrio")
+            lay = QVBoxLayout(tarjeta)
+            lay.setContentsMargins(px(24), px(26), px(24), px(26))
+            lay.setSpacing(px(14))
+            fila = QHBoxLayout()
+            fila.setContentsMargins(px(14), 0, px(14), 0)
+            fila.setSpacing(px(26))
+            ic = QLabel()
+            ic.setPixmap(piezas.icono("pelicula", piezas.ORO, px(54)))
+            fila.addWidget(ic)
+            fila.addWidget(QLabel("Plantillas de video", objectName="titulo_card"))
+            self.l_plantillas = QLabel("Opcional: cada una sale como un video más, con sus cortes y su música.")
+            self.l_plantillas.setStyleSheet("color:%s;" % TENUE)
+            self.l_plantillas.setWordWrap(True)       # que no empuje los botones fuera de la ventana
+            self.l_plantillas.setMinimumWidth(0)
+            fila.addWidget(self.l_plantillas, 1)
+            b = QPushButton("  Agregar plantilla", objectName="borde")
+            b.setCursor(Qt.PointingHandCursor)
+            b.setToolTip("Un video (Reel, TikTok, CapCut) se convierte en plantilla: se detectan sus cortes y se usa su "
+                         "música. También puedes soltar el video sobre las tarjetas.")
+            b.clicked.connect(self._elegir_plantilla)
+            fila.addWidget(b)
+            # (19-nov, la persona: «que no tenga tantas cosas que abrumen») cerrada hasta que se pide
+            self.b_ver_pl = QPushButton("Ver plantillas", objectName="borde")
+            self.b_ver_pl.setCursor(Qt.PointingHandCursor)
+            self.b_ver_pl.clicked.connect(lambda: self._ver_plantillas(not self.cuerpo_pl.isVisible()))
+            fila.addWidget(self.b_ver_pl)
+            lay.addLayout(fila)
+            self.cuerpo_pl = QWidget()
+            lay_pl = QVBoxLayout(self.cuerpo_pl)
+            lay_pl.setContentsMargins(0, 0, 0, 0)
+            lay_pl.setSpacing(px(14))
+            lay.addWidget(self.cuerpo_pl)
+            # (19-nov, la persona: «deja opción de omitir texto para las plantillas»; «deja la opción para quitar
+            # barridos de luz o transiciones: lo importante es que repliques tal cual la plantilla») lo extra, a elegir
+            opciones = QHBoxLayout()
+            opciones.setContentsMargins(px(14), 0, px(14), 0)
+            opciones.setSpacing(px(18))
+            self.ch_pl = {}
+            for clave, txt, tip in (
+                    ("plantillas_texto", "Título con los nombres",
+                     "Al inicio de cada plantilla, los nombres en letra elegante (donde no tapen caras)."),
+                    ("plantillas_destellos", "Destellos de luz",
+                     "Donde la plantilla original tiene un destello blanco, uno suave. Apagado: corte seco."),
+                    ("plantillas_fundidos", "Transiciones",
+                     "Donde la plantilla original funde de una toma a otra, un fundido. Apagado: corte seco.")):
+                l_op = QLabel(txt, objectName="fila_aj")
+                ch = piezas.Interruptor("")
+                ch.setChecked(self.est.get(clave, True) is not False)
+                l_op.setToolTip(tip)
+                ch.setToolTip(tip)
+                ch.toggled.connect(lambda si, c=clave, n=txt: self._plantillas_opcion(c, n, si))
+                self.ch_pl[clave] = ch
+                opciones.addWidget(l_op)
+                opciones.addWidget(ch)
+                opciones.addSpacing(px(22))
+            opciones.addStretch(1)
+            nota = QLabel("Todo apagado: la plantilla tal cual, con sus cortes y su música.")
+            nota.setStyleSheet("color:%s;" % TENUE)
+            opciones.addWidget(nota)
+            lay_pl.addLayout(opciones)
+            self.plantillas = plantillas_ui.PlantillasRef()
+            self.plantillas.cambio.connect(self._plantillas_elegidas)
+            self.plantillas.soltado.connect(self._importar_plantillas)
+            lay_pl.addWidget(self.plantillas)
+            self.cuerpo_pl.setVisible(bool(self.est.get("plantillas_ref")))    # abierta solo si ya hay elegidas
+            self.b_ver_pl.setText("Ocultar" if self.cuerpo_pl.isVisibleTo(tarjeta) else "Ver plantillas")
+            QTimer.singleShot(0, self._cargar_plantillas)
+            return tarjeta
+
+        def _ver_plantillas(self, ver):
+            import animacion
+            self.cuerpo_pl.setVisible(ver)
+            self.b_ver_pl.setText("Ocultar" if ver else "Ver plantillas")
+            if ver:
+                animacion.aparecer(self.cuerpo_pl)
+
+        def _cargar_plantillas(self):
+            def leer():
+                import plantilla_ref
+                return plantilla_ref.lista()
+
+            def listo(res, error):
+                if error is None:
+                    self.plantillas.poner(res or [])
+                    self.plantillas.elegidas(self.est.get("plantillas_ref") or [])
+            qt_kit.correr_en_hilo(self, leer, listo, baja=True)
+
+        def _plantillas_elegidas(self, nombres):
+            est = motor.leer_estado()
+            est["plantillas_ref"] = self.est["plantillas_ref"] = list(nombres)
+            motor.guardar_estado(est)
+            self._avisar("Listo: al armar también sale %s." % ", ".join(n.title() for n in nombres) if nombres
+                         else "Listo: sin plantillas de video.")
+            self._cargar_plan()                     # su pestaña en «Qué entra al video», con sus huecos
+
+        def _plantillas_opcion(self, clave, nombre, si):
+            est = motor.leer_estado()
+            est[clave] = self.est[clave] = bool(si)
+            motor.guardar_estado(est)
+            self._avisar("Listo: plantillas %s «%s»." % ("con" if si else "sin", nombre.lower()))
+
+        def _elegir_plantilla(self):
+            archivos, _ = QFileDialog.getOpenFileNames(self, "Videos para convertir en plantilla", os.path.expanduser("~"),
+                                                       "Videos (*.mov *.mp4 *.m4v *.mkv *.avi *.webm)")
+            if archivos:
+                self._importar_plantillas(archivos)
+
+        def _importar_plantillas(self, archivos):
+            """Convierte los videos en plantillas (cortes, musica y portada) en un hilo."""
+            self._avisar("Convirtiendo %d video%s en plantilla..." % (len(archivos), "" if len(archivos) == 1 else "s"))
+
+            def hacer():
+                import plantilla_ref
+                return [plantilla_ref.importar(a, log=registro.info)["nombre"] for a in archivos]
+
+            def listo(res, error):
+                if error is not None:
+                    self._avisar("No se pudo convertir en plantilla: %s" % error, "warn")
+                    return
+                self._avisar("Lista%s: %s." % ("" if len(res) == 1 else "s", ", ".join(n.title() for n in res)))
+                self._cargar_plantillas()
+            qt_kit.correr_en_hilo(self, hacer, listo, baja=True)
+
+        def _tomas_cambiadas(self):
+            """El slider «Cuántas tomas»: al estado (build_trailers.factor_planos) y el plan se rehace."""
+            est = motor.leer_estado()
+            est["tomas_ritmo"] = self.est["tomas_ritmo"] = int(self.s_tomas.value())
+            motor.guardar_estado(est)
+            self._cargar_plan()
+
+        def _plan_reordenado(self, clave, ids):
+            """La persona arrastro una toma a otro lugar (o pidio el orden del programa): al estado y el plan se rehace."""
+            est = motor.leer_estado()
+            orden = dict(est.get("orden_planos") or {})
+            if ids:
+                orden[clave] = ids
+            else:
+                orden.pop(clave, None)
+            est["orden_planos"] = self.est["orden_planos"] = orden
+            motor.guardar_estado(est)
+            self._avisar("Listo: el %s va en el orden que pusiste." % clave.replace("V ", "vertical ").replace("min", " min")
+                         if ids else "Listo: vuelve al orden del programa.")
+            self._cargar_plan()
 
         def _traer_minis(self, pedidos):
             """Miniaturas de la Línea del día, en un hilo (miniaturas.py); se pintan a medida que llegan."""
@@ -1429,6 +1965,7 @@ def app():
             self.b_analizar.clicked.connect(self._analizar_ahora)
             fila_e.addWidget(self.b_analizar)
             v.addLayout(fila_e)
+            # (19-nov) las plantillas de referencia tienen su pagina (_pagina_plantillas)
             # --- la linea del dia (el analisis)
             org = QFrame(objectName="vidrio")
             go = QVBoxLayout(org)
@@ -1440,7 +1977,7 @@ def app():
             ic = QLabel()
             ic.setPixmap(piezas.icono("pelicula", piezas.ORO, px(54)))
             fila_t.addWidget(ic)
-            t2 = QLabel("Línea del día", objectName="titulo_card")
+            t2 = QLabel("Qué entra al video", objectName="titulo_card")
             fila_t.addWidget(t2)
             self.l_org = QLabel("")
             self.l_org.setStyleSheet("color:%s;" % TENUE)
@@ -1452,7 +1989,45 @@ def app():
             self.linea.cuentas_vivas.connect(self._pintar_cuentas)
             self.linea.pide_minis.connect(self._traer_minis)
             self.linea.toma_movida.connect(self._toma_movida)
-            go.addWidget(self.linea, 1)
+            # (18-nov, la persona: «línea del día no entiendo qué hace... rediseña para que sea algo útil de verdad»; eligio
+            # la propuesta A) en su lugar, «Qué entra al video»: el plan de la version elegida plano por plano y lo que
+            # queda fuera con su motivo (plan_video.py). La linea sigue existiendo, sin verse (lo que la usa no cambia).
+            self.linea.hide()
+            import plan_video
+            self.VERS_PLAN = [("1min", "1 min"), ("3min", "3 min"), ("15min", "15 min"), ("30min", "30 min"),
+                              ("V 1min", "Vertical 1 min"), ("V 3min", "Vertical 3 min")]
+            # (19-nov) + una pestaña por plantilla de video elegida (sus huecos, uno por corte): se nombran al cargar
+            self.VERS_PLAN += [("__plantilla%d" % k, "Plantilla") for k in range(6)]
+            self.seg_plan = piezas.Pastillas([t for _, t in self.VERS_PLAN], 0, nombre="pill_tipo", espacio=10)
+            for b in self.seg_plan.botones[4:]:     # (19-nov) verticales y plantillas: solo cuando el plan las trae
+                b.hide()                            # (las 12 a la vez ensanchaban la pagina mas que la ventana)
+            fila_p = QHBoxLayout()
+            fila_p.setContentsMargins(px(14), 0, px(14), 0)
+            fila_p.addWidget(self.seg_plan)
+            fila_p.addStretch(1)
+            # (18-nov, la persona: «que exista un slider para decir cuántas tomas, ya que hay muchas tomas y estresa»)
+            # pocas = planos mas largos; el plan se rehace al soltar (build_trailers.factor_planos)
+            fila_p.addWidget(QLabel("Cuántas tomas", objectName="fila_aj"))
+            fila_p.addSpacing(px(14))
+            fila_p.addWidget(QLabel("Pocas", objectName="nota_t"))
+            self.s_tomas = QSlider(Qt.Horizontal)
+            self.s_tomas.setRange(0, 100)
+            self.s_tomas.setValue(int(self.est.get("tomas_ritmo", 50)))
+            self.s_tomas.setMinimumWidth(px(220))
+            self.s_tomas.setToolTip("Pocas: planos más largos y tranquilos. Muchas: más cortes. Los cortes siguen el "
+                                    "ritmo de la música. El plan de arriba se rehace al soltar.")
+            self._t_tomas = QTimer(self, singleShot=True, interval=350)
+            self._t_tomas.timeout.connect(self._tomas_cambiadas)
+            self.s_tomas.valueChanged.connect(lambda _v: self._t_tomas.start())
+            fila_p.addWidget(self.s_tomas)
+            fila_p.addWidget(QLabel("Muchas", objectName="nota_t"))
+            go.addLayout(fila_p)
+            self.plan_v = plan_video.PlanVideo()
+            self.seg_plan.cambio.connect(lambda i: self.plan_v.elegir(self.VERS_PLAN[i][0]))
+            self.plan_v.pide_minis.connect(self._minis_plan)
+            self.plan_v.decidida.connect(self._toma_decidida)
+            self.plan_v.reordenada.connect(self._plan_reordenado)
+            go.addWidget(self.plan_v, 1)
             self.l_momentos = {}
             self.l_avisos = QLabel("")
             self.l_avisos.setWordWrap(True)
@@ -1465,9 +2040,9 @@ def app():
             ic2 = QLabel()
             ic2.setPixmap(piezas.icono("info", "#AFC0C4", px(40)))
             fila_a.addWidget(ic2)
-            ayuda = QLabel("Arrastra una toma para cambiarla de momento", objectName="ayuda_t")
-            ayuda.setToolTip("También puedes arrastrar el rombo dorado del eje para cambiar a qué hora empieza "
-                             "Iglesia o Fiesta.")
+            ayuda = QLabel("Clic en una toma para quitarla del video o para usarla de todos modos", objectName="ayuda_t")
+            ayuda.setToolTip("Lo que decidas a mano se respeta en el próximo armado. Las fotos de la intro las elige "
+                             "el programa.")
             fila_a.addWidget(ayuda, 1)
             go.addLayout(fila_a)
             v.addWidget(org, 1)
@@ -1521,6 +2096,7 @@ def app():
                     self._minis_pila(tipo, [cand[int(len(cand) * f)] for f in (0.15, 0.5, 0.85)] if len(cand) > 3
                                      else cand)
             self._foto_vista(items)
+            self._cargar_plan()
             try:
                 import datetime as _dt
                 f = _dt.date.fromisoformat(res["fecha"])
@@ -1698,7 +2274,7 @@ def app():
                                               nombre="pill_vista", espacio=16, estirar=True)
             self.seg_vista.cambio.connect(self._pintar_vista)
             fila_s = QHBoxLayout()
-            fila_s.setContentsMargins(px(105), 0, px(105), 0)
+            fila_s.setContentsMargins(px(20), 0, px(20), 0)     # (18-nov) con 105 la pagina no cabia y salia cortada
             fila_s.addWidget(self.seg_vista, 1)
             g2.addLayout(fila_s)
             pie = QLabel("Vista previa en vivo", objectName="nota_t")
@@ -1827,10 +2403,8 @@ def app():
             v.addStretch(21)
             der = QVBoxLayout()
             der.setSpacing(px(40))
-            fila1 = QHBoxLayout()
-            fila1.setSpacing(px(40))
-            fila2 = QHBoxLayout()
-            fila2.setSpacing(px(30))
+            # (18-nov, la persona: «hay incoherencias») las tarjetas en UNA rejilla de 6 columnas (19-nov: la de
+            # «Más opciones»): Video y Voz arriba, del mismo alto; las tres de abajo iguales y alineadas
             # --- Video
             tv, lv = piezas.tarjeta("Video", "video")
             self.ch_render = piezas.Interruptor("")
@@ -1845,18 +2419,28 @@ def app():
                                     "los verticales entran recortados para llenar la pantalla y DaVinci reencuadra "
                                     "siguiendo a la persona. Apagado, quedan fuera del horizontal (siguen en el media "
                                     "pool). El formato vertical de Inicio usa siempre solo los verticales.")
+            self.ch_liberar = piezas.Interruptor("")      # (18-nov) liberar.py
+            self.ch_liberar.setChecked(self.est.get("liberar_auto", True) is not False)
+            self.ch_liberar.setToolTip("Al pulsar ▶ cierra solos los programas pesados (DxO PureRAW, Photoshop, "
+                                       "Premiere, Lightroom, Topaz, CineCaptions, navegadores) como si pulsaras la X: "
+                                       "cada uno puede pedir guardar. Con la memoria de video libre la IA va hasta 4 "
+                                       "veces más rápida. Nunca toca Windows ni DaVinci.")
             lv.setSpacing(px(16))
             for txt, ch in (("Renderizar al terminar", self.ch_render), ("Igualar luz y color", self.ch_igualar),
-                            ("Usar videos verticales", self.ch_vert)):
+                            ("Usar videos verticales", self.ch_vert),
+                            ("Cerrar programas pesados al armar", self.ch_liberar)):
                 fila = QHBoxLayout()
                 l = QLabel(txt, objectName="fila_aj")
                 l.setToolTip(ch.toolTip())
                 fila.addWidget(l, 1)
                 fila.addWidget(ch)
                 lv.addLayout(fila)
-            lv.addWidget(piezas.separador_h())
+            lv.addStretch(1)
+            # (19-nov) voz original y ruido: su tarjeta, dentro de «Más opciones»
+            tvz, lvz = piezas.tarjeta("Voz y ruido", "onda")
+            lvz.addSpacing(px(20))
             fila_r = QHBoxLayout()
-            fila_r.setSpacing(px(70))
+            fila_r.setSpacing(px(24))
             fila_r.addWidget(QLabel("Quitar ruido", objectName="fila_aj"))
             self.s_ruido = QSlider(Qt.Horizontal)
             self.s_ruido.setRange(0, 100)
@@ -1864,18 +2448,17 @@ def app():
             self.l_ruido = QLabel(str(self.s_ruido.value()), objectName="fila_aj")
             self.l_ruido.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.s_ruido.valueChanged.connect(lambda x: self.l_ruido.setText(str(x)))
+            self.s_ruido.setMinimumWidth(px(160))
             fila_r.addWidget(self.s_ruido, 1)
             fila_r.addWidget(self.l_ruido)
-            lv.addLayout(fila_r)
-            fila1.addWidget(tv, 775)
-            # --- Sonido: en que versiones va la voz original (la palabra del pastor, brindis, discursos)
-            ts, ls = piezas.tarjeta("Sonido", "onda")
+            # --- Musica: el estilo y la intro (lo unico de Ajustes que queda a la vista)
+            ts, ls = piezas.tarjeta("Música", "nota")
             ls.addSpacing(px(20))
             l_voz = QLabel("Voz original", objectName="sub_aj")
             l_voz.setToolTip("Lo que se dice en el evento (la palabra del pastor, el brindis, los discursos) suena sobre "
                              "la música. Solo entra cuando alguien habla de corrido: nada de ruidos ni voces sueltas.")
 
-            def fila_seg(etiqueta, seg):
+            def fila_seg(etiqueta, seg, en=None):
                 # (17-nov) etiqueta a la izquierda y su selector al lado: con Música e Intro, una encima de otra la
                 # tarjeta crecia y empujaba las de abajo fuera de la ventana
                 f = QHBoxLayout()
@@ -1883,25 +2466,25 @@ def app():
                 etiqueta.setFixedWidth(px(200))
                 f.addWidget(etiqueta)
                 f.addWidget(seg, 1)
-                ls.addLayout(f)
+                (en or ls).addLayout(f)
             guardada = self.est.get("voz") if isinstance(self.est.get("voz"), dict) else {}
             self.seg_voz = piezas.Segmentado(["1 min", "3 min", "15 min", "30 min"], None, exclusivo=False)
             self.ch_voz = {}
+            # (18-nov, la persona: «que pueda desactivar el sonido de 30 min») antes iba siempre y el boton estaba fijo
             for clave, b in zip(("1min", "3min", "15min", "30min"), self.seg_voz.botones):
-                if clave == "30min":
-                    b.setChecked(True)
-                    b.setEnabled(False)
-                    b.setToolTip("En el de 30 min va siempre")
-                else:
-                    b.setChecked(bool(guardada.get(clave, motor.VOZ_DEFECTO[clave])))
-                    b.setToolTip("Solo cuando alguien habla de corrido: pastor, brindis, discursos.")
-                    self.ch_voz[clave] = b
-            fila_seg(l_voz, self.seg_voz)
+                b.setChecked(bool(guardada.get(clave, motor.VOZ_DEFECTO[clave])))
+                b.setToolTip("Solo cuando alguien habla de corrido: pastor, brindis, discursos.")
+                self.ch_voz[clave] = b
+            fila_seg(l_voz, self.seg_voz, lvz)
+            lvz.addSpacing(px(20))
+            lvz.addWidget(piezas.separador_h())
+            lvz.addSpacing(px(14))
+            lvz.addLayout(fila_r)
+            lvz.addStretch(1)
             # (17-nov) Musica: los estilos de musica original (recursos/musica/<N ESTILO>) o las canciones de la plantilla
             self.estilos_musica = self._estilos_musica()
             if self.estilos_musica:
-                ls.addSpacing(px(14))
-                l_mus = QLabel("Música", objectName="sub_aj")
+                l_mus = QLabel("Estilo", objectName="sub_aj")
                 l_mus.setToolTip("Música original del programa, hecha a la medida de los videos (sin dueño: no la "
                                  "bloquean en redes). Cada estilo trae su intro, romántica, fiesta y épica. "
                                  "«Plantilla» deja las canciones que trae la plantilla de DaVinci.")
@@ -1928,8 +2511,34 @@ def app():
                                                self.intros.index(quiero_i) if quiero_i in self.intros else 0)
             self.seg_intro.cambio.connect(lambda _i: self._guardar_musica())
             fila_seg(l_int, self.seg_intro)
+            # (18-nov, la persona: «si doy doble click me salga el pop up con todas las canciones de cada música de
+            # estilo, y en las intro igual: doble click me da el ejemplo de cómo se ve»)
+            self._doble = {}
+            for n, b in enumerate(getattr(self, "seg_musica", None).botones if self.estilos_musica else []):
+                self._doble[b] = ("musica", n)
+                b.setToolTip((b.toolTip() + "\n" if b.toolTip() else "") + "Doble clic: ver y oír sus canciones.")
+                b.installEventFilter(self)
+            for n, b in enumerate(self.seg_intro.botones):
+                self._doble[b] = ("intro", n)
+                b.setToolTip("Doble clic: ver un ejemplo de esta intro.")
+                b.installEventFilter(self)
             ls.addStretch(1)
-            fila1.addWidget(ts, 756)
+            # (19-nov, la persona: «que no tenga tantas cosas que abrumen») a la vista solo la Musica; lo demas, en
+            # «Más opciones» (se cambia de una vista a la otra: la pagina nunca crece)
+            self.aj_principal = QWidget()
+            rp = QGridLayout(self.aj_principal)
+            rp.setContentsMargins(0, 0, 0, 0)
+            for c in range(6):
+                rp.setColumnStretch(c, 1)
+            self.tarjeta_musica = ts                 # (19-nov) va en la pagina Tráilers (_pagina_trailers)
+            self.aj_mas = QWidget()
+            rej = QGridLayout(self.aj_mas)
+            rej.setContentsMargins(0, 0, 0, 0)
+            rej.setSpacing(px(30))
+            for c in range(6):
+                rej.setColumnStretch(c, 1)
+            rej.addWidget(tv, 0, 0, 1, 3)
+            rej.addWidget(tvz, 0, 3, 1, 3)
             # --- Inteligencia: la IA local que ve y el oido que escucha
             ti, li = piezas.tarjeta("Inteligencia", "chip")
             li.addSpacing(px(10))
@@ -1939,7 +2548,7 @@ def app():
             self.p_oido, self.l_oido, self.b_oido = self._fila_estado(li, "Oído")
             self.b_oido.clicked.connect(self._instalar_oido)
             li.addStretch(1)
-            fila2.addWidget(ti, 490)
+            rej.addWidget(ti, 1, 0, 1, 2)
             QTimer.singleShot(1500, self._revisar_ia)
             QTimer.singleShot(1600, self._revisar_oido)
             # --- Disco: lo que ocupa la cache y «Borrar caché»
@@ -1956,7 +2565,7 @@ def app():
             b.clicked.connect(self._borrar_cache)
             ld.addWidget(b)
             ld.addStretch(1)
-            fila2.addWidget(td, 514)
+            rej.addWidget(td, 1, 2, 1, 2)
             # --- Programa: version y actualizaciones (como CineCaptions)
             tp, lp = piezas.tarjeta("Programa", "engrane")
             lp.addSpacing(px(16))
@@ -1974,10 +2583,21 @@ def app():
             self.b_buscar.clicked.connect(lambda: self._buscar_actualizacion(manual=True))
             lp.addWidget(self.b_buscar)
             lp.addStretch(1)
-            fila2.addWidget(tp, 510)
-            der.addLayout(fila1, 458)
-            der.addLayout(fila2, 370)
-            der.addStretch(330)
+            rej.addWidget(tp, 1, 4, 1, 2)
+            self._aj_der = der                           # (1.7) _barra_a_qml pone ahi qml/Ajustes.qml
+            der.addWidget(self.aj_principal)
+            der.addWidget(self.aj_mas)
+            self.aj_principal.hide()                 # (19-nov) la Musica se fue a Tráilers: aqui, lo demas a la vista
+            fila_mas = QHBoxLayout()
+            fila_mas.addStretch(1)
+            self.b_mas_aj = QPushButton("Más opciones", objectName="borde")
+            self.b_mas_aj.setCursor(Qt.PointingHandCursor)
+            self.b_mas_aj.setToolTip("Video, voz original, ruido, inteligencia, disco y versión del programa.")
+            self.b_mas_aj.clicked.connect(lambda: self._ver_mas_ajustes(not self.aj_mas.isVisible()))
+            fila_mas.addWidget(self.b_mas_aj)
+            self.b_mas_aj.hide()
+            der.addLayout(fila_mas)
+            der.addStretch(1)
             v.addLayout(der, 79)
             # lo que no esta en la maqueta: vive en el menu del logo (los objetos siguen, sin verse)
             oculto = QWidget(w)
@@ -1992,6 +2612,51 @@ def app():
             self._pintar_ruido_dv()
             QTimer.singleShot(2500, self._medir_cache)
             return w
+
+        def _pagina_trailers(self):
+            """(19-nov, la persona: «la de tráilers súper minimalista, solo de escoger el estilo y listo») el estilo
+            de la música y la intro (la tarjeta Música, que antes estaba en Ajustes). Cada clic se guarda solo."""
+            px = piezas.px
+            w = QWidget()
+            v = QVBoxLayout(w)
+            v.setContentsMargins(px(140), px(60), px(140), px(40))
+            v.setSpacing(px(16))
+            v.addStretch(1)
+            t = QLabel("Elige el estilo", objectName="titulo_pag")
+            t.setAlignment(Qt.AlignCenter)
+            v.addWidget(t)
+            s = QLabel("Un clic y listo: se guarda solo. Doble clic para oír sus canciones o ver la intro.")
+            s.setAlignment(Qt.AlignCenter)
+            s.setStyleSheet("color:%s;" % TENUE)
+            v.addWidget(s)
+            v.addSpacing(px(40))
+            v.addWidget(self.tarjeta_musica)
+            self._pag_trailers = (w, v)                # (1.7) _barra_a_qml la cambia por qml/Trailers.qml
+            v.addStretch(2)
+            return w
+
+        def _pagina_plantillas(self):
+            """(19-nov, la persona: «crea una página que sea para plantillas») las plantillas de video (Reels, TikTok,
+            CapCut que el programa copia con las tomas del evento): antes, cerradas dentro de Material."""
+            px = piezas.px
+            w = QWidget()
+            v = QVBoxLayout(w)
+            v.setContentsMargins(px(60), px(50), px(60), px(30))
+            v.setSpacing(px(24))
+            v.addWidget(self._tarjeta_plantillas())
+            self._pag_plantillas = (w, v)              # (1.7) _barra_a_qml la cambia por qml/Plantillas.qml
+            self.b_ver_pl.hide()                     # en su pagina, siempre abierta
+            self.cuerpo_pl.show()
+            v.addStretch(1)
+            return w
+
+        def _ver_mas_ajustes(self, ver):
+            """Ajustes: de la Musica a «Más opciones» y de vuelta, con un fundido."""
+            import animacion
+            self.aj_principal.setVisible(not ver)
+            self.aj_mas.setVisible(ver)
+            self.b_mas_aj.setText("Volver" if ver else "Más opciones")
+            animacion.aparecer(self.aj_mas if ver else self.aj_principal)
 
         def _menu_mas(self):
             """(1.6.0) El menu del logo: lo que la maqueta no muestra pero se usa."""
@@ -2313,6 +2978,11 @@ def app():
             """La pastilla de arriba a la derecha: un punto de color y pocas palabras («Todo listo», «Trabajando»)."""
             color = {"ok": ESMERALDA.name(), "warn": AMBAR, "error": ROJO, "oro": "#D9A441"}.get(tipo, TENUE)
             self.b_log.setText(texto)
+            # (19-nov, la persona: «que no abrume») con todo en orden y quieto no se ve: solo trabajando o con avisos
+            oculta = tipo == "ok" and texto == "Todo listo"
+            if oculta and self.b_log.isChecked():
+                self.b_log.setChecked(False)          # el registro abierto se cierra con ella (si no, sin boton)
+            self.b_log.setVisible(not oculta)
             self._estado_vivo = (color, tipo)          # (1.6.0) el punto late (mas rapido trabajando)
             self._latir_estado()
             repulir(self.b_log, tipo=tipo)
@@ -2333,14 +3003,26 @@ def app():
         def _brillos(self):
             """(1.6.0) Botones, pastillas y pestañas brillan suave al pasar el raton."""
             import animacion
-            colores = {"chip2": piezas.ORO, "segb": piezas.ORO, "pill": "#7CF5C0", "tab": piezas.ORO,
+            colores = {"chip": piezas.ORO, "chip2": piezas.ORO, "segb": piezas.ORO, "pill": "#7CF5C0", "tab": piezas.ORO,
                        "boton_verde": "#B8FFE0", "cancelar": piezas.ORO, "pill_tipo": piezas.ORO,
                        "pill_vista": piezas.ORO, "boton": piezas.ORO, "borde": piezas.ORO, "estado": piezas.ORO}
-            redondos = {"tab", "estado", "pill_tipo", "pill_vista"}
+            # (18-nov, la persona: «al pasar el mouse se ve redondeado, muy mal») el brillo se pintaba como pastilla o
+            # con 16 px fijos encima de botones de 9-12 px: dos formas a la vez. Ahora usa el radio REAL de cada boton
+            # (el de su estilo), asi el brillo calza con el borde.
+            import re
+            hoja = QApplication.instance().styleSheet() + "\n" + self.styleSheet()     # manda la ultima regla
+            radios = {}
+            for n in colores:
+                m = re.findall(r"#%s\b[^{]*\{[^}]*?border-radius:\s*(\d+)px" % n, hoja)
+                radios[n] = float(m[-1]) if m else 10.0
             for b in self.findChildren(QPushButton):
                 n = b.objectName()
                 if n in colores:
-                    animacion.brillo_al_pasar(b, colores[n], None if n in redondos else piezas.px(16))
+                    animacion.brillo_al_pasar(b, colores[n], radios[n])
+            r = piezas.px(40)                       # la barra del Inicio: el radio del panel (dock_r)
+            for b, color, abierto in ((self.b_nombre, piezas.ORO, "der"), (self.b_plantillas, piezas.ORO, "ambos"),
+                                      (self.b_trailer, "#B8FFE0", "izq")):
+                animacion.brillo_al_pasar(b, color, r, abierto)
 
         def _sub(self, texto, tipo=""):
             self.sub.setText(texto)
@@ -2352,8 +3034,13 @@ def app():
             tipo = self.c_tipo.currentText() if hasattr(self, "c_tipo") else \
                 dict(TIPOS).get(self.est.get("tipo_evento", "xv"), "XV años")
             nombre = self.e_nombre.text().strip() if hasattr(self, "e_nombre") else self.est.get("nombre_xv", "")
-            self.chip_evento.setText(("   %s%s" % (tipo, (" · " + nombre) if nombre else " · pon los nombres"))
+            self.chip_evento.setText(("   %s" % (("%s · %s" % (tipo, nombre)) if nombre else "Pon los nombres"))
                                      .replace("&", "&&"))
+            if hasattr(self, "b_nombre"):                             # (19-nov) la barra: solo el nombre
+                self.b_nombre.setText(("   " + (nombre or "Pon el nombre")).replace("&", "&&"))
+                self.b_nombre.setToolTip("%s · toca para cambiar el nombre" % tipo)
+            if getattr(self, "barra_qml", None) is not None:
+                self.barra_qml.poner_nombre(nombre or "Pon el nombre", "%s · toca para cambiar el nombre" % tipo)
             if self.chip_evento.icon().isNull():                      # el lapiz, dibujado («✎» no esta en la fuente)
                 self.chip_evento.setIconSize(QSize(14, 14))
                 self.chip_evento.setIcon(icono_trazo("lapiz", "#EBCB8F", 14))
@@ -2380,7 +3067,17 @@ def app():
                 n = int(cuenta.get("video", 0)) + int(cuenta.get("dron", 0))
                 gb = float((examen or {}).get("bytes") or 0) / 1e9 or n * 0.4
                 vert = self._versiones_v() or (["1min"] if n else [])
-                return motor.estimar_segundos(n, gb, self._versiones(), vert, getattr(self, "_con_render", True))
+                nuevos = None                # (18-nov) lo ya analizado no se cuenta otra vez (decia 80 min de mas)
+                try:
+                    import analizar_material as am
+                    faltan, total = am.cuantos_faltan()
+                    if total:
+                        nuevos = int(round(n * faltan / float(total)))
+                    self._ya_analizado = bool(total) and faltan == 0
+                except Exception:
+                    pass
+                return motor.estimar_segundos(n, gb, self._versiones(), vert, getattr(self, "_con_render", True),
+                                              nuevos)
             except Exception:
                 return None
 
@@ -2405,6 +3102,17 @@ def app():
             for tipo, ch in getattr(self, "chips_mat", {}).items():
                 ch.setText("   " + _cuantos(c.get(tipo, 0), tipo))         # el aire entre icono y texto (maqueta)
                 repulir(ch, tipo="falta" if faltan.get(tipo) else "")
+            if hasattr(self, "chip_mat"):            # (19-nov) un solo resumen: lo que falta o lo que hay
+                falta = [_cuantos(n, t) for t, n in faltan.items() if n]
+                hay = [_cuantos(c.get(t, 0), t) for t in ("foto", "video", "dron") if c.get(t)]
+                self.chip_mat.setText("   " + ("Falta " + " y ".join(falta) if falta else
+                                               " · ".join(hay) if hay else "Sin material"))
+                repulir(self.chip_mat, tipo="falta" if falta else "")
+            if hasattr(self, "chip_que"):
+                corto = lambda vs: " · ".join(VERSION_TEXTO[v].split()[0] for v in vs) + " min" if vs else ""
+                h, vv = corto(self._versiones()), corto(self._versiones_v())
+                self.chip_que.setText("   " + (h + (" + vertical " + vv if vv else "") if h else
+                                               "Vertical " + vv if vv else "Elige los videos"))
             if hasattr(self, "l_eta"):
                 s = self._estimar() if self.trabajo is None else None
                 self.l_eta.setText("Listo a las %s" % time.strftime("%H:%M", time.localtime(time.time() + s)) if s else "")
@@ -2492,11 +3200,13 @@ def app():
             """(1.6.0) El chequeo de arranque va a la pastilla de estado (ya no a una franja fija)."""
             mal = [(n, d) for n, ok, d in res if not ok]
             self._chequeo = (len(res), mal)
+            if self.trabajo is not None:                 # (19-nov) no pisa «Trabajando» (ni oculta la pastilla)
+                return
             detalle = "\n".join("· " + (d if ok else "Falta: " + d) for n, ok, d in res)
             if not mal:
                 self._estado("Todo listo", "ok", "Chequeo de arranque: todo en orden (%d de %d)." % (len(res), len(res)))
             else:
-                self._estado("%d de %d en orden" % (len(res) - len(mal), len(res)), "warn",
+                self._estado("1 aviso" if len(mal) == 1 else "%d avisos" % len(mal), "warn",
                              "Chequeo de arranque:\n" + detalle)
 
         def _ver_davinci(self):
@@ -2627,6 +3337,8 @@ def app():
                 " · ".join(partes) if partes else "nada nuevo")
             seg = self._estimar(getattr(self, "_examen_soltado", None))      # (1.5.7) en cuanto tiempo estara listo
             if seg:
+                if getattr(self, "_ya_analizado", False):
+                    resumen = "Material YA ANALIZADO: elige la plantilla y pulsa Empezar  ·  " + resumen
                 resumen += "  ·  estará listo en " + motor.texto_tiempo(seg)
             if res["ya_estaban"]:
                 resumen += "  ·  %d ya estaban" % res["ya_estaban"]
@@ -2643,6 +3355,7 @@ def app():
             except Exception:
                 pass
             self._en_espera = True
+            self._chips_editable(False)                  # (19-nov) material nuevo esperando: editar el de antes, no
             self._falta_datos = self._tipo_copia is None and (self._evento_nuevo or not self.e_nombre.text().strip())
             self._revisar_material()
             self.l_copia.setText(resumen.split("\n")[0].split("  ·  ")[0])      # corto: cabe en una linea junto al boton
@@ -2792,6 +3505,7 @@ def app():
                       "armar_al_soltar": self.ch_auto.isChecked(),
                       "voz": {k: ch.isChecked() for k, ch in self.ch_voz.items()},
                       "usar_verticales": self.ch_vert.isChecked(), "musica_estilo": self._estilo_musica(),
+                      "liberar_auto": self.ch_liberar.isChecked(),
                       "intro_tipo": self._intro_tipo()})
             motor.guardar_estado(d)
             return dict(evento=d.get("evento_manual", ""), nombre_xv=d["nombre_xv"], fecha_lugar=d["fecha_lugar"],
@@ -2805,22 +3519,23 @@ def app():
             texto = "Para armar el video falta " + " y ".join(
                 ("al menos %d fotos (faltan %d)" % (motor.MINIMOS[t], n) if t == "foto"
                  else "al menos %d video" % motor.MINIMOS[t]) for t, n in faltan) + \
-                ".\n¿Lo agregas ahora? También puedes arrastrar los archivos a la ventana."
-            r = self._popup(texto, ("Agregar", "Abrir carpeta", "Ahora no"), "aviso", titulo="Falta material")
+                ".\n¿Lo agregas ahora? También puedes arrastrar la carpeta del evento a la ventana."
+            r = self._popup(texto, ("Agregar carpeta", "Abrir carpeta", "Ahora no"), "aviso", titulo="Falta material")
             tipo = faltan[0][0]
-            self._ir("Material")
-            if r == 0:
-                self._agregar(tipo)
+            if r == 0:                            # (19-nov) sin pagina de Material: la carpeta del evento, donde esta
+                self._agregar_carpeta()
             elif r == 1:
                 rutas.abrir(rutas.CARPETAS[tipo])
 
         def _chips_editable(self, ver=None):
             """«Editar en DaVinci» y «Renderizar lo editado» se ven cuando hay un evento armado (y no se esta trabajando)."""
-            if ver is None:
+            if ver is None:                       # (19-nov) solo con el evento TERMINADO (sus videos ya salieron)
                 est = motor.leer_estado()
-                ver = bool(est.get("evento") and est.get("timelines")) and self.trabajo is None
-            self.chip_editar.setVisible(bool(ver))
-            self.chip_render.setVisible(bool(ver))
+                ver = bool(est.get("timelines") and motor.evento_terminado()) and self.trabajo is None \
+                    and not getattr(self, "_en_espera", False)
+            # (19-nov) ya no se ven: los dos van dentro de «Plantillas», en la barra del Inicio
+            self.chip_editar.hide()
+            self.chip_render.hide()
 
         def _ya_armado(self):
             """El evento que hay en 1 MATERIAL ya esta armado en DaVinci con este mismo material: su nombre, o ''."""
@@ -2843,52 +3558,138 @@ def app():
                             titulo="Este evento ya está armado")
             return "editado" if r == 0 else "armar" if r == 1 else None
 
-        def _editar_en_davinci(self):
+        def _editar_en_davinci(self, video=None):
+            """video: ya elegido en el popup de Plantillas (si no, se pregunta)."""
             if self.trabajo is not None:
                 self._avisar("Espera a que termine: después podrás retocarlo en DaVinci.", "warn")
                 return
-            self._avisar("Abriendo DaVinci en la línea del evento…")
+            evento = motor.leer_estado().get("evento")
+            videos = [video] if video else motor.videos_editables(evento)
+            if not videos:                       # eventos de antes, sin proyecto por video: la linea en EVENTOS CINEMA
+                self._avisar("Abriendo DaVinci en la línea del evento…")
+                qt_kit.correr_en_hilo(self, lambda: motor.abrir_editable(registro.info), self._editar_listo)
+                return
+            # (19-nov, la persona: «no me des tantas líneas de tiempo abiertas... ábreme solo la plantilla con la que
+            # estoy trabajando») se elige el video y DaVinci abre SOLO su proyecto, con su unica linea
+            elegidos = videos if video else self._elegir_de_videos(
+                "¿Qué video editas?", "DaVinci guarda y cierra lo que tenga abierto y abre solo el proyecto de ese "
+                "video, con su línea de tiempo en Edición.", videos, [videos[0]], False, "Abrir en DaVinci")
+            if not elegidos:
+                return
+            video = elegidos[0]
+            self._avisar("Abriendo en DaVinci solo «%s»…" % video)
+            qt_kit.correr_en_hilo(self, lambda: motor.abrir_video_editable(registro.info, video, evento),
+                                  self._editar_listo)
 
-            def listo(nombre, error):
-                if error is not None:
-                    self._avisar("No pude abrirlo en DaVinci: %s" % error, "warn")
-                else:
-                    self._avisar("DaVinci quedó en Edición con «%s». Retoca lo que quieras y pulsa "
-                                 "«Renderizar lo editado»." % nombre)
-            qt_kit.correr_en_hilo(self, lambda: motor.abrir_editable(registro.info), listo)
+        def _elegir_de_videos(self, titulo, texto, videos, marcados, varios, boton):
+            """(19-nov) Popup con una pastilla por video («1 min», «Vertical 1 min»...). varios=False: uno solo.
+            Devuelve la lista elegida ([] = cancelar). Con varios botones (tupla): (numero del boton, lista)."""
+            def etiqueta(v):
+                txt = v.upper().replace("VIDEO FINAL ", "").replace("HORIZONTAL ", "").replace(" MIN", " min")
+                return txt[:1] + txt[1:].lower() if not txt[:1].isdigit() else txt
+            qml = getattr(self, "popup_qml", None)
+            if qml is not None and not qml.abierto():      # (1.7) en QML: una pastilla por video
+                botones = boton if isinstance(boton, tuple) else (boton, "Cancelar")
+                r, res = qml.preguntar(titulo, texto, botones, "pregunta", 0, None, "videos",
+                                       {"videos": [[v, etiqueta(v)] for v in videos], "varios": bool(varios),
+                                        "elegidos": [v for v in videos if v in marcados]})
+                lista = [v for v in videos if v in (res.get("elegidos") or [])]
+                if isinstance(boton, tuple):
+                    return r, lista
+                return lista if r == 0 else []
+            px = piezas.px
+            elegir = QWidget()
+            g = QGridLayout(elegir)
+            g.setContentsMargins(0, 0, 0, 0)
+            g.setSpacing(px(10))
+            elegir.setStyleSheet(                # el popup pone su propio estilo a los botones: aqui el de elegir
+                "QPushButton { font-size: %dpx; font-weight: 500; color: #E3EBED; padding: %dpx %dpx;"
+                " background: rgba(255,255,255,0.04); border: 1px solid rgba(226,176,79,0.45); border-radius: %dpx; }"
+                "QPushButton:hover { background: rgba(255,255,255,0.10); }"
+                "QPushButton:checked { background: #1FA971; color: #FFFFFF; border: 1px solid #44D894; }"
+                % (px(26), px(14), px(26), px(30)))
+            grupo = QButtonGroup(elegir)
+            grupo.setExclusive(not varios)
+            for i, v in enumerate(videos):
+                txt = v.upper().replace("VIDEO FINAL ", "").replace("HORIZONTAL ", "").replace(" MIN", " min")
+                b = QPushButton(txt[:1] + txt[1:].lower() if not txt[:1].isdigit() else txt, checkable=True)
+                b.setMinimumWidth(px(250))
+                b.setCursor(Qt.PointingHandCursor)
+                b.setChecked(v in marcados)
+                grupo.addButton(b, i)
+                g.addWidget(b, i // 3, i % 3)
+            botones = boton if isinstance(boton, tuple) else (boton, "Cancelar")
+            r = piezas.preguntar(self, titulo, texto, botones, "pregunta", 0, contenido=elegir)
+            lista = [videos[i] for i, b in enumerate(grupo.buttons()) if b.isChecked()]
+            if isinstance(boton, tuple):
+                return r, lista
+            return lista if r == 0 else []
 
-        def _renderizar_editado(self):
-            """Saca de nuevo los videos con las lineas tal como estan en DaVinci (sin volver a armar)."""
+        def _editar_listo(self, nombre, error):
+            if error is not None:
+                self._avisar("No pude abrirlo en DaVinci: %s" % error, "warn")
+            else:
+                self._avisar("DaVinci quedó en Edición con «%s». Retoca lo que quieras y pulsa "
+                             "«Renderizar lo editado»." % nombre)
+
+        def _renderizar_editado(self, elegidos=None):
+            """Saca de nuevo los videos con las lineas tal como estan en DaVinci (sin volver a armar). elegidos: ya
+            marcados en el popup de Plantillas (si no, se pregunta)."""
             if self.trabajo is not None:
                 self.b_log.setChecked(True)
                 return
             if self.copia is not None:
                 self._avisar("Espera a que termine de copiar el material.", "warn")
                 return
-            evento = motor.leer_estado().get("evento")
+            est = motor.leer_estado()
+            evento = est.get("evento")
             if not evento:
                 self._avisar("Todavía no hay ningún evento armado: pulsa ▶ primero.", "warn")
                 return
-            self._arrancar({"evento": evento}, True, "Renderizando lo editado de %s (sin volver a armar)…" % evento,
+            op = {"evento": evento}
+            videos = motor.videos_editables(evento)
+            if elegidos:
+                op["videos"] = list(elegidos)
+            elif videos:                 # (19-nov) cuales se sacan de nuevo: marcados los que se abrieron para editar
+                abiertos = [v for v in est.get("editando") or [] if v in videos
+                            and est.get("editando_evento") in (None, evento)]
+                op["videos"] = self._elegir_de_videos(
+                    "¿Qué videos sacas de nuevo?", "Cada uno sale desde su proyecto de DaVinci, con lo que retocaste "
+                    "y el audio a -14 LUFS. No se vuelve a armar nada.", videos, abiertos or videos[:1], True,
+                    "Renderizar")
+                if not op["videos"]:
+                    return
+            self._arrancar(op, True, "Renderizando lo editado de %s (sin volver a armar)…" % evento,
                            motor.renderizar_editado)
             self._marcar("sfx", "activo")                 # el armado no corre: directo al render
 
         def _play(self, auto=False):
+            # (18-nov) cada ▶/«Empezar» queda en el registro con el motivo si no arranca: antes un clic que no hacia
+            # nada no dejaba rastro y no se sabia si llego el clic o si se freno aqui
+            registro.info("▶ pulsado%s" % (" (solo)" if auto else ""))
+
+            def no_arranca(motivo):
+                registro.info("▶ no arranca: %s" % motivo)
             if self.trabajo is not None:
+                no_arranca("ya esta trabajando")
                 self.b_log.setChecked(True)
                 return
             if self.copia is not None:
+                no_arranca("todavia copia material")
                 self._avisar("Espera a que termine de copiar el material.", "warn")
                 return
             self._revisar_material()
             if not self.material["ok"]:
+                no_arranca("falta material (%s)" % (self.material.get("falta") or self.material.get("motivo") or "?"))
                 self._avisar("Falta material: suelta la carpeta del evento y vuelve a pulsar ▶.", "warn")
                 self._pedir_material()
                 return
             if self.flujo is not None and not auto:       # (1.6.0) aun mira lo ultimo que se solto
+                no_arranca("aun mira la carpeta soltada")
                 self._avisar("Espera un momento: termino de mirar la carpeta que soltaste.", "warn")
                 return
             if not auto and self._falta_datos and not self.e_nombre.text().strip():
+                no_arranca("faltan los nombres: se piden")
                 self._falta_datos = False                 # (1.6.0) evento nuevo: de quien es, y a armar
                 self._pedir_datos(self.l_copia.text() or "Material listo.")
                 return
@@ -2898,6 +3699,7 @@ def app():
                 armado = self._ya_armado()
                 if armado:
                     que = self._preguntar_ya_armado(armado)
+                    registro.info("▶ ya armado: la persona eligio %s" % (que or "cancelar"))
                     if que is None:
                         return
                     if que == "editado":
@@ -2944,15 +3746,24 @@ def app():
             self.pasos.poner("analizar", "activo")
             if funcion is None:
                 vers = self._versiones() + ["VERTICAL " + x for x in self._versiones_v()]
-            else:                                    # renderizar lo editado: las lineas del evento
-                vers = [motor.rutas.etiqueta_de(t) for t in self.est.get("timelines") or []]
+                # (19-nov, prueba real: salian 6 videos y solo se veia «1 min») tambien las plantillas marcadas; el
+                # VERTICAL 1 min automatico entra cuando el armado lo anuncia (_versiones_vista)
+                hay = {i.get("nombre") for i in getattr(self.plantillas, "infos", [])}
+                vers += [n for n in sorted(self.plantillas.marcadas) if n in hay]
+            elif op.get("videos"):                   # (19-nov) solo los videos elegidos (los demas no salen en rojo)
+                vers = [motor.rutas.etiqueta_de("%s - %s" % (op["evento"], v)) for v in op["videos"]]
+            else:                                    # renderizar lo editado: las lineas del evento (estado de AHORA)
+                vers = [motor.rutas.etiqueta_de(t) for t in motor.leer_estado().get("timelines") or []]
             self.versiones.poner_versiones(vers)
             self.versiones.poner_eta("")
             if vers:
                 self.versiones.poner(vers[0], "armando", "Armando…" if funcion is None else "En cola")
             self.panel_trabajo.show()
-            import animacion
-            animacion.aparecer(self.panel_trabajo, 450)      # (1.6.0) los pasos y las versiones aparecen suaves
+            if self.trabajo_qml is not None:          # (1.7) en QML aparecen solos (un efecto de Qt no le llega)
+                self.trabajo_qml.entrar()
+            else:
+                import animacion
+                animacion.aparecer(self.panel_trabajo, 450)  # (1.6.0) los pasos y las versiones aparecen suaves
             self.sub.hide()                          # la maqueta: solo «Trabajando…», los pasos y las versiones
             self.titulo.tam = 86
             self._clips = {}
@@ -3045,14 +3856,36 @@ def app():
                         self.pasos.poner(paso, "activo")
                     return
 
+        def _agregar_version(self, etq):
+            """Una fila mas en el avance, sin perder lo que ya muestran las otras."""
+            antes = [(e, f.estado, f.texto, f.pct, f.detalle) for e, f in self.versiones.filas.items()]
+            b = self.versiones.b_cancelar
+            cancelar = (b.isEnabled(), b.text())         # poner_versiones lo deja en «Cancelar»
+            orden = [e for e, *_ in antes]
+            # los tráilers juntos (el vertical despues de los horizontales) y las plantillas al final
+            pos = max([i + 1 for i, e in enumerate(orden) if re.search(r"\d+min$", e)] or [0])
+            self.versiones.poner_versiones(orden[:pos] + [etq] + orden[pos:])
+            for e, estado, texto, pct, detalle in antes:
+                self.versiones.poner(e, estado, texto, pct, detalle)
+            b.setEnabled(cancelar[0])
+            b.setText(cancelar[1])
+            self._acomodar()
+
         def _versiones_vista(self, m):
             """(1.6.0) El estado de cada version: «1min lista» al armarse; en el render, «1min Rendering 45%»."""
             filas = self.versiones.filas
+            # (19-nov) el VERTICAL 1 min que el armado agrega solo (hay videos verticales): su fila, al anunciarlo
+            if "se arma tambien el VERTICAL 1 min" in m and "VERTICAL 1min" not in filas:
+                self._agregar_version("VERTICAL 1min")
+                filas = self.versiones.filas
             a = re.search(r"\b((?:VERTICAL )?\d+min) lista", m)
-            b = re.search(r"VIDEO FINAL (VERTICAL )?(\d+) MIN lista", m, re.I)    # nombre de linea de la 1.5.7
-            etq = a.group(1) if a else (("VERTICAL " if b.group(1) else "") + b.group(2) + "min") if b else None
+            b = re.search(r"VIDEO FINAL (VERTICAL |HORIZONTAL )?(\d+) MIN lista", m, re.I)    # nombre de linea de la 1.5.7
+            etq = a.group(1) if a else (("VERTICAL " if (b.group(1) or "").upper().startswith("V") else "") + b.group(2)
+                                        + "min") if b else None
+            if etq is None:                          # (19-nov) las plantillas: «XV 2026-11-08 - PLANTILLA 1 lista: ...»
+                etq = next((e for e in filas if re.search(r"(^|- )%s lista\b" % re.escape(e), m)), None)
             if etq in filas:
-                n = re.search(r"lista: (\d+) clips", m)            # «plano 87 de 140» en el render
+                n = re.search(r"lista: (\d+) (?:clips|planos)", m)  # «plano 87 de 140» en el render
                 if n:
                     self._clips[etq] = int(n.group(1))
                 filas[etq].poner("armada", "Armada")
@@ -3060,7 +3893,13 @@ def app():
                 if sig and not re.search(r"\b\d+min \w+ \d+%", m):
                     filas[sig].poner("armando", "Armando…")
                 return
-            for etq, estado, pct in re.findall(r"((?:VERTICAL )?\d+min) (\w+) (\d+)%", m):
+            # la cola de render: «  95 s  1min Rendering 45% | PLANTILLA 1 Ready 0% | ...» (cada parte, su fila)
+            render = []
+            for parte in m.split(" | "):
+                r = re.match(r"^\s*(?:\d+ s\s+)?(.+?) (\w+) (\d+)%\s*$", parte)
+                if r:
+                    render.append(r.groups())
+            for etq, estado, pct in render:
                 f = filas.get(etq)
                 if f is None:
                     continue
@@ -3217,10 +4056,15 @@ def app():
             for w in self.findChildren(QWidget):
                 if hasattr(w, "reescalar"):
                     w.reescalar()
+            for q in [getattr(self, "barra_qml", None), getattr(self, "trabajo_qml", None)] + \
+                    list((getattr(self, "paginas_qml", None) or {}).values()):
+                if q is not None:                    # (1.7) las piezas en QML no son widgets propios
+                    q.reescalar()
             self.b_logo.setIconSize(QSize(piezas.px(72), piezas.px(72)))
             self._estado(self.b_log.text(), self.b_log.property("tipo") or "ok")
             self.b_log.setIconSize(QSize(piezas.px(24), piezas.px(24)))
             self._sin_recorte()
+            self._brillos()                          # los radios del estilo cambiaron con la escala
             self._acomodar()
 
         def _sin_recorte(self):
@@ -3242,9 +4086,14 @@ def app():
             scroll = isinstance(pag, QScrollArea)
             libre = 400
             if self.b_log.isChecked():
-                pide = pag.widget().minimumSizeHint().width() if scroll else 470
+                # (18-nov) el Inicio pedia 470 fijos y su panel (fotos/videos/dron, 1-30 min, «Listo a las») quedaba
+                # cortado: ahora pide lo que de verdad necesita
+                pide = pag.widget().minimumSizeHint().width() if scroll else max(470, pag.sizeHint().width())
                 libre = self._medio.geometry().width() - pide - max(0, self._medio.spacing())
                 self.registro.setFixedWidth(max(260, min(400, libre)))
+                # en el Inicio no hay desplazamiento: si el panel no cabe junto al registro, el registro se aparta
+                # (el error ya sale en la barra de arriba) y vuelve en las otras pestañas o con la ventana mas ancha
+                self.registro.setVisible(scroll or libre >= 260)
             if scroll:
                 pag.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded if libre < 260 else Qt.ScrollBarAlwaysOff)
 
@@ -3288,18 +4137,17 @@ def app():
                     len(ok), " (con lo que editaste en DaVinci)" if self.resultado.get("editado") else ""))
                 self.chip_videos.show()
                 self._abrir_videos()
-                QTimer.singleShot(4000, self._indexar_fondo)
+                # (19-nov) sin IntelliSearch al final: DaVinci queda en el proyecto del video y el indexado lo sacaba
+                # de ahi a EVENTOS CINEMA a los 4 s (las caras ya las reconoce la IA propia al analizar)
             else:
                 self._sub("Armado en DaVinci · %s" % self.resultado.get("evento", ""), "ok")
                 self._avisar("Timelines armadas en DaVinci (sin render).")
             for a in (self.resultado.get("avisos") or [])[:3]:        # lo que el formato vertical no pudo armar
                 self._avisar(a, "warn")
-            if not self.resultado.get("editado"):
-                self._avisar("La línea queda editable en DaVinci (02 EVENTOS › %s) y su copia en «%s». Si "
-                             "retocas algo, pulsa «Renderizar lo editado»."
-                             % (self.resultado.get("evento", ""), rutas.PLANTILLAS_EVENTO))
-            self.chip_editar.show()
-            self.chip_render.show()
+            if not self.resultado.get("editado") and videos:
+                self._avisar("Cada video quedó en su propio proyecto de DaVinci (una sola línea). Pulsa «Editar en "
+                             "DaVinci», elige el video y, si retocas algo, «Renderizar lo editado».")
+            self._chips_editable()                   # (19-nov) solo si el evento quedo terminado (con sus videos)
 
         def _indexar_fondo(self):
             """Al final y sin esperar: IntelliSearch (Better, con rostros) para buscar en DaVinci por lo que se ve o por
@@ -3387,8 +4235,70 @@ def app():
                 b |= Qt.BottomEdge
             return b
 
+        def _ver_canciones(self, n):
+            """Doble clic en un estilo de Música: sus canciones, para verlas y oírlas (vistas_ajustes.ListaCanciones)."""
+            import vistas_ajustes
+            estilos = self.estilos_musica
+            if n == 0:                                   # Auto: el que le toca al tipo de evento
+                try:
+                    import importlib.util
+                    spec = importlib.util.spec_from_file_location("musica_propia", rutas.codigo("musica_propia.py"))
+                    mp = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mp)
+                    quiero = mp.POR_TIPO.get(self.c_tipo.currentData() or "xv", "")
+                except Exception:
+                    quiero = ""
+                carpeta = next((e for e in estilos if quiero and quiero in e.upper()), estilos[0] if estilos else None)
+                titulo = "Auto: %s" % (carpeta or "").lstrip("0123456789 ").capitalize()
+            elif n - 1 < len(estilos):
+                carpeta = estilos[n - 1]
+                titulo = "Música: %s" % carpeta.lstrip("0123456789 ").capitalize()
+            else:
+                self._popup("Plantilla\n\nUsa las canciones que trae la plantilla de DaVinci, sin cambiarlas. "
+                            "No son del programa: revisa que puedas publicarlas en redes.")
+                return
+            if not carpeta:
+                return
+            lista = vistas_ajustes.ListaCanciones(os.path.join(rutas.RECURSOS, "musica", carpeta))
+            try:
+                piezas.preguntar(self, titulo, "", ("Cerrar",), "info", 0, contenido=lista)
+            finally:
+                vistas_ajustes.callar()
+
+        def _ver_intro(self, n):
+            """Doble clic en un tipo de Intro: las 8 fotos entrando con ese ritmo y su sonido (vistas_ajustes.VistaIntro)."""
+            import vistas_ajustes
+            ritmos = {"rampa": [5] * 8, "acelera": [9, 7, 6, 5, 4, 4, 3, 2], "frena": [2, 3, 4, 4, 5, 6, 7, 9],
+                      "latido": [7, 3, 7, 3, 7, 3, 7, 3]}            # = build_trailers.INTROS
+            tipo = self.intros[n] if 0 <= n < len(self.intros) else "rampa"
+            fotos = []
+            try:
+                import analizar_material as am
+                todas = [i["ruta"] for i in am.leer_ultimo().get("items") or []
+                         if i.get("tipo") == "foto" and i.get("ruta") and not i.get("descartar") and os.path.isfile(i["ruta"])]
+                if todas:
+                    fotos = [todas[int(k * (len(todas) - 1) / 8.0)] for k in range(9)]
+            except Exception:
+                pass
+            if not fotos:
+                fondo = os.path.join(rutas.RECURSOS, "fondo_titulo.jpg")
+                fotos = [fondo] if os.path.isfile(fondo) else []
+            sfx = os.path.join(rutas.RECURSOS, "sfx", "XV_RAMPA%s.wav" % ("" if tipo == "rampa" else "_" + tipo.upper()))
+            vista = vistas_ajustes.VistaIntro(ritmos.get(tipo, ritmos["rampa"]), fotos, sfx)
+            textos = {"rampa": "Pareja: una foto cada 5 cuadros.", "acelera": "Empieza lenta y se dispara hasta el impacto.",
+                      "frena": "Ráfaga que se va deteniendo en la última foto.", "latido": "De dos en dos, como un corazón."}
+            try:
+                piezas.preguntar(self, "Intro: %s" % tipo.capitalize(), textos.get(tipo, ""), ("Cerrar",), "info", 0,
+                                 contenido=vista)
+            finally:
+                vistas_ajustes.callar()
+
         def eventFilter(self, obj, ev):
             t = ev.type()
+            if t == QEvent.MouseButtonDblClick and obj in getattr(self, "_doble", {}):
+                que, n = self._doble[obj]
+                QTimer.singleShot(0, lambda: self._ver_canciones(n) if que == "musica" else self._ver_intro(n))
+                return True
             if t == QEvent.ContextMenu and isinstance(obj, QLineEdit) and obj.window() is self:
                 # (1.6.1) el menu del clic derecho de los cuadros de texto, en español (Qt lo trae en ingles y las
                 # traducciones de Qt no van en el programa): Deshacer, Cortar, Copiar, Pegar…
@@ -3548,6 +4458,10 @@ def app():
 
 def main():
     args = sys.argv[1:]
+    if "--vigia" in args:                                   # (18-nov) el vigia de DaVinci: otro proceso, sin ventana
+        import vigia_davinci
+        vigia_davinci.principal(int(args[args.index("--vigia") + 1]))
+        sys.exit(0)
     registro.preparar()
     _tiempo("main()")
     if "--tarea" in args:                                   # trabajos del instalador / autoprueba

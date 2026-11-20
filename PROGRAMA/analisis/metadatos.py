@@ -134,7 +134,7 @@ def _sonido(item, voz):
     return "; ".join(partes), et
 
 
-def campos_de(item, voz=None, caras=None):
+def campos_de(item, voz=None, caras=None, receta=None):
     """Lo que se escribe de una toma analizada (item del analisis): titulo, comentario, descripcion y etiquetas.
     voz: lo que DaVinci entendio al escucharla (escenas_ia: «pasajes»); caras: las personas reconocidas (personas.json).
     (18-nov, la persona: «mejora más los metadatos: nivel de exposición, si hay sonido o voz útil, más metadatos
@@ -193,8 +193,14 @@ def campos_de(item, voz=None, caras=None):
                    (" (reloj corregido)" if item.get("reloj") == "corregido" else ""))
     if item.get("nombre_original") and item.get("nombre_original") != item.get("nombre"):
         tec.append("nombre original " + str(item["nombre_original"]))
-    grupos = [("CONTENIDO", " · ".join(cont)), ("IMAGEN", imagen), ("SONIDO", sonido), ("PERSONAS", "; ".join(personas)),
-              ("TÉCNICO", ", ".join(tec))]
+    # (18-nov, la persona: «sugerir: estas tomas podrían ir en las plantillas tal en el minuto tal, corrección de color
+    # tal y reducción de ruido») la receta del armado (armado/receta.py): donde entra y con que ajuste
+    receta = receta or {}
+    ajustes = [x for x in (("color " + receta["color"]) if receta.get("color") else "",
+                           ("reducción de ruido " + receta["ruido"]) if receta.get("ruido") else "") if x]
+    grupos = [("ANALIZADO", "sí (no hace falta volver a analizarlo)"), ("CONTENIDO", " · ".join(cont)),
+              ("PLANTILLAS", receta.get("usos") or ""), ("AJUSTES SUGERIDOS", "; ".join(ajustes)), ("IMAGEN", imagen),
+              ("SONIDO", sonido), ("PERSONAS", "; ".join(personas)), ("TÉCNICO", ", ".join(tec))]
     comentario = " | ".join("%s: %s" % (n, t) for n, t in grupos if t) + " | " + MARCA
     todas = ([momento] if momento else []) + etiquetas + sorted(clave) + et_i + et_s + \
         (["festejada"] if item.get("prota") else []) + (["sirve"] if sirve else ["no sirve"])

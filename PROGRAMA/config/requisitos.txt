@@ -3,3 +3,4 @@ numpy
 librosa
 Pillow
 onnxruntime
+opencv-python-headless

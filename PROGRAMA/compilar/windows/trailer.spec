@@ -14,6 +14,8 @@ propios = [f for g in GRUPOS for f in glob.glob(os.path.join(PROG, g, "*.py"))]
 datas = [(f, ".") for f in propios]
 for x in ("perfiles_evento.json", "version.txt", "LEEME.txt"):
     datas.append((os.path.join(PROG, "config", x), "."))
+# (1.7) las piezas en QML (interfaz/qml) van junto a todo, en qml/
+datas.append((os.path.join(PROG, "interfaz", "qml"), "qml"))
 for carpeta in ("recursos", "dctl"):
     ruta = os.path.join(PROG, carpeta)
     if not os.path.isdir(ruta):
@@ -32,12 +34,12 @@ a = Analysis(
     datas=datas,
     # onnxruntime: el recorte de persona (armado/recorte.py, modelo RVM en recursos/modelos)
     hiddenimports=modulos + ["PIL.Image", "PIL.ImageOps", "numpy", "winreg", "logging.handlers", "faulthandler",
-                             "onnxruntime"],
+                             "onnxruntime", "winsound", "tempfile", "cv2"],      # winsound: oir canciones e intros (Ajustes)
     # (1.6.2) onnxruntime arrastraba torch entero (el instalador paso de 560 MB a 1,1 GB): el recorte solo usa la sesion
     excludes=["torch", "torchvision", "torchaudio", "transformers", "sympy", "onnx", "tensorboard", "tensorflow",
               "onnxruntime.transformers", "onnxruntime.quantization", "onnxruntime.training", "onnxruntime.tools",
               "librosa", "numba", "llvmlite", "scipy", "sklearn", "matplotlib", "pandas", "tkinter", "IPython",
-              "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets", "PySide6.QtNetwork", "PySide6.QtOpenGL",
+              # (1.7) QtQml, QtQuick, QtQuickWidgets, QtNetwork y QtOpenGL SI van: la barra del Inicio es QML (barra_qml.py)
               "PySide6.QtOpenGLWidgets", "PySide6.QtPdf", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets",
               "PySide6.QtMultimedia", "PySide6.Qt3DCore", "PySide6.QtCharts", "PySide6.QtDataVisualization",
               "PySide6.QtSql", "PySide6.QtTest", "PySide6.QtBluetooth", "PySide6.QtPositioning", "PySide6.QtSvg"],

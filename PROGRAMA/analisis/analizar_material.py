@@ -698,7 +698,13 @@ def _relojes_basicos(items, ajuste_manual):
     # 2) dia del evento: lo deciden las camaras mas confiables (iPhone, DJI, EXIF)
     peso = {3: 4.0, 2: 2.0, 1: 1.0, 0: 0.3}
     votos = Counter()
+    # (18-nov, boda Cindy & Dereck) 230 fotos de una Sony A7 III con el reloj en 2018 le ganaban por numero a los 44
+    # videos de un iPhone 17 Pro Max con la fecha real, y el evento salio «BODA 2018-12-03». Un telefono (o un dron, que
+    # toma la hora del telefono) se pone en hora solo por la red: si hay uno, el dia lo deciden solo esos.
+    en_hora = {k for k, g in grupos.items() if _conf(g) >= 3 and any(i["reloj"] != "dudoso" for i in g)}
     for k, g in grupos.items():
+        if en_hora and k not in en_hora:
+            continue
         c = _conf(g)
         for i in g:
             if i["reloj"] != "dudoso":
@@ -793,8 +799,19 @@ def _grupos(items):
     return g
 
 
+TELEFONOS = ("APPLE", "IPHONE", "SAMSUNG", "GOOGLE", "PIXEL", "XIAOMI", "REDMI", "HUAWEI", "MOTOROLA", "ONEPLUS", "OPPO",
+             "VIVO", "HONOR")
+
+
 def _conf(g):
-    return max(CONFIANZA.get(i.get("origen_hora"), 0) for i in g)
+    """Que tan confiable es el reloj de esa camara. (18-nov) Las fotos de un telefono (EXIF Apple, Samsung...) valen
+    como sus videos: su reloj se pone en hora solo por la red."""
+    def una(i):
+        c = CONFIANZA.get(i.get("origen_hora"), 0)
+        if c == CONFIANZA["exif"] and any(t in str(i.get("camara") or "").upper() for t in TELEFONOS):
+            c = CONFIANZA["iphone"]
+        return c
+    return max(una(i) for i in g)
 
 
 def _momento_por_hora(minuto, inicios):
@@ -1165,7 +1182,17 @@ def _guardar_json(ruta, datos, indent=2):
     tmp = ruta + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(datos, f, ensure_ascii=False, indent=indent)
-    os.replace(tmp, ruta)
+    # (19-nov, prueba real: ▶ a los 4 s de abrir) si otro hilo lo esta leyendo justo, Windows no deja reemplazarlo
+    # («[WinError 5] Acceso denegado») y el armado se caia: se reintenta un momento
+    import time
+    for vez in range(40):
+        try:
+            os.replace(tmp, ruta)
+            return
+        except PermissionError:
+            if vez == 39:
+                raise
+            time.sleep(0.05)
 
 
 def leer_clasificacion():
@@ -1455,7 +1482,22 @@ def _leer_incrustados(cache, lista):
     return n
 
 
-def _metadatos_visibles(cache, items, log):
+def _receta():
+    """(modulo armado/receta.py, tipo de evento elegido): las cuentas del armado, sin DaVinci."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("receta", rutas.codigo("receta.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    tipo = "xv"
+    try:
+        import motor
+        tipo = motor.leer_estado().get("tipo_evento", "xv")
+    except Exception:
+        pass
+    return mod, tipo
+
+
+def _metadatos_visibles(cache, items, log, fecha=None):
     """(18-nov, la persona: «no hay metadatos en los videos y deberían estar») Lo que se entiende de cada VIDEO queda
     escrito dentro del archivo original como etiquetas normales (titulo y comentario que se ven en Propiedades >
     Detalles de Windows, en DaVinci, VLC...): metadatos.py, que solo toca la cabecera y guarda la original.
@@ -1478,13 +1520,19 @@ def _metadatos_visibles(cache, items, log):
         voces, personas = escenas_ia.leer_cache() or {}, escenas_ia.leer_personas() or {}
     except Exception:
         pass
+    recetas = {}
+    try:                                         # en que plantilla y minuto iria cada toma, su color y su ruido
+        mod, tipo = _receta()
+        recetas = mod.calcular({"items": items, "fecha": fecha}, tipo) if fecha else {}
+    except Exception as ex:
+        log("Aviso: no se pudo calcular la receta de las tomas para los metadatos (%s)" % ex)
     for it in items:
         ruta = it.get("ruta") or ""
         if not (it.get("ia") or it.get("momento")) or not os.path.exists(ruta):
             continue
         try:
             k = _clave(ruta)
-            campos = metadatos.campos_de(it, voces.get(k), personas.get(k))
+            campos = metadatos.campos_de(it, voces.get(k), personas.get(k), recetas.get(os.path.normcase(ruta)))
             ya = metadatos.leer(ruta)
             if " ".join((ya.get("comentario") or "").split()) == " ".join(campos["comentario"].split()) \
                     and (ya.get("titulo") or "") == " ".join(campos["titulo"].split()):
@@ -1513,7 +1561,7 @@ def _metadatos_visibles(cache, items, log):
                 for ruta, antes, ahora in cambios:
                     n = json.dumps(os.path.basename(ruta), ensure_ascii=False)[1:-1]
                     n2 = json.dumps(os.path.basename(ruta))[1:-1]
-                    for nombre in {n, n2}:
+                    for nombre in {n, n2, n.lower(), n2.lower()}:        # ruido_tomas guarda la ruta en minusculas
                         nuevo = nuevo.replace("%s|%d" % (nombre, antes), "%s|%d" % (nombre, ahora))
                 if nuevo != texto:
                     with open(p + ".tmp", "w", encoding="utf-8") as h:
@@ -1544,10 +1592,31 @@ def _raices():
         return []
 
 
+def _raices_y_arriba(niveles=3):
+    """Las carpetas del evento y las que las contienen (hasta `niveles` hacia arriba), sin repetir.
+
+    (18-nov, la persona: «ya analizó los videos... metí los videos y me dice que va a tardar 80 minutos») La primera
+    vez solto «Nueva carpeta» y la ficha quedo en «Nueva carpeta/.trailer»; la segunda solto sus subcarpetas (VIDEO,
+    CAMARA B, DRON...) y la ficha solo se buscaba DENTRO de cada carpeta soltada: no la encontraba."""
+    out, vistas = [], set()
+    for raiz in _raices():
+        d = os.path.abspath(raiz)
+        for _ in range(niveles + 1):
+            k = os.path.normcase(d)
+            if k not in vistas:
+                vistas.add(k)
+                out.append(d)
+            arriba = os.path.dirname(d)
+            if not arriba or arriba == d or len(arriba) <= 3:      # la raiz del disco no
+                break
+            d = arriba
+    return out
+
+
 def _leer_fichas(cache):
     """Completa la cache con las fichas que viajan con el material. Devuelve cuantas tomas recupero."""
     n = 0
-    for raiz in _raices():
+    for raiz in _raices_y_arriba():
         try:
             with open(os.path.join(raiz, FICHA), encoding="utf-8") as f:
                 ficha = json.load(f).get("cache", {})
@@ -1778,9 +1847,9 @@ def _ver_con_ia(cache, lista, log):
         rutas.revisar_parada()                    # (1.6.0) «Cancelar»
         d = cache[_clave(par[1])]
         return d, vision_ia.describir(par[0], par[1], d.get("dur", 0.0), log)
-    # en paralelo (la persona: «que use el máximo rendimiento»): mientras la GPU mira una toma, la otra ya saca sus
-    # cuadros con ffmpeg; si Ollama atiende varias a la vez (OLLAMA_NUM_PARALLEL), tambien se aprovecha
-    with ThreadPoolExecutor(vision_ia.PARALELO) as ex:
+    # en paralelo (la persona: «que use el máximo rendimiento»): mientras la GPU mira unas tomas, las siguientes ya
+    # sacan sus cuadros con ffmpeg (los 3 de cada una a la vez)
+    with ThreadPoolExecutor(vision_ia.PARALELO + 2) as ex:
         for n, (d, ia) in enumerate(ex.map(una, falta), 1):
             if not ia and (d.get("ia") or {}).get("intentos", 0) >= 1:
                 # (17-nov) una toma que la IA no logra describir (respuesta rota) se reintentaba en CADA armado: al
@@ -1844,6 +1913,35 @@ def _miradas_con_ia(cache, lista, log):
         "final y la intro." % (len(falta), time.time() - t0, cerrados))
 
 
+def _caras(cache, lista, log):
+    """(18-nov, la persona: «si no lo analizara DaVinci fuera más rápido, o sea con otra IA») Las personas de cada
+    foto y video con la IA propia (caras.py: YuNet + SFace, todos los nucleos) en un hilo, mientras la IA local mira y
+    el oido escucha. En la XV del 8-nov: 448 archivos en 222 s (DaVinci, unos 20 min con un nucleo) y la misma
+    festejada. Sin los modelos no hace nada y las reconoce DaVinci como antes. Devuelve {"hilo", "items", "personas"}."""
+    try:
+        import caras
+        if not caras.disponible() or os.environ.get("TRAILER_CARAS") == "0":
+            return None
+    except Exception:
+        return None
+    items = [dict(cache[_clave(r)], ruta=r, tipo=t) for t, r in lista
+             if _clave(r) in cache and not cache[_clave(r)].get("error")]
+    if not items:
+        return None
+    res = {"items": items, "personas": None}
+
+    def correr():
+        try:
+            res["personas"] = caras.reconocer(items, log)
+        except rutas.Detenido:
+            pass
+        except Exception as ex:
+            log("Aviso: la IA propia no pudo reconocer a las personas (%s): las reconocerá DaVinci." % ex)
+    res["hilo"] = threading.Thread(target=correr, daemon=True, name="caras")
+    res["hilo"].start()
+    return res
+
+
 def _oir(cache, lista, log):
     """(1.5.9) El oido (oido.py, earshot en la CPU) escucha cada toma en un hilo mientras la IA local la mira en la
     GPU: aplausos, vitores, risas, discursos, musica. Queda en el cache («oido»). Sin earshot no hace nada."""
@@ -1872,18 +1970,34 @@ def _instantes_con_ia(cache, largos, log, vision_ia):
     import time
     t0 = time.time()
     total = sum(cache[_clave(r)].get("dur", 0.0) for _, r in largos)
-    log("La IA local revisa cada toma cuadro por cuadro (uno cada %.0f s, %.0f min de video): hacia dónde apunta, "
-        "si se ven las caras..." % (vision_ia.INSTANTES_CADA_S, total / 60.0))
+    # (18-nov) lo que las medidas ya dejan fuera (desenfocado, quemado, movido, a oscuras) no se le pregunta a la IA
+    fuera, accidentales = {}, set()
+    try:
+        mod, tipo = _receta()
+        fuera, accidentales = mod.tramos_fuera(
+            [d for d in cache.values() if d.get("tipo") != "foto" and not d.get("error")], tipo)
+    except Exception as ex:
+        log("Aviso: no se pudieron calcular los tramos ya descartados (%s): la IA revisa todos los cuadros." % ex)
+    ya = sum(min(cache[_clave(r)].get("dur", 0.0), sum(b - max(a, 0.0) for a, b in fuera.get(r) or []))
+             for t, r in largos if t != "foto")
+    log("La IA local revisa cada toma cuadro por cuadro (uno cada %.0f s, %.0f min de video%s): hacia dónde apunta, "
+        "si se ven las caras..." % (vision_ia.INSTANTES_CADA_S, total / 60.0,
+                                    "; %.0f min ya quedan fuera por desenfocados, quemados o movidos y no se revisan"
+                                    % (ya / 60.0) if ya >= 30 else ""))
+    vision_ia.aviso_memoria(log)                  # (18-nov) memoria de video llena = 4 veces mas lento: que se sepa
 
     def una(par):
         rutas.revisar_parada()                    # (1.6.0) «Cancelar»
         d = cache[_clave(par[1])]
         if par[0] == "foto":                    # la foto entera es un solo cuadro (la misma regla de la cara)
             return d, vision_ia.revisar_foto(par[1], log)
-        return d, vision_ia.instantes(par[1], d.get("dur", 0.0), log)
+        # el limite de «la toma entera fuera» (_organizar): si los cuadros saltados pueden cambiarlo, se miran tambien
+        limite = None if par[1] in accidentales else (
+            PARTE_MALA_TOMA if d.get("dur", 0.0) <= TOMA_CORTA_S else PARTE_MALA_LARGA)
+        return d, vision_ia.instantes(par[1], d.get("dur", 0.0), log, fuera.get(par[1]), limite, par[0] == "dron")
     # las largas primero: asi no queda una sola al final mientras las demas ya terminaron
     largos = sorted(largos, key=lambda p: -cache[_clave(p[1])].get("dur", 0.0))
-    with ThreadPoolExecutor(vision_ia.PARALELO) as ex:
+    with ThreadPoolExecutor(vision_ia.TOMAS_A_LA_VEZ) as ex:
         for n, (d, inst) in enumerate(ex.map(una, largos), 1):
             if inst is not None:
                 d["ia"]["instantes"] = inst
@@ -1896,16 +2010,22 @@ def _instantes_con_ia(cache, largos, log, vision_ia):
                     n, len(largos), d["nombre"], 100 * parte,
                     " (%s)" % vision_ia.MOTIVOS.get(motivo, motivo) if motivo else ""))
     cuadros = [x for _, r in largos for x in (cache[_clave(r)]["ia"].get("instantes") or [])]
+    saltados = sum(1 for x in cuadros if len(x) > 2 and x[2] is None)
+    cuadros = [x for x in cuadros if len(x) < 3 or x[2] is not None]
     claves = sum(1 for x in cuadros if set(x[1]) & {"beso", "anillos", "votos", "primer_baile", "pastel", "brindis",
                                                        "entrada"})
     malos = {}
     for x in cuadros:
         if x[2] is False and len(x) > 3:                  # (en el dron, la falta de caras no cuenta en el armado)
             malos[x[3]] = malos.get(x[3], 0) + 1
-    log("La IA local revisó %d cuadros en %.0f s: %d momentos clave; no sirven %d (%s)." % (
-        len(cuadros), time.time() - t0, claves, sum(malos.values()),
+    log("La IA local revisó %d cuadros en %.0f s%s: %d momentos clave; no sirven %d (%s)." % (
+        len(cuadros), time.time() - t0,
+        " (otros %d ya estaban fuera por las medidas y no hizo falta)" % saltados if saltados else "",
+        claves, sum(malos.values()),
         ", ".join("%s %d" % (vision_ia.MOTIVOS.get(k, k), v) for k, v in sorted(malos.items(), key=lambda kv: -kv[1]))
         or "ninguno"))
+    if cuadros:
+        vision_ia.aviso_memoria(log, (time.time() - t0) / len(cuadros))
 
 
 def _en_orden(seq, prohibidos=()):
@@ -2079,6 +2199,11 @@ def analizar(base=DEF_BASE, log=print, hilos=4):
     if Image is None:
         log("Aviso: falta Pillow (python -m pip install pillow): las fotos se ordenan por fecha de archivo.")
     faltan = [(t, r) for t, r in lista if cache.get(_clave(r), {}).get("v", 1) < VERSION or cache[_clave(r)].get("error")]
+    if not faltan:
+        # (18-nov, la persona: «si ya están analizados, que diga videos ya analizados y ya va a ser más rápido para
+        # aplicar las plantillas») se dice claro, y el armado pasa directo a las plantillas
+        n_v, n_f = sum(1 for t, _ in lista if t != "foto"), sum(1 for t, _ in lista if t == "foto")
+        log("Material YA ANALIZADO: %d videos y %d fotos (no se vuelven a analizar): directo a las plantillas." % (n_v, n_f))
     if faltan:
         nuevos = sum(1 for _, r in faltan if _clave(r) not in cache)
         log("Analizando %d archivos%s (de %d)..." % (
@@ -2114,6 +2239,7 @@ def analizar(base=DEF_BASE, log=print, hilos=4):
                 _punto_de_guardado(cache)
         _punto_de_guardado(cache, True)
     _nombres_originales(cache)
+    ver_caras = _caras(cache, lista, log)       # (18-nov) las personas, con la IA propia, a la vez que lo demas
     oir = _oir(cache, lista, log)               # (1.5.9) el oido (CPU) escucha mientras la IA local (GPU) mira
     _ver_con_ia(cache, lista, log)
     try:                                        # (1.6.0) ojos abiertos en las candidatas a la foto final y la intro
@@ -2126,10 +2252,20 @@ def analizar(base=DEF_BASE, log=print, hilos=4):
         if oir.is_alive():
             log("El oído termina de escuchar...")
         oir.join()
+    if ver_caras is not None:
+        if ver_caras["hilo"].is_alive():
+            log("Terminando de reconocer a las personas...")
+        ver_caras["hilo"].join()
+        try:
+            if ver_caras.get("personas") is not None:
+                import caras
+                caras.guardar_personas(ver_caras["items"], ver_caras["personas"])
+        except Exception as ex:
+            log("Aviso: no se pudieron guardar las personas reconocidas (%s): las reconocerá DaVinci." % ex)
     _punto_de_guardado(cache, True)             # por si lo que sigue falla: lo analizado ya esta a salvo
     cache, res = _organizar(cache, lista, base, log)
     try:                                        # (18-nov) lo entendido de cada video, escrito dentro del archivo
-        if _metadatos_visibles(cache, res.get("items") or [], log):
+        if _metadatos_visibles(cache, res.get("items") or [], log, res.get("fecha")):
             res["huella"] = huella(base)        # cambio el tamaño de esos archivos
     except Exception as ex:
         log("Aviso: no se pudieron escribir los metadatos en los videos (%s)" % ex)
@@ -2158,8 +2294,63 @@ def reclasificar(base=DEF_BASE, log=print):
 CAMPOS_VENTANA = ("nombre", "tipo", "hora", "dur", "momento", "por", "tramos", "descartar", "horizontal")
 
 
+_FALTAN = {"t": 0.0, "r": None}
+
+
+def cuantos_faltan(base=DEF_BASE):
+    """(videos sin analizar todavia, videos en total) de lo que hay ahora, contando tambien el analisis que viaja con
+    el material (la ficha «.trailer» de cada carpeta). Rapido (no abre los videos); se recuerda 20 s.
+
+    (18-nov, la persona: «metí la carpeta de mis tomas y me dice que va a tardar 80 minutos, pero si ya lo analizó
+    debería salirme videos ya analizados») La cuenta de «estará listo en» suponia que TODO estaba sin analizar."""
+    import time
+    # se recuerda 20 s, pero solo para LAS MISMAS carpetas: al soltar unas nuevas la ventana pregunto un instante
+    # antes de que quedaran añadidas (0 videos), se guardo ese «nada» y el tiempo salio otra vez con todo por analizar
+    try:
+        llave = tuple(sorted(os.path.normcase(r) for r in rutas.fuentes()))
+    except Exception:
+        llave = ()
+    if _FALTAN["r"] is not None and _FALTAN.get("llave") == llave and _FALTAN["r"][1] \
+            and time.time() - _FALTAN["t"] < 20:
+        return _FALTAN["r"]
+    _FALTAN["llave"] = llave
+    cache = _leer_cache()
+    try:
+        _leer_fichas(cache)
+    except Exception:
+        pass
+    total = faltan = 0
+    for tipo, ruta in listar(base):
+        if tipo == "foto":
+            continue
+        total += 1
+        try:
+            d = cache.get(_clave(ruta)) or {}
+        except OSError:
+            d = {}
+        ia = d.get("ia") or {}
+        if d.get("error") or d.get("v", 0) < VERSION or not (ia.get("escena") is not None and ia.get("instantes_v")):
+            faltan += 1
+    _FALTAN["t"], _FALTAN["r"] = time.time(), (faltan, total)
+    return faltan, total
+
+
+def _item_ventana(i):
+    """Lo que la ventana pinta de un archivo. (18-nov) Faltaban la ruta, lo que vio la IA y el oido: Material decia
+    «IA 0/129», las miniaturas salian negras y la Linea del dia no marcaba los momentos clave."""
+    d = {c: i[c] for c in CAMPOS_VENTANA + ("ruta", "audio_pista") if c in i}
+    ia = i.get("ia") or {}
+    if ia:
+        d["ia"] = {"escena": ia.get("escena", ""),
+                   "instantes": [[x[0], x[1], x[2]] for x in ia.get("instantes") or [] if len(x) > 2]}
+    o = i.get("oido") or {}
+    if o.get("paso"):
+        d["oido"] = {"paso": o["paso"], "ventana": o.get("ventana", o["paso"]), "aplausos": o.get("aplausos") or []}
+    return d
+
+
 def _ventana_ruta():
-    return os.path.join(rutas.ANALISIS, "material_ventana.json")
+    return os.path.join(rutas.ANALISIS, "material_ventana2.json")
 
 
 def leer_ultimo():
@@ -2180,7 +2371,7 @@ def leer_ultimo():
     except Exception:
         return {}
     res = {k: j.get(k) for k in ("fecha", "avisos", "camaras", "momentos", "huella")}
-    res["items"] = [{c: i[c] for c in CAMPOS_VENTANA if c in i} for i in j.get("items") or []]
+    res["items"] = [_item_ventana(i) for i in j.get("items") or []]
     try:
         tmp = ligero + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:

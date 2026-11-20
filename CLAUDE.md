@@ -6,7 +6,7 @@
   - `1 MATERIAL`: FOTOS · VIDEOS · DRON · ANTERIORES, siempre POR DENTRO: `DATOS/trabajo` (instalado) o `PROGRAMA/datos/trabajo` (desde el código). Una carpeta soltada NO se copia aquí: se usa donde está.
   - `EVENTO TERMINADO - <evento>`: en el Escritorio (instalado y desde el código): `VIDEO TERMINADO` (`VIDEO FINAL 1 MIN`, `VIDEO FINAL VERTICAL 1 MIN`…) y `PLANTILLAS DE LOS VIDEOS` (un proyecto `.drp` por video, mismo nombre: solo esa línea, con proxies y caché). Los de antes de la 1.5.7 (`2 VIDEOS TERMINADOS`, `3 PLANTILLAS EDITABLES`) ya se pasaron ahí.
   - `3 INSTALADORES`: Windows (.exe) · Mac (.dmg).
-  - `PROGRAMA`: solo carpetas. Código en `interfaz/` (ventana, icono, Inicio), `nucleo/` (motor, rutas, registro, tareas), `analisis/` (material, escenas IA, ritmo), `armado/` (plantillas, SFX, mezcla, IntelliSearch), `entrega/` (render, master) y `herramientas/` (mapa_codigo, empaquetar). Además `config/` (versión, perfiles, requisitos, LEEME), `datos/` (cachés, respaldos, `registro/`), `recursos/`, `recursos_protegidos/`, `dctl/`, `compilar/` (`windows/`, `mac/`, `icono/`) y `docs/` (SKILL, mapa, capturas).
+  - `PROGRAMA`: solo carpetas. Código en `interfaz/` (ventana, icono, Inicio; `interfaz/qml/` = piezas nuevas en QML / Qt Quick, por partes, con `barra_qml.py`), `nucleo/` (motor, rutas, registro, tareas), `analisis/` (material, escenas IA, ritmo), `armado/` (plantillas, SFX, mezcla, IntelliSearch), `entrega/` (render, master) y `herramientas/` (mapa_codigo, empaquetar). Además `config/` (versión, perfiles, requisitos, LEEME), `datos/` (cachés, respaldos, `registro/`), `recursos/`, `recursos_protegidos/`, `dctl/`, `compilar/` (`windows/`, `mac/`, `icono/`) y `docs/` (SKILL, mapa, capturas).
   - Ocultos en la raíz: `.git*`, `.github` y este `CLAUDE.md` (atributo oculto).
   - Iconos de carpeta como CINESLIDE (ocultos `.cf/icono.ico` + `desktop.ini` en cada una): `python PROGRAMA/herramientas/iconos_carpetas.py`; al crear una carpeta nueva, volver a correrlo.
   - `LEEME.txt` para la persona: `PROGRAMA/config/LEEME.txt`. Para abrir sin instalar: `PROGRAMA/herramientas/ARMAR TRAILERS.bat` / `.command` (también sirven junto a `PROGRAMA` en el paquete de Mac).
@@ -19,9 +19,10 @@
 
 ## Mapa de temas (`mapa id=<tema>`)
 <!-- MAPA:INICIO (lo escribe PROGRAMA/herramientas/mapa_codigo.py generar) -->
+- **que-entra**: Material > «Qué entra al video» (reemplaza a la Linea del dia): el plan de cada version plano por plano, lo que queda fuera con su motivo, «No la uses» / «Úsala de todos modos», y el tiempo estimado que ya no cuenta lo analizado
 - **boton-play**: El boton GO hace todo: analizar, armar en DaVinci, renderizar, masterizar, abrir carpeta
 - **inicio-escena**: Escena GO de CineCaptions (esfera de particulas, cometas, explosion): OCULTA desde 1.6.0; el Inicio es el astrolabio vivo de la maqueta (tema animaciones)
-- **ventana**: Ventana sin marco: portada al instante, pestanas Material/Textos/Ajustes (voz original, verticales, ruido), chequeo de arranque, instancia unica
+- **ventana**: Ventana sin marco: portada al instante, pestanas Inicio/Tráilers/Plantillas/Ajustes (Material y Textos ocultas desde el 19-nov) (voz original, verticales, ruido), chequeo de arranque, instancia unica
 - **diseno**: Diseño 1.6.0 (maquetas de Higgsfield, docs/capturas/propuesta_*): pastilla de estado, panel de Inicio, Material con miniaturas y Linea del dia por momento, Textos con vista previa, Ajustes en tarjetas, Trabajando con pasos, avance por version y Cancelar
 - **animaciones**: Animaciones 1.6.0 hechas en Higgsfield (Kling 3.0): astrolabio vivo (reposo, despertar, trabajo, hecho, dormir), cielo que fluye, bodegon de Ajustes; fundido entre paginas, luz en el titulo, pasos, versiones y Linea del dia vivos, vista previa de Textos con zoom lento, brillo al pasar el raton
 - **arranque**: Abrir sin tiempo de carga y con fluidez: sin portada (la persona no la quiere), fuentes (una familia, sin simbolos de reserva, hilo por ctypes), numpy/Pillow al primer uso, linea del dia y cielo guardados, tiempos con TRAILER_TIEMPOS
@@ -69,9 +70,9 @@
 - **Material:** solo fotos JPG (RAW, DNG, PNG, HEIC no cuentan ni se tocan). Sin fotos JPG para la intro, se sacan capturas del video (`motor.capturas_intro`, por dentro en `CAPTURAS`). Si hay videos verticales, se arma solo también el VERTICAL 1 min.
 - **Montaje:**
   - 8 fotos en la intro y UNA al final (la mejor de la persona festejada, con la tarjeta final abajo). Fotos dentro del video solo como relleno en el de 30 min (cuando no alcanzan las tomas buenas), antes que repetir o meter una toma fea.
-  - Personas: las reconoce DaVinci (IntelliSearch con caras → `it["caras"]`, `it["prota"]`); la festejada es la cara que sale en más archivos y sus tomas y fotos van primero.
+  - Personas: las reconoce la IA propia durante el análisis (`analisis/caras.py`, YuNet + SFace; 448 archivos en 222 s) y, solo si faltan sus modelos, DaVinci (IntelliSearch, ~20 min); quedan en `it["caras"]`, `it["prota"]`; la festejada es la cara que sale en más archivos y sus tomas y fotos van primero.
   - Tomas malas fuera: desenfocadas, quemadas, torcidas o al piso (medidas `vista` del analizador, en absoluto; nitidez también contra la mejor cámara del evento).
-  - **Si sale gente, se le ve la cara**: la IA local revisa cada toma cada 3 s (`vision_ia.instantes`); techo, piso, de cabeza, tapada, sin cabeza, de espaldas o sin ninguna cara → fuera ese tramo (o la toma entera si es la mayor parte). Lo muy movido no entra (el estabilizador lo deforma).
+  - **Si sale gente, se le ve la cara**: la IA local revisa cada toma cada 3 s (`vision_ia.instantes`; lo que las medidas ya dejan fuera no se le pregunta, `receta.tramos_fuera`); techo, piso, de cabeza, tapada, sin cabeza, de espaldas o sin ninguna cara → fuera ese tramo (o la toma entera si es la mayor parte). Lo muy movido no entra (el estabilizador lo deforma).
   - Antes de dar por bueno un video: hoja de contacto (2 cuadros/s) y mirarla.
   - Estabilizar con el estabilizador propio (`armado/estabilizar.py`, Transform de Fusion con keyframes, zoom mínimo), no con `Stabilize()` de Resolve; los comps se ponen ANTES del primer render del clip (DaVinci reusa lo renderizado). La Magic Mask no se puede automatizar (puntos a mano) y el Depth Map de Fusion no se renderiza en un comp de clip (`profundidad.py` apagado).
   - Voz original solo de quien habla de corrido (pastor, brindis, discursos), nunca ruidos ni voces sueltas: siempre en 30 min, activada en 15, a elegir en 1 y 3 (Ajustes › Voz original).

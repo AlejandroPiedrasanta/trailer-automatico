@@ -214,13 +214,80 @@ def _clave(ruta):
     return "%s|%d" % (os.path.basename(ruta), os.path.getsize(ruta))
 
 
+# (18-nov, la persona: «que ya venga incrustado... una carpeta dentro de mis fotos y videos, no tocar, y ahí vayan los
+# datos necesarios») Lo que DaVinci tarda en sacar (personas: 21 min; voces: la transcripcion) viaja tambien con el
+# material, en la carpeta oculta «.trailer» de cada carpeta del evento (junto a la ficha del analisis): con la cache
+# del programa borrada, o en otra PC, se recupera de ahi y DaVinci no vuelve a analizar.
+FICHA_DIR = ".trailer"
+
+
+def _raices():
+    try:
+        return [r for r in rutas.fuentes() if os.path.isdir(r)]
+    except Exception:
+        return []
+
+
+def _leer_viajero(nombre):
+    """Lo guardado con el material (todas las carpetas del evento juntas): {clave nombre|tamaño: datos}."""
+    out = {}
+    arriba = []                                  # (18-nov) tambien en las carpetas de arriba: se pueden soltar subcarpetas
+    for raiz in _raices():
+        d = os.path.abspath(raiz)
+        for _ in range(4):
+            if d not in arriba:
+                arriba.append(d)
+            sup = os.path.dirname(d)
+            if not sup or sup == d or len(sup) <= 3:
+                break
+            d = sup
+    for raiz in arriba:
+        try:
+            with open(os.path.join(raiz, FICHA_DIR, nombre), encoding="utf-8") as f:
+                j = json.load(f)
+            if isinstance(j, dict) and j.get("version") == VERSION and isinstance(j.get("datos"), dict):
+                out.update(j["datos"])
+        except Exception:
+            pass
+    return out
+
+
+def _guardar_viajero(nombre, datos):
+    """Cada carpeta del evento se lleva lo de SUS archivos. Si el disco no deja escribir, el programa sigue con su cache."""
+    for raiz in _raices():
+        try:
+            suyas = set()
+            for r, dirs, fs in os.walk(raiz):
+                dirs[:] = [d for d in dirs if not d.startswith((".", "$"))]
+                for f in fs:
+                    try:
+                        suyas.add("%s|%d" % (f, os.path.getsize(os.path.join(r, f))))
+                    except OSError:
+                        pass
+            mios = {k: v for k, v in datos.items() if k in suyas}
+            if not mios:
+                continue
+            d = os.path.join(raiz, FICHA_DIR)
+            os.makedirs(d, exist_ok=True)
+            destino = os.path.join(d, nombre)
+            with open(destino + ".tmp", "w", encoding="utf-8") as f:
+                json.dump({"version": VERSION, "datos": mios}, f, ensure_ascii=False)
+            os.replace(destino + ".tmp", destino)
+            if os.name == "nt":
+                import ctypes
+                ctypes.windll.kernel32.SetFileAttributesW(d, 2)      # oculta
+        except Exception:
+            pass
+
+
 def leer_cache():
+    viajero = _leer_viajero("voces.json")
     try:
         with open(CACHE, encoding="utf-8") as f:
             j = json.load(f)
-        return j.get("clips", {}) if j.get("version") == VERSION else {}
+        return dict(viajero, **(j.get("clips", {}) if j.get("version") == VERSION else {}))
     except Exception:
-        return {}
+        return viajero
 
 
 def _guardar_cache(clips):
@@ -229,6 +296,7 @@ def _guardar_cache(clips):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump({"version": VERSION, "clips": clips}, f, ensure_ascii=False, indent=1)
     os.replace(tmp, CACHE)
+    _guardar_viajero("voces.json", clips)
 
 
 def _esperar_transcripcion(project, clip, limite):
@@ -340,12 +408,13 @@ def entender(resolve, project, pares, log=print, transcribir=True):
 
 
 def leer_personas():
+    viajero = _leer_viajero("personas.json")     # (18-nov) lo que viaja con el material; lo del programa manda
     try:
         with open(PERSONAS, encoding="utf-8") as f:
             j = json.load(f)
-        return j if isinstance(j, dict) else {}
+        return dict(viajero, **j) if isinstance(j, dict) else viajero
     except Exception:
-        return {}
+        return viajero
 
 
 def _guardar_personas(cache):
@@ -353,6 +422,7 @@ def _guardar_personas(cache):
     with open(PERSONAS + ".tmp", "w", encoding="utf-8") as f:
         json.dump(cache, f, ensure_ascii=False)
     os.replace(PERSONAS + ".tmp", PERSONAS)
+    _guardar_viajero("personas.json", cache)
 
 
 HECHOS_INTELLISEARCH = os.path.join(rutas.ANALISIS, "intellisearch.json")   # lo que ya analizo indexar.py en segundo plano

@@ -21,25 +21,45 @@ MARCAS = (("IA: primera vista", "La IA local mira"), ("IA: cuadro por cuadro", "
           ("Personas (DaVinci)", "Reconociendo a las personas"))
 
 
+def ruta_registro():
+    """(18-nov) El registro MAS RECIENTE: el del codigo (PROGRAMA/datos o TRAILER_DATOS) o el del programa instalado
+    (%LOCALAPPDATA%/TrailerAutomatico, Mac: ~/Library/Application Support/TrailerAutomatico). Antes solo leia el del
+    codigo y daba como actual una corrida de hace 13 horas mientras el instalado armaba."""
+    casa = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "TrailerAutomatico")
+    if sys.platform == "darwin":
+        casa = os.path.expanduser("~/Library/Application Support/TrailerAutomatico")
+    rutas_ = [os.path.join(d, "registro", "registro.log") for d in (rutas.DATOS, casa)]
+    hay = [r for r in rutas_ if os.path.exists(r)]
+    return max(hay, key=os.path.getmtime) if hay else rutas_[0]
+
+
 def corrida():
     """[(fecha, nivel, texto)] de la ultima corrida."""
-    ruta = os.path.join(rutas.DATOS, "registro", "registro.log")
+    ruta = ruta_registro()
     out = []
     with open(ruta, encoding="utf-8", errors="replace") as f:
         for l in f:
             m = LINEA.match(l.rstrip("\n"))
             if not m:
                 continue
-            if INICIO in m.group(3):
+            f = datetime.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
+            # (18-nov) el pase vertical vuelve a decir «== Analizando material ==»: solo es corrida nueva si la
+            # anterior ya acabo (Terminado / No se pudo terminar) o tras 2 min sin lineas
+            if INICIO in m.group(3) and (not out or (f - out[-1][0]).total_seconds() > 120 or
+                                         out[-1][2].startswith(("== Terminado", "No se pudo terminar"))
+                                         or any(t.startswith(("== Terminado", "No se pudo terminar"))
+                                                for _, _, t in out[-8:])):
                 out = []
-            out.append((datetime.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S"), m.group(2), m.group(3)))
+            elif m.group(3).startswith("=== Trailer automatico"):    # el programa se abrio de nuevo
+                out = []
+                continue
+            out.append((f, m.group(2), m.group(3)))
     return out
 
 
 def ultimo_error():
     """Las lineas del ultimo «Error no atrapado» (con su traza), recortadas."""
-    ruta = os.path.join(rutas.DATOS, "registro", "registro.log")
-    with open(ruta, encoding="utf-8", errors="replace") as f:
+    with open(ruta_registro(), encoding="utf-8", errors="replace") as f:
         ls = f.read().splitlines()
     for n in range(len(ls) - 1, -1, -1):
         m = LINEA.match(ls[n])
@@ -55,6 +75,8 @@ def etapa_de(texto):
     for nombre, empieza in MARCAS:
         if texto.strip().startswith(empieza):
             return nombre
+    if re.match(r"^\d+ s\s+\S+ (Rendering|Ready|Complete)", texto.strip()):    # las lineas de la cola de render
+        return "Render"
     return None
 
 
@@ -66,7 +88,11 @@ def main():
     if not ls:
         print("Sin corridas en el registro.")
         return
-    etapas = [(f, etapa_de(t)) for f, _, t in ls if etapa_de(t)]
+    etapas = []
+    for f, _, t in ls:                                       # sin repetir la misma etapa seguida (Render, linea a linea)
+        n = etapa_de(t)
+        if n and (not etapas or etapas[-1][1] != n):
+            etapas.append((f, n))
     if "tiempos" in sys.argv[1:]:
         fin = ls[-1][0]
         for (f, n), sig in zip(etapas, etapas[1:] + [(fin, None)]):
@@ -74,12 +100,31 @@ def main():
         print("%6.1f min  TOTAL" % ((fin - ls[0][0]).total_seconds() / 60.0))
         return
     ahora = datetime.datetime.now()
+    quieto = (ahora - ls[-1][0]).total_seconds() / 60.0
+    textos = [t for _, _, t in ls]
+    if any(t.startswith("No se pudo terminar") for t in textos):
+        estado = "FALLO"
+    elif any(t.startswith("== Terminado") for t in textos):     # («Listo en N s.» llega ANTES del render)
+        estado = "TERMINADO"
+    elif any(re.match(r"^\d+ s\s+\S+ (Rendering|Ready|Complete)", t) for t in textos):
+        estado = "renderizando" + (" (sin lineas nuevas hace %.0f min: ¿colgado?)" % quieto if quieto > 10 else "")
+    else:
+        estado = "en curso" + (" (sin lineas nuevas hace %.0f min: ¿colgado?)" % quieto if quieto > 10 else "")
+    print("Estado: %s · %s" % (estado, ruta_registro()))
     print("Etapa: %s (empezo hace %.0f min; la corrida, hace %.0f)" % (
-        etapas[-1][1], (ahora - etapas[-1][0]).total_seconds() / 60.0, (ahora - ls[0][0]).total_seconds() / 60.0))
-    print("Ultimo (hace %.0f min): %s" % ((ahora - ls[-1][0]).total_seconds() / 60.0, ls[-1][2][:160]))
+        etapas[-1][1] if etapas else "?", (ahora - etapas[-1][0]).total_seconds() / 60.0 if etapas else 0,
+        (ahora - ls[0][0]).total_seconds() / 60.0))
+    for f, _, t in ls[-3:]:                                 # las 3 ultimas, no solo una
+        print("  %s  %s" % (f.strftime("%H:%M:%S"), t[:170]))
     errores = [t for _, n, t in ls if n == "ERROR"]
     avisos = [t for _, n, t in ls if n != "ERROR" and re.match(r"^\s*(AVISO|Aviso)\b", t)]
-    print("Errores: %d%s | Avisos: %d" % (len(errores), " -> " + errores[-1][:160] if errores else "", len(avisos)))
+    print("Errores: %d | Avisos: %d" % (len(errores), len(avisos)))
+    for t in errores[-3:]:                                  # cada error con su ultima linea de traza (archivo:linea)
+        print("  ERROR " + t[:170])
+    if errores:
+        traza = [l for l in ultimo_error() if l.strip().startswith("File ")]
+        if traza:
+            print("        en " + traza[-1].strip()[:170])
     for t in sorted(set(avisos))[:6]:
         print("  - " + t[:150])
 

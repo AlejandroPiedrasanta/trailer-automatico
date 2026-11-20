@@ -60,8 +60,12 @@ def indexar(log=print, intellisearch=True):
     with motor.CANDADO:
         with open(os.path.join(motor.rutas.ANALISIS, "material.json"), encoding="utf-8") as f:
             items = {os.path.normcase(i["ruta"]): i for i in json.load(f).get("items", [])}
-        r = motor.conectar_resolve(log)
+        r = motor.conectar_resolve(log, quedarse=True)
         p = r.GetProjectManager().GetCurrentProject()
+        if p.GetName() != motor.PROYECTO:      # (19-nov) la persona esta en el proyecto de un video: no se la saca
+            log("IntelliSearch: DaVinci está en «%s»; se indexa la próxima vez que esté en %s."
+                % (p.GetName(), motor.PROYECTO))
+            return None
         if p.IsRenderingInProgress():
             log("AVISO: hay un render en curso; vuelve a indexar cuando termine.")
             return None

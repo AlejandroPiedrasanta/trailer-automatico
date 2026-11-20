@@ -34,7 +34,7 @@ SIN_VERTICALES = ("El formato vertical solo usa videos grabados en vertical (cel
                   "en el material. Suelta más videos verticales o arma el formato horizontal.")
 # Voz original (pastor, brindis, discursos) sobre la musica: como viene cada version en Ajustes. En la de 30 min va
 # siempre y no se pregunta (igual que VOZ_DEFECTO / VOZ_SIEMPRE de build_trailers.py).
-VOZ_DEFECTO = {"1min": False, "3min": False, "15min": True}
+VOZ_DEFECTO = {"1min": False, "3min": False, "15min": True, "30min": True}    # (18-nov) la de 30 tambien se puede apagar
 CARPETAS = am.CARPETAS          # {"foto": .../1 MATERIAL/FOTOS, "video": .../VIDEOS, "dron": .../DRON}
 ESPERA_ESTABLE = 30             # segundos sin cambios antes de armar (copia terminada)
 ESTADO = rutas.ESTADO
@@ -428,8 +428,87 @@ def renombrar_material(analisis, log=print):
                 pass
             log("Aviso: no pude renombrar %s (%s)" % (os.path.basename(a), ex))
     am.renombrar_cache(hechos)
+    try:
+        import editable
+        editable.seguir_renombrado(hechos)       # los proxies ya hechos siguen a su video
+    except Exception:
+        pass
+    try:
+        n = migrar_claves(hechos)
+        if n:
+            log("Lo que DaVinci ya había reconocido (personas, voces) sigue a los archivos renombrados: %d datos." % n)
+    except Exception as ex:
+        log("Aviso: no pude pasar los datos guardados a los nombres nuevos (%s)" % ex)
     log("Renombrados en su carpeta: %d archivos (nombres de antes en %s)" % (len(hechos), registro))
     return hechos
+
+
+def migrar_claves(hechos):
+    """(18-nov) Al renombrar, lo guardado por «nombre|tamaño» FUERA del cache del analisis se quedaba con el nombre
+    viejo: personas y voces de DaVinci, ruido, volumen, estabilizador... y DaVinci volvia a reconocer todo (20 min con
+    un solo nucleo; la persona: «debería usar el 100 % de CPU o GPU y no lo está haciendo»). Pasa cada clave vieja a
+    la nueva en los .json de datos/analisis y en los que viajan con el material (.trailer). Devuelve cuantas paso."""
+    mapa = {}
+    for a, b in hechos:
+        try:
+            t = os.path.getsize(b)
+        except OSError:
+            continue
+        mapa["%s|%d" % (os.path.basename(a), t)] = "%s|%d" % (os.path.basename(b), t)
+    if not mapa:
+        return 0
+    total = [0]
+
+    def pasar(x):
+        if isinstance(x, dict):
+            nuevo = {}
+            for k, v in x.items():
+                k2 = k
+                if isinstance(k, str) and "|" in k:
+                    partes = k.split("|")
+                    base = "|".join(partes[:2])
+                    if base in mapa:              # «nombre|tamaño» o «nombre|tamaño|mas cosas» (estabilizador)
+                        k2 = "|".join([mapa[base]] + partes[2:])
+                        total[0] += 1
+                nuevo[k2] = pasar(v)
+            return nuevo
+        if isinstance(x, list):
+            return [pasar(v) for v in x]
+        return x
+    archivos = []
+    try:
+        archivos += [os.path.join(rutas.ANALISIS, f) for f in os.listdir(rutas.ANALISIS)
+                     if f.endswith(".json") and f not in ("nombres.json", "material.json", "material_parcial.json",
+                                                          "material_ventana.json", "material_ventana2.json",
+                                                          "estado_programa.json", "plan_previo.json")]
+    except OSError:
+        pass
+    vistas = set()
+    for raiz in rutas.fuentes():
+        d = os.path.abspath(raiz)
+        for _ in range(4):
+            if os.path.normcase(d) not in vistas:
+                vistas.add(os.path.normcase(d))
+                for f in ("personas.json", "voces.json"):
+                    archivos.append(os.path.join(d, ".trailer", f))
+            arriba = os.path.dirname(d)
+            if not arriba or arriba == d or len(arriba) <= 3:
+                break
+            d = arriba
+    for ruta in archivos:
+        try:
+            with open(ruta, encoding="utf-8") as f:
+                j = json.load(f)
+        except Exception:
+            continue
+        antes = total[0]
+        j2 = pasar(j)
+        if total[0] != antes:
+            try:
+                am._guardar_json(ruta, j2)
+            except Exception:
+                pass
+    return total[0]
 
 
 def _historial_nombres():
@@ -1014,13 +1093,19 @@ class _Vigilante:
         self.fin.set()
 
 
-def conectar_resolve(log):
+def conectar_resolve(log, quedarse=False):
+    """quedarse: (19-nov) lo que corre en segundo plano (IntelliSearch, leer el ruido) acepta el proyecto de un video
+    que la persona tenga abierto: antes la sacaba de ahi y le cargaba EVENTOS CINEMA mientras editaba."""
     with _Vigilante(log):
-        return _conectar_resolve(log)
+        return _conectar_resolve(log, quedarse)
 
 
-def _conectar_resolve(log):
+def _conectar_resolve(log, quedarse=False):
     abiertos = _bloqueos(False)
+    t0 = time.time()
+    while abiertos and time.time() - t0 < 15:     # (18-nov) una ventana «Resolve» de paso (progreso) no es un cuadro:
+        time.sleep(1.0)                            # se espera a que se vaya antes de rendirse
+        abiertos = _bloqueos(False)
     if abiertos:
         raise RuntimeError("DaVinci tiene abierto: %s. Cierralo y vuelve a intentar."
                            % ", ".join("«%s»" % t for t in abiertos))
@@ -1029,15 +1114,35 @@ def _conectar_resolve(log):
     if r is None and rutas.abrir_resolve():
         log("Abriendo DaVinci Resolve...")
 
-        def esperar(veces):
-            r = None
-            for _ in range(veces):
+        import vigia_davinci
+
+        def esperar(segundos):
+            # (18-nov, medido) contesta a los 15-37 s; tras una caida se quedo 273 s sin contestar (la espera era de 40
+            # VUELTAS y cada scriptapp sin respuesta tarda ~4 s) y al reabrirlo contesto en 15 s: se cuenta en segundos
+            r, t0, sin_proceso = None, time.time(), 0
+            while time.time() - t0 < segundos:
                 time.sleep(3)
                 r = dvr.scriptapp("Resolve")
                 if r is not None and r.GetProjectManager() is not None:
+                    log("DaVinci contestó en %.0f s." % (time.time() - t0))
                     break
+                # (18-nov) se caia a los 10 s (Python de Fusion sin arrancar) y aqui se esperaban 2 + 3 min a ciegas:
+                # sin proceso dos veces seguidas = se cerro solo; se abre otra vez enseguida (hasta 2 veces)
+                sin_proceso = 0 if vigia_davinci.abierto() else sin_proceso + 1
+                if sin_proceso >= 2:
+                    if _relanzados["n"] >= 2:
+                        log("DaVinci se cerró solo al abrir, tres veces: no sigo.")
+                        break
+                    _relanzados["n"] += 1
+                    log("DaVinci se cerró solo al abrir (a los %.0f s): lo abro otra vez..." % (time.time() - t0))
+                    rutas.abrir_resolve()
+                    sin_proceso = 0
             return r
-        r = esperar(40)
+        _relanzados = {"n": 0}
+        r = esperar(75)
+        if r is None or r.GetProjectManager() is None:
+            log("DaVinci no contestó en 75 s; ventanas abiertas: %s" % (", ".join(
+                "«%s»" % t for t in _titulos_resolve(True)) or "ninguna"))
         if (r is None or r.GetProjectManager() is None) and os.name == "nt" and \
                 not any(t.startswith("DaVinci Resolve") for t in _titulos_resolve(True)):
             # (17-nov, dos veces en un dia) DaVinci abrio pero se quedo sin contestar: colgado en la portada «Cargando
@@ -1050,7 +1155,7 @@ def _conectar_resolve(log):
                                creationflags=rutas.SIN_VENTANA)
                 time.sleep(4)
                 if rutas.abrir_resolve():
-                    r = esperar(60)
+                    r = esperar(120)
             except Exception as ex:
                 log("  no se pudo reabrir DaVinci (%s)" % ex)
         time.sleep(5)                     # que termine de arrancar antes de pedirle el proyecto
@@ -1059,18 +1164,39 @@ def _conectar_resolve(log):
                            "General > Scripting externo = Local.")
     pm = r.GetProjectManager()
     actual = pm.GetCurrentProject()
-    nombres = [PROYECTO] + PROYECTOS_ANTERIORES
-    if actual is None or actual.GetName() not in nombres:
+    nombres = [PROYECTO] + PROYECTOS_ANTERIORES + ([_PROYECTO_VIDEO["nombre"]] if _PROYECTO_VIDEO["nombre"] else [])
+    if quedarse and leer_estado().get("proyecto_video"):
+        nombres.append(leer_estado()["proyecto_video"])
+    try:
+        base_actual = (pm.GetCurrentDatabase() or {}).get("DbName")
+    except Exception:
+        base_actual = None
+    bases = [d.get("DbName") for d in (pm.GetDatabaseList() or [])]
+    # (18-nov) DaVinci abrio en la base «REDES SOCIALES», que TAMBIEN tiene un «EVENTOS CINEMA»: como el nombre
+    # coincidia no se cambiaba de base, se armo todo ahi y al hacer los .drp por video DaVinci perdio esa base
+    # («Driver not loaded») y se colgo. Ahora la base tiene que ser EVENTOS aunque el proyecto se llame igual.
+    otra_base = BASE_DATOS in bases and base_actual not in (None, BASE_DATOS)
+    if otra_base:
+        log("DaVinci estaba en la base «%s»: paso a «%s»." % (base_actual, BASE_DATOS))
+    if actual is None or actual.GetName() not in nombres or otra_base:
         log("Abriendo el proyecto %s..." % PROYECTO)
         # Solo se guarda un proyecto con nombre de verdad. Guardar el "Untitled Project" que Resolve abre al
         # arrancar hace salir el cuadro "Crear proyecto" y la API se queda esperando para siempre.
         if actual is not None and not _sin_titulo(actual.GetName()):
             pm.SaveProject()
-        bases = [d.get("DbName") for d in (pm.GetDatabaseList() or [])]
         if BASE_DATOS in bases:
-            pm.SetCurrentDatabase({"DbType": "Disk", "DbName": BASE_DATOS})
+            if not pm.SetCurrentDatabase({"DbType": "Disk", "DbName": BASE_DATOS}):
+                log("AVISO: DaVinci no quiso pasar a la base «%s» (sigue en «%s»)." % (
+                    BASE_DATOS, (pm.GetCurrentDatabase() or {}).get("DbName")))
+        cargado = None
+        if _PROYECTO_VIDEO["nombre"] and _PROYECTO_VIDEO.get("carpeta"):
+            # (19-nov) DaVinci se reinicio a mitad del render de un video: se vuelve a SU proyecto (en la carpeta
+            # del evento), no a EVENTOS CINEMA (si no, se exportaba EVENTOS CINEMA entero como el .drp del video)
+            pm.GotoRootFolder()
+            pm.OpenFolder(_PROYECTO_VIDEO["carpeta"])
+            cargado = pm.LoadProject(_PROYECTO_VIDEO["nombre"])
         pm.GotoRootFolder()
-        if not any(pm.LoadProject(n) for n in nombres):
+        if not cargado and not any(pm.LoadProject(n) for n in nombres):
             if not os.path.exists(rutas.PLANTILLAS_DRP):
                 raise RuntimeError("No encontre el proyecto '%s' en DaVinci ni las plantillas en %s."
                                    % (PROYECTO, rutas.PLANTILLAS_DRP))
@@ -1083,6 +1209,78 @@ def _conectar_resolve(log):
         raise RuntimeError("DaVinci sigue con %s abierto. Cierralo y vuelve a intentar."
                            % ", ".join("«%s»" % t for t in abiertos))
     return r
+
+
+def carpetas_movidas(perdidas):
+    """{carpeta que ya no esta: donde esta hoy}. (19-nov, XV 8-nov) La persona mueve el evento terminado
+    (D:\\XV 8 NOV -> D:\\TERMIANDO\\XV 8 NOV) y su proyecto de DaVinci queda todo en rojo: se busca la misma ruta uno o
+    dos niveles mas adentro en su disco, o en otro disco (C: no). Solo se listan carpetas, nunca se recorre el disco."""
+    import string
+    perdidas = [d for d in perdidas if d and not os.path.isdir(d)]
+    if not perdidas:
+        return {}
+    niveles = {}
+
+    def bajo(r):                                # r y sus carpetas a uno y dos niveles
+        if r not in niveles:
+            out = [r]
+            try:
+                hijos = [os.path.join(r, x) for x in os.listdir(r)
+                         if not x.startswith(("$", ".")) and x != "System Volume Information"]
+            except OSError:
+                hijos = []
+            for h in hijos:
+                if os.path.isdir(h):
+                    out.append(h)
+                    try:
+                        out += [os.path.join(h, y) for y in os.listdir(h) if os.path.isdir(os.path.join(h, y))]
+                    except OSError:
+                        pass
+            niveles[r] = out
+        return niveles[r]
+    if os.name == "nt":
+        discos = [l + ":\\" for l in string.ascii_uppercase if l != "C" and os.path.isdir(l + ":\\")]
+    else:
+        discos = [os.path.join("/Volumes", v) for v in (os.listdir("/Volumes") if os.path.isdir("/Volumes") else [])]
+    out = {}
+    for d in perdidas:
+        unidad, resto = os.path.splitdrive(d)
+        if unidad:
+            raiz = unidad + "\\"
+        elif d.startswith("/Volumes/") and d.count("/") > 3:
+            raiz = "/".join(d.split("/")[:3])
+            resto = d[len(raiz):]
+        else:
+            continue
+        resto = resto.strip("\\/")
+        if not resto:
+            continue
+        for r in [raiz] + [x for x in discos if os.path.normcase(x) != os.path.normcase(raiz)]:
+            b = next((b for b in bajo(r) if os.path.isdir(os.path.join(b, resto))), None)
+            if b:
+                out[d] = os.path.join(b, resto)
+                break
+    return out
+
+
+def _carpetas_al_dia(movidas, log=print):
+    """Las carpetas soltadas del estado que se movieron quedan apuntando a su sitio nuevo (rutas.fuentes)."""
+    est = leer_estado()
+    cambio = False
+    nuevas = []
+    for c in est.get("carpetas") or []:
+        if isinstance(c, str) and not os.path.isdir(c):
+            for viejo, nuevo in movidas.items():
+                if os.path.normcase(viejo + os.sep).startswith(os.path.normcase(c.rstrip("\\/") + os.sep)):
+                    cola = viejo[len(c.rstrip("\\/")):]
+                    if nuevo.endswith(cola):
+                        log("La carpeta del evento se movió: %s -> %s" % (c, nuevo[:len(nuevo) - len(cola)] or nuevo))
+                        c, cambio = nuevo[:len(nuevo) - len(cola)] or nuevo, True
+                        break
+        nuevas.append(c)
+    if cambio:
+        est["carpetas"] = nuevas
+        guardar_estado(est)
 
 
 def reenlazar(project, log=print):
@@ -1128,6 +1326,23 @@ def reenlazar(project, log=print):
                 pass
         quedan.append((c, nombre))
     perdidos = quedan
+    movidas = carpetas_movidas({os.path.dirname(c.GetClipProperty("File Path") or "") for c, _ in perdidos})
+    if movidas:                                 # (19-nov) el evento se movio de carpeta: cada clip en su sitio nuevo
+        quedan, por_carpeta = [], {}
+        for c, nombre in perdidos:
+            nueva = movidas.get(os.path.dirname(c.GetClipProperty("File Path") or ""))
+            if nueva and os.path.exists(os.path.join(nueva, nombre)):
+                por_carpeta.setdefault(nueva, []).append((c, nombre))
+            else:
+                quedan.append((c, nombre))
+        for d, grupo in por_carpeta.items():
+            for c, nombre in grupo:
+                try:
+                    n += bool(c.ReplaceClip(os.path.join(d, nombre)))
+                except Exception:
+                    pass
+        perdidos = quedan
+        _carpetas_al_dia(movidas, log)
     hay = {}
     for raiz in [rutas.MATERIAL, rutas.RECURSOS, rutas.AUDIO] + rutas.fuentes():
         for d, _, fs in os.walk(raiz):
@@ -1282,7 +1497,7 @@ def capturar_ruido_davinci(log):
     with CANDADO:
         if not resolve_abierto():
             raise RuntimeError("Abre DaVinci Resolve en el clip donde dejaste el ruido a tu gusto.")
-        r = conectar_resolve(log)
+        r = conectar_resolve(log, quedarse=True)     # (19-nov) el clip que la persona ajusto, en el proyecto donde esta
         p = r.GetProjectManager().GetCurrentProject()
         if p is not None and p.IsRenderingInProgress():
             raise RuntimeError("Hay un render en curso: guarda el ajuste cuando termine.")
@@ -1304,8 +1519,8 @@ Doble clic en el .drp (o en DaVinci: Archivo > Importar proyecto): se abre un pr
 tiempo y sus clips, ya con proxies (reproduce fluido) y la cache de render automatica.
 Los videos estan al lado, en la carpeta VIDEO TERMINADO.
 
-LO MAS RAPIDO: ya esta dentro de DaVinci Resolve.
-  Proyecto EVENTOS CINEMA > carpeta 02 EVENTOS > %(evento)s. En el programa: boton "Editar en DaVinci".
+LO MAS RAPIDO: en el programa, boton "Editar en DaVinci" y elige el video.
+  DaVinci cierra lo que tenga abierto y abre SOLO el proyecto de ese video, con su unica linea en Edicion.
   Cambia lo que quieras y pulsa "Renderizar lo editado" en el programa: saca el video de nuevo, con el
   audio a -14 LUFS, SIN volver a armarlo (tus cambios se conservan).
   Sale con la duracion de siempre (1, 3, 15 o 30 min). Si lo alargas o quieres otro tramo, pon marcas de
@@ -1336,6 +1551,8 @@ def lineas_del_evento(project, evento):
         n = t.GetName() or ""
         if evento and n.startswith(evento + " - ") and _etiqueta(n) in orden:
             res.append((orden[_etiqueta(n)], t))
+        elif evento and n.startswith(evento + " - PLANTILLA "):     # (18-nov) las de plantilla de referencia, al final
+            res.append((100 + len(res), t))
     return [t for _, t in sorted(res, key=lambda x: x[0])]
 
 
@@ -1468,9 +1685,226 @@ def encolar_render(project, tl, evento):
     return ok
 
 
-def renderizar_editado(log, avance=None, evento=None):
+# (19-nov, la persona: «no me des tantas líneas de tiempo abiertas porque estresa... si yo abro una plantilla, tienes
+# que cerrarme DaVinci y abrirme solo la plantilla con la que estoy trabajando para editar ese mismo video») Cada video
+# tiene su PROPIO proyecto en DaVinci (carpeta <evento>, «<evento> - VIDEO FINAL 1 MIN», solo esa linea y sus clips: el
+# mismo del .drp). «Editar en DaVinci» abre ese y nada mas; «Renderizar lo editado» saca el video desde ahi.
+_PROYECTO_VIDEO = {"nombre": None}        # mientras se trabaja en el proyecto de un video, conectar_resolve lo acepta
+
+
+def videos_editables(evento):
+    """Los videos del evento con su proyecto editable (.drp en PLANTILLAS DE LOS VIDEOS), en orden: horizontales por
+    duracion, verticales y luego las plantillas."""
+    import re
+    carpeta = rutas.plantillas_evento(evento) if evento else ""
+    por_video = {}
+    try:
+        # (19-nov) el mismo video con el nombre de antes («VIDEO FINAL 1 MIN») y el de hoy («... HORIZONTAL 1 MIN»):
+        # queda solo el .drp mas nuevo (si no, el popup ponia dos «1 min» y uno era viejo)
+        for f in os.listdir(carpeta):
+            if f.lower().endswith(".drp") and not f.lower().endswith((" (nuevo).drp", ".nuevo.drp")):   # temporales
+                n = os.path.splitext(f)[0]
+                clave = rutas.nombre_video("%s - %s" % (evento, n))
+                t = os.path.getmtime(os.path.join(carpeta, f))
+                if clave not in por_video or t > por_video[clave][0]:
+                    por_video[clave] = (t, n)
+    except OSError:
+        pass
+    nombres = [n for _, n in por_video.values()]
+    est = leer_estado()                # (19-nov) + las lineas armadas del evento que aun no tienen .drp (se hace al abrir)
+    if evento and est.get("evento") == evento:
+        for t in est.get("timelines") or []:
+            if t.startswith(evento + " - ") and rutas.nombre_video(t) not in por_video:
+                por_video[rutas.nombre_video(t)] = (0, rutas.nombre_video(t))
+                nombres.append(rutas.nombre_video(t))
+
+    def orden(n):
+        m = re.search(r"(\d+)", n)
+        k = int(m.group(1)) if m else 0
+        return (2 if n.upper().startswith("PLANTILLA") else 1 if "VERTICAL" in n.upper() else 0, k, n)
+    return sorted(nombres, key=orden)
+
+
+def _exportar_drp(pm, nombre, drp):
+    """Exporta el proyecto encima de su .drp sin dejarlo a medias: primero a un temporal y luego lo cambia.
+    (19-nov) DaVinci agrega «.drp» si el nombre no termina asi: «x.drp.nuevo» quedaba «x.drp.nuevo.drp» y el .drp
+    nunca se actualizaba. Devuelve True/False."""
+    tmp = os.path.splitext(drp)[0] + " (nuevo).drp"
+    try:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        if pm.ExportProject(nombre, tmp, True) and os.path.exists(tmp):
+            os.replace(tmp, drp)
+            return True
+    except OSError:
+        pass
+    return False
+
+
+def _proyecto_de_video(pm, evento, video):
+    """Nombre del proyecto del video en la carpeta del evento (el ultimo, si quedo uno con la hora detras)."""
+    nombre = "%s - %s" % (rutas.limpiar_nombre(evento), video)
+    lista = pm.GetProjectListInCurrentFolder() or []
+    # (19-nov) el de la hora detras se hizo PORQUE el de siempre no se pudo borrar: ese es el nuevo
+    otros = sorted(n for n in lista if n.startswith(nombre + " ("))
+    return otros[-1] if otros else nombre
+
+
+def abrir_proyecto_video(resolve, evento, video, log=print, marcar=True):
+    """Guarda y cierra lo que haya abierto en DaVinci y abre SOLO el proyecto de ese video (si no esta en la base, se
+    importa su .drp), con su linea en Edicion. marcar: queda apuntado para «Renderizar lo editado».
+    Devuelve (proyecto, linea)."""
+    pm = resolve.GetProjectManager()
+    actual = pm.GetCurrentProject()
+    if actual is not None and actual.IsRenderingInProgress():
+        raise RuntimeError("DaVinci está renderizando: espera a que termine.")
+    carpeta = rutas.limpiar_nombre(evento)
+    if actual is not None and not _sin_titulo(actual.GetName()):
+        pm.SaveProject()
+    pm.GotoRootFolder()
+    if carpeta not in (pm.GetFolderListInCurrentFolder() or []):
+        pm.CreateFolder(carpeta)
+    pm.OpenFolder(carpeta)
+    nombre = _proyecto_de_video(pm, evento, video)
+    p = actual if actual is not None and actual.GetName() == nombre else pm.LoadProject(nombre)
+    vacio = p is not None and not p.GetTimelineCount()
+    if vacio:                                # (19-nov, XV 8-nov) quedo a medias (DaVinci colgado): sin linea, se rehace
+        log("El proyecto de %s quedó sin su línea: lo vuelvo a hacer." % video)
+        p = None
+    if p is None:
+        drp = os.path.join(rutas.plantillas_evento(evento), video + ".drp")
+        if vacio or not os.path.exists(drp):  # (19-nov) se hace ahora desde la linea de EVENTOS CINEMA
+            pm.GotoRootFolder()
+            todo = pm.LoadProject(PROYECTO)
+            if not todo:
+                raise RuntimeError("No encuentro el proyecto de «%s» ni el proyecto %s." % (video, PROYECTO))
+            import editable
+            linea = next((t.GetName() for t in lineas_del_evento(todo, evento)
+                          if rutas.nombre_video(t.GetName()) == video), None)
+            log("Haciendo el proyecto propio de %s..." % video)
+            if not linea or not editable.proyecto_por_video(resolve, evento, [linea], log):
+                raise RuntimeError("No encuentro la línea de «%s» en DaVinci: pulsa ▶ para armarlo." % video)
+            pm.GotoRootFolder()
+            pm.OpenFolder(carpeta)
+            nombre = _proyecto_de_video(pm, evento, video)
+        else:
+            log("Importando el proyecto de %s en DaVinci..." % video)
+            if not pm.ImportProject(drp, nombre):
+                raise RuntimeError("DaVinci no pudo abrir el proyecto de «%s»." % video)
+        p = pm.LoadProject(nombre)
+        if p is None:
+            raise RuntimeError("DaVinci no pudo abrir el proyecto de «%s»." % video)
+    _PROYECTO_VIDEO.update({"nombre": p.GetName(), "carpeta": carpeta})
+    try:                                        # (19-nov) material movido o renombrado: que no se abra en rojo
+        if reenlazar(p, log):
+            pm.SaveProject()
+            drp = os.path.join(rutas.plantillas_evento(evento), video + ".drp")
+            if os.path.exists(drp):
+                _exportar_drp(pm, p.GetName(), drp)
+    except Exception as ex:
+        log("Aviso: no se pudieron volver a enlazar los archivos de %s (%s)" % (video, ex))
+    lineas = [p.GetTimelineByIndex(i) for i in range(1, p.GetTimelineCount() + 1)]
+    tl = next((t for t in lineas if rutas.nombre_video(t.GetName()) == video), lineas[0] if lineas else None)
+    if tl is not None:
+        if not (tl.GetName() or "").startswith(evento + " - "):   # (19-nov) los hechos antes del arreglo: «00»
+            tl.SetName("%s - %s" % (evento, video))           # sin el nombre, el render no la encuentra
+        p.SetCurrentTimeline(tl)
+    resolve.OpenPage("edit")
+    est = leer_estado()
+    marcas = (est.get("marcas_ia") or {}).pop(tl.GetName(), None) if tl is not None else None
+    if marcas:                                # (19-nov) los rojos «REVISAR (IA)» llegaron despues de hacer el proyecto
+        try:
+            import revision_ia
+            n = revision_ia.marcar(tl, marcas[1], marcas[0])
+            pm.SaveProject()
+            drp = os.path.join(rutas.plantillas_evento(evento), video + ".drp")
+            if os.path.exists(drp):
+                _exportar_drp(pm, p.GetName(), drp)    # el .drp tambien los lleva
+            log("%s: %d marcadores rojos «REVISAR (IA)»." % (video, n))
+        except Exception as ex:
+            log("Aviso: no se pudieron poner los marcadores de IA en %s (%s)" % (video, ex))
+    est["proyecto_video"] = p.GetName()       # lo de segundo plano no la saca de aqui (conectar_resolve quedarse)
+    if marcar:
+        previos = est.get("editando") or [] if est.get("editando_evento") == evento else []
+        est["editando"] = [v for v in previos if v != video] + [video]
+        est["editando_evento"] = evento
+    guardar_estado(est)
+    return p, tl
+
+
+def abrir_al_terminar(evento, log=print):
+    """(19-nov) Al entregar, DaVinci NO queda en EVENTOS CINEMA con las lineas de todos los eventos: queda en el
+    proyecto propio del primer video (el mas corto), con su unica linea en Edicion. Nunca rompe la entrega."""
+    videos = videos_editables(evento)
+    if not videos or not os.path.exists(os.path.join(rutas.plantillas_evento(evento), videos[0] + ".drp")):
+        return None                           # sin su .drp (fallo hacerlo): no se rehace aqui, se queda como esta
+    try:
+        with CANDADO:
+            abrir_proyecto_video(conectar_resolve(log, quedarse=True), evento, videos[0], log)
+        log("DaVinci quedó en el proyecto de %s (solo esa línea)." % videos[0])
+        return videos[0]
+    except Exception as ex:
+        log("Aviso: no pude dejar abierto el proyecto de %s (%s)" % (videos[0], ex))
+        return None
+    finally:
+        _PROYECTO_VIDEO["nombre"] = None      # el proximo ▶ vuelve a EVENTOS CINEMA
+
+
+def abrir_video_editable(log, video, evento=None):
+    """«Editar en DaVinci» con un video elegido: solo su proyecto, nada mas abierto. Devuelve el nombre del video."""
+    with CANDADO:
+        evento = evento or leer_estado().get("evento")
+        if not evento:
+            raise RuntimeError("Todavía no hay ningún evento armado: pulsa ▶ primero.")
+        try:
+            abrir_proyecto_video(conectar_resolve(log, quedarse=True), evento, video, log)
+        finally:
+            _PROYECTO_VIDEO["nombre"] = None  # si no, el proximo ▶ armaria dentro del proyecto del video
+    traer_davinci_al_frente()
+    return video
+
+
+def renderizar_videos_editados(log, evento, videos, paso=lambda pct, texto: None):
+    """Saca cada video desde SU proyecto (lo retocado ahi) a VIDEO TERMINADO, lo termina como siempre (audio a -14
+    LUFS, revision, MP4 las plantillas) y actualiza su .drp. Devuelve [(linea, ok, ruta)]."""
+    import renderizar
+    hechos = []
+    try:
+        for k, video in enumerate(videos):
+            rutas.revisar_parada()
+            with CANDADO:
+                resolve = conectar_resolve(log, quedarse=True)
+                p, tl = abrir_proyecto_video(resolve, evento, video, log)
+                if tl is None or not encolar_render(p, tl, evento):
+                    log("AVISO: %s no se pudo poner en la cola de render." % video)
+                    continue
+                etiqueta = _etiqueta(tl.GetName())
+                resolve.GetProjectManager().SaveProject()
+            base = 45 + int(50.0 * k / max(1, len(videos)))
+            res = renderizar.renderizar(log, evento, lambda pct, texto: paso(base + int(pct * 0.5 / len(videos)), texto),
+                                        [etiqueta])
+            res = plantillas_a_mp4(res, log)
+            hechos += res
+            renderizar.poner_revision_ia(log)    # (19-nov) los rojos de ESTE video, en su linea (antes se pisaban)
+            with CANDADO:
+                resolve = conectar_resolve(log)
+                pm = resolve.GetProjectManager()
+                drp = os.path.join(rutas.plantillas_evento(evento), video + ".drp")
+                if pm.GetCurrentProject().GetName() != _PROYECTO_VIDEO["nombre"]:   # nunca EVENTOS CINEMA entero
+                    log("Aviso: DaVinci no quedó en el proyecto de %s: su .drp no se actualiza." % video)
+                    continue
+                pm.SaveProject()
+                if _exportar_drp(pm, pm.GetCurrentProject().GetName(), drp):
+                    log("Proyecto editable de %s actualizado." % video)
+    finally:
+        _PROYECTO_VIDEO["nombre"] = None
+    return hechos
+
+
+def renderizar_editado(log, avance=None, evento=None, videos=None):
     """«Renderizar lo editado»: saca de nuevo los videos del evento con las lineas TAL COMO ESTAN en DaVinci (lo que
     la persona haya retocado a mano), SIN volver a armar; masteriza el audio y actualiza la plantilla editable.
+    videos: (19-nov) los que la persona eligio en la ventana, cada uno desde su proyecto (None = los apuntados).
     Devuelve lo mismo que armar_todo."""
     def paso(pct, texto):
         if avance:
@@ -1482,13 +1916,40 @@ def renderizar_editado(log, avance=None, evento=None):
             evento = evento or leer_estado().get("evento")
             if not evento:
                 raise RuntimeError("Todavía no hay ningún evento armado: pulsa ▶ primero.")
-            resolve = conectar_resolve(log)
+            resolve = conectar_resolve(log, quedarse=True)     # (19-nov) sin cargar EVENTOS CINEMA para nada
             project = resolve.GetProjectManager().GetCurrentProject()
             if project.IsRenderingInProgress():
                 raise RuntimeError("DaVinci ya está renderizando: espera a que termine.")
-            lineas = lineas_del_evento(project, evento)
-            if not lineas:
+            est = leer_estado()
+            hay = videos_editables(evento)
+            if videos is not None:
+                editando = [v for v in videos if v in hay]
+            else:
+                editando = [v for v in est.get("editando") or [] if v in hay
+                            and est.get("editando_evento") in (None, evento)]
+            lineas = []
+            if not editando:
+                if project.GetName() != PROYECTO:
+                    resolve = conectar_resolve(log)
+                    project = resolve.GetProjectManager().GetCurrentProject()
+                lineas = lineas_del_evento(project, evento)
+            if not lineas and not editando:
                 raise RuntimeError("No encuentro las líneas de %s en DaVinci: pulsa ▶ para armarlo." % evento)
+        if editando:                         # (19-nov) cada video desde su propio proyecto, el que la persona retoco
+            libre, necesita = espacio_para_render([_etiqueta("%s - %s" % (evento, v)).split(" ")[-1] for v in editando])
+            if libre < necesita:
+                raise RuntimeError("No hay espacio para renderizar: quedan %.1f GB libres y hacen falta unos %.1f GB."
+                                   % (libre, necesita))
+            log("== Renderizando lo editado en su proyecto: %s ==" % ", ".join(editando))
+            paso(45, "Renderizando")
+            videos = renderizar_videos_editados(log, evento, editando, paso)
+            paso(100, "Listo")
+            marcar_terminado(evento, videos)
+            return {"evento": evento, "videos": videos, "carpeta": rutas.carpeta_terminado(evento), "avisos": [],
+                    "editado": True}
+        with CANDADO:
+            resolve = conectar_resolve(log)
+            project = resolve.GetProjectManager().GetCurrentProject()
             libre, necesita = espacio_para_render([_etiqueta(t.GetName()).split(" ")[-1] for t in lineas])
             if libre < necesita:
                 raise RuntimeError("No hay espacio para renderizar: quedan %.1f GB libres y hacen falta unos %.1f GB."
@@ -1512,6 +1973,8 @@ def renderizar_editado(log, avance=None, evento=None):
         paso(100, "Listo")
         marcar_terminado(evento, videos)
         preparar_edicion(evento, log)
+        renderizar.poner_revision_ia(log)             # (18-nov) la IA reviso mientras se hacian las plantillas
+        abrir_al_terminar(evento, log)
         return {"evento": evento, "videos": videos, "carpeta": rutas.carpeta_terminado(evento), "avisos": [],
                 "editado": True}
 
@@ -1525,11 +1988,12 @@ def estimar_segundos(n_videos, gb, versiones=None, verticales=None, render=True,
     nuevos = n_videos if nuevos is None else nuevos
     parte_nueva = nuevos / float(max(1, n_videos))
     s = 30.0 + nuevos * 3.0 + gb * 8.0 * parte_nueva                     # analisis (lo ya medido no se repite)
-    s += nuevos * 5.0                                                     # la IA local mira cada toma
-    s += gb * 40.0 * parte_nueva                  # (16-nov) y la revisa cuadro por cuadro, uno cada 3 s (boda: 53 min de
-    #                                               video, ~1070 cuadros, 15-28 min segun la respuesta)
-    armado = {"1min": 45, "3min": 50, "15min": 140, "30min": 260}
-    s += sum(armado.get(v, 60) for v in versiones) + 40 * len(verticales) + n_videos * 1.0
+    s += nuevos * 2.5                             # la IA local mira cada toma (18-nov, XV 8-nov: 129 tomas en 258 s)
+    s += gb * 20.0 * parte_nueva                  # y la revisa cuadro por cuadro, uno cada 3 s (18-nov, XV 8-nov, 45 GB:
+    #                                               14 min con 4 preguntas a la vez y sin lo ya descartado; antes 29)
+    # (18-nov) medido con el estabilizador en la GPU: 1 min + 15 min = 186 s la primera vez (antes 328)
+    armado = {"1min": 35, "3min": 45, "15min": 120, "30min": 220}
+    s += sum(armado.get(v, 60) for v in versiones) + 35 * len(verticales) + n_videos * 0.3
     if render:
         dur = sum(SEGUNDOS.get(v, 60) for v in versiones) + sum(SEGUNDOS.get(v, 60) for v in verticales)
         n = len(versiones) + len(verticales)
@@ -1545,25 +2009,36 @@ def texto_tiempo(segundos):
     return ("unos %d min" % m if m < 90 else "unas %.1f h" % (m / 60.0)) + " (listo a las %s)" % hora
 
 
-def preparar_edicion(evento, log=print):
+def preparar_edicion(evento, log=print, solo=None):
     """(1.5.7) Con los videos ya entregados: proxies de todo el material y cache de render (editar con fluidez) y una
     plantilla por video (.drp con SOLO esa linea) en EVENTO TERMINADO/PLANTILLAS DE LOS VIDEOS, en lugar del .drt. Al
-    final DaVinci queda otra vez en EVENTOS CINEMA, en Edicion, con la linea del evento abierta. Nunca rompe la entrega."""
+    final DaVinci queda otra vez en EVENTOS CINEMA, en Edicion, con la linea del evento abierta. Nunca rompe la entrega.
+    solo: (19-nov) las lineas que se acaban de renderizar: el proyecto de las demas NO se rehace (ahi puede haber
+    retoques de la persona, que ahora viven solo en el proyecto de cada video)."""
     if not evento:
         return
-    try:
-        import editable
+    import editable
+    import vigia_davinci
+    desde = time.time()
+
+    def hacer():
         with CANDADO:
             resolve = conectar_resolve(log)
             project = resolve.GetProjectManager().GetCurrentProject()
             editable.proxies_y_cache(project, log)
-            lineas = [t.GetName() for t in lineas_del_evento(project, evento)]
-            for drp in editable.proyecto_por_video(resolve, evento, lineas, log):
+            lineas = [t.GetName() for t in lineas_del_evento(project, evento)
+                      if solo is None or t.GetName() in solo]
+            for drp in editable.proyecto_por_video(resolve, evento, lineas, log, desde=desde):
                 drt = os.path.splitext(drp)[0] + ".drt"          # la plantilla es el .drp: no quedan dos
                 if os.path.exists(drt):
                     os.remove(drt)
+            est = leer_estado()                  # proyectos por video recien hechos: nada retocado todavia
+            est.update({"editando": [], "editando_evento": evento})
+            guardar_estado(est)
             project = resolve.GetProjectManager().GetCurrentProject()
             dejar_editable(resolve, project, evento)
+    try:                    # (18-nov) aqui DaVinci se colgo 10 min: el vigia lo cierra y se intenta otra vez
+        vigia_davinci.reintentar(hacer, "plantillas por video", veces=3, log=log, tope=None)
     except Exception as ex:
         log("Aviso: no se pudieron preparar los proxies y las plantillas por video (%s)" % ex)
 
@@ -1649,7 +2124,104 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
         return rep
 
 
+def plantillas_a_mp4(videos, log=print):
+    """(19-nov, la persona: «entrégame las 4 plantillas en MP4») Los videos de plantilla («PLANTILLA 1 VERTICAL - ...») pasan
+    de .mov a .mp4 SIN volver a comprimir (solo video y audio: la pista de codigo de tiempo de DaVinci no entra en MP4 y
+    con ella salia un archivo vacio). Devuelve la lista con las rutas nuevas."""
+    import subprocess
+    out = []
+    for n, ok, r in videos:
+        if ok and r and r.lower().endswith(".mov") and os.path.basename(r).upper().startswith("PLANTILLA "):
+            mp4 = os.path.splitext(r)[0] + ".mp4"
+            # (19-nov, visto) al rearmar, el MP4 de antes podia estar abierto (reproductor, revision): se escribe
+            # aparte y se cambia al final, con reintentos
+            tmp = os.path.splitext(r)[0] + ".nuevo.mp4"
+            p = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", r, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
+                                "-tag:v", "hvc1", "-movflags", "+faststart", tmp], capture_output=True, timeout=600,
+                               creationflags=rutas.SIN_VENTANA)
+            listo = p.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 1024 * 1024
+            for _i in range(10 if listo else 0):
+                try:
+                    os.replace(tmp, mp4)
+                    break
+                except OSError:
+                    time.sleep(1)
+            else:
+                listo = False
+            if listo:
+                try:
+                    os.remove(r)                 # el .mov lo hizo el programa: queda solo el MP4
+                except OSError:
+                    pass
+                log("En MP4: %s" % mp4)
+                r = mp4
+            else:
+                log("Aviso: no se pudo pasar a MP4 %s (queda el .mov; %s)" % (
+                    os.path.basename(r), (p.stderr or b"").decode("utf-8", "replace").strip()[-200:] or "el MP4 de antes está abierto"))
+        out.append((n, ok, r))
+    return out
+
+
+def armar_plantillas_ref(evento, tipo_evento, log=print):
+    """(18-nov) Las plantillas de referencia elegidas en Material (estado plantillas_ref): una linea por cada una
+    (armar_ref.armar), con su render en cola. Devuelve sus etiquetas («PLANTILLA 1»...) para renderizar."""
+    est_ = leer_estado()
+    elegidas = [n for n in est_.get("plantillas_ref") or []]
+    if not elegidas or not evento:
+        return []
+    import plantilla_ref
+    import armar_ref
+    infos = {p["nombre"]: p for p in plantilla_ref.lista()}
+    # (19-nov, visto en la Plantilla 1: un plano de suelo y sillas) am.leer_ultimo() es el RESUMEN de la ventana: sin la
+    # «vista» de cada medio segundo el planificador no aplicaba NINGUN filtro por tramo (enfoque, temblor, lo que vio
+    # la IA): las 45 tomas de la boda salian sin medidas. El analisis completo, como el resto del armado.
+    try:
+        with open(am._cache_ruta(), encoding="utf-8") as f:
+            j = json.load(f)
+        analisis = {"items": j.get("items") or [], "fecha": j.get("fecha")}
+    except (OSError, ValueError):
+        analisis = am.leer_ultimo()
+    log("== Plantillas: %s ==" % ", ".join(elegidas))
+    etiquetas = []
+    with CANDADO:
+        r = conectar_resolve(log)
+        p = r.GetProjectManager().GetCurrentProject()
+        for n in elegidas:
+            if n not in infos:
+                log("AVISO: la plantilla «%s» ya no está; se salta." % n)
+                continue
+            try:
+                # (19-nov, la persona: «todas las plantillas tienen que estar en esa misma carpeta para no perder el
+                # orden... plantilla 1, plantilla 2... con las fechas»): junto a los demas videos del evento,
+                # EVENTO TERMINADO - <evento>/VIDEO TERMINADO/PLANTILLA 1 VERTICAL - 2026-11-15.mp4 (y su .drp en
+                # PLANTILLAS DE LOS VIDEOS, como los demas: preparar_edicion)
+                destino = rutas.videos_terminados(evento)
+                etiquetas.append(rutas.etiqueta_de(armar_ref.armar(
+                    r, p, infos[n], evento, analisis, destino, tipo_evento, log,
+                    nombre_xv=est_.get("nombre_xv") or "", frase=est_.get("frase") or "",
+                    con_texto=est_.get("plantillas_texto", True) is not False,
+                    con_destellos=est_.get("plantillas_destellos", True) is not False,
+                    con_fundidos=est_.get("plantillas_fundidos", True) is not False)))
+            except Exception as ex:
+                log("AVISO: no se pudo armar la plantilla «%s» (%s)" % (n, ex))
+    return etiquetas
+
+
 def armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, **op):
+    """(18-nov) _armar_todo con el vigia de DaVinci: si DaVinci se congela (no responde y no hace nada 15 s) el vigia
+    lo cierra y se arma otra vez desde el principio (el analisis ya esta guardado: solo se repite lo de DaVinci)."""
+    import vigia_davinci
+    try:                                    # (18-nov) programas pesados fuera (con la X, nunca a la fuerza): la IA y el
+        import liberar                      # render iban hasta 4 veces mas lentos con la memoria de video llena
+        liberar.cerrar(log)
+    except Exception as ex:
+        log("Aviso: no se pudieron cerrar los programas pesados (%s)" % ex)
+    return vigia_davinci.reintentar(
+        lambda: _armar_todo(log, avance, render, vertical, horizontal, **dict(op)), "armado", veces=2, log=log,
+        tope=None)
+
+
+def _armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, **op):
     """El boton Play: analiza, arma las versiones en DaVinci, renderiza, masteriza el audio y mide la imagen.
     op["solo"] = versiones del formato horizontal (None = todas); horizontal=False = ninguna.
     vertical = ["1min", ...] versiones del formato vertical (9:16, solo videos verticales); None o [] = ninguna.
@@ -1662,6 +2234,12 @@ def armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, **
     if vertical:
         pases.append(("vertical", [v for v in VERSIONES if v in vertical]))
     auto_vertical = op.pop("auto_vertical", True)
+    est = leer_estado()                      # (19-nov) se rearma: las lineas cambian y los proyectos por video viejos
+    est.update({"editando": [], "editando_evento": None, "proyecto_video": None,      # ya no valen hasta el render
+                "marcas_ia": {}})
+    if est.get("terminado") and est.get("terminado") == est.get("evento"):
+        est["terminado"] = ""                # «Editar» / «Renderizar lo editado» vuelven cuando salgan los videos
+    guardar_estado(est)
     with SinDormir():                        # una suspension a media render deja el trabajo colgado
         paso(3, "Revisando el material")
         evento, etiquetas, pedidas, avisos = None, [], [], []
@@ -1701,10 +2279,12 @@ def armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, **
                 if verticales:
                     log("Hay %d videos verticales: se arma tambien el VERTICAL 1 min." % len(verticales))
                     pases.append(("vertical", ["1min"]))
+        etiquetas += armar_plantillas_ref(evento, op.get("tipo_evento", "xv"), log)      # (18-nov) las de Material
         salida = {"evento": evento, "videos": [], "carpeta": rutas.carpeta_terminado(evento) if evento else rutas.SALIDA,
                   "avisos": avisos}
         if not render:
             paso(100, "Armado en DaVinci")
+            log("== Terminado: armado en DaVinci, sin renderizar ==")     # (18-nov) el fin de verdad, para avance.py
             return salida
         libre, necesita = espacio_para_render(pedidas)
         if libre < necesita:
@@ -1715,8 +2295,15 @@ def armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, **
         import renderizar
         salida["videos"] = renderizar.renderizar(
             log, evento, lambda pct, texto: paso(45 + int(pct * 0.5), texto), etiquetas)
+        salida["videos"] = plantillas_a_mp4(salida["videos"], log)      # (19-nov) las de plantilla, en MP4
         marcar_terminado(evento, salida["videos"])
         paso(97, "Proxies y plantillas para editar")
-        preparar_edicion(evento, log)
+        preparar_edicion(evento, log, solo=[v[0] for v in salida["videos"] or []])
+        renderizar.poner_revision_ia(log, paso)      # (18-nov) la IA reviso mientras se hacian las plantillas
+        abrir_al_terminar(evento, log)               # (19-nov) solo el proyecto del primer video, nada mas abierto
         paso(100, "Listo")
+        ok = [v for v in salida["videos"] if v[1]]
+        log("== Terminado: %d de %d videos ==" % (len(ok), len(salida["videos"])))
+        for v in salida["videos"]:
+            log("  %s %s" % ("OK   " if v[1] else "FALLO", v[2] if len(v) > 2 and v[2] else v[0]))
         return salida

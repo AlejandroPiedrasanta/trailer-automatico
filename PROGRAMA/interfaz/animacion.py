@@ -23,7 +23,7 @@ import threading
 import time
 import weakref
 
-from PySide6.QtCore import QObject, Qt, Signal, Slot, QVariantAnimation, QEasingCurve, QPointF, QRectF, QEvent
+from PySide6.QtCore import QObject, Qt, Signal, Slot, QVariantAnimation, QEasingCurve, QPointF, QRectF, QEvent, QTimer
 from PySide6.QtGui import QImage, QPainter, QColor, QPen, QLinearGradient
 from PySide6.QtWidgets import QWidget
 
@@ -316,10 +316,21 @@ class _Brillo(QWidget):
         self.update()
 
     def paintEvent(self, _):
+        # (18-nov, captura de la persona: dos botones con el filo dorado a la vez) si el raton ya no esta encima y no
+        # llego el aviso de salida (pasa al abrir un popup o al mover rapido), el brillo se apaga solo
+        padre = self.parentWidget()
+        if padre is not None and not padre.underMouse() and self._anim.state() != QVariantAnimation.Running \
+                and self._v > 0.01:
+            QTimer.singleShot(0, lambda: self._ir(0.0))
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
         rad = min(r.height() / 2.0, self._radio if self._radio is not None else r.height() / 2.0)
+        abierto = getattr(self, "abierto", "")   # (19-nov) en la barra del Inicio: el lado pegado al vecino, sin esquina
+        if abierto:
+            p.setClipRect(QRectF(self.rect()))
+            r = r.adjusted(-rad - 2 if abierto in ("izq", "ambos") else 0, 0,
+                           rad + 2 if abierto in ("der", "ambos") else 0, 0)
         c = QColor(self._color)
         c.setAlpha(int(210 * self._v))
         p.setPen(QPen(c, 1.6))
@@ -330,10 +341,13 @@ class _Brillo(QWidget):
         p.drawRoundedRect(r, rad, rad)
 
 
-def brillo_al_pasar(boton, color="#E2B04F", radio=None):
-    """(1.6.0) Que un boton brille suave al pasar el raton (sin tocar su estilo)."""
+def brillo_al_pasar(boton, color="#E2B04F", radio=None, abierto=""):
+    """(1.6.0) Que un boton brille suave al pasar el raton (sin tocar su estilo). abierto: "izq", "der" o "ambos",
+    los lados que siguen en el boton vecino (las partes de una barra): por ahi el brillo no cierra ni redondea."""
     if getattr(boton, "_brillo", None) is None:
         boton._brillo = _Brillo(boton, color, radio)
+    boton._brillo._radio = radio                 # (si la ventana cambio de escala, el radio del estilo tambien)
+    boton._brillo.abierto = abierto
     return boton._brillo
 
 

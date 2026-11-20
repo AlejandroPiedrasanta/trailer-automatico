@@ -158,9 +158,9 @@ def etiqueta_de(nombre_linea):
     («BODA - 1min», «BODA - VERTICAL 1min») y el de la 1.5.7, igual al del video («BODA - VIDEO FINAL 1 MIN»)."""
     import re
     e = str(nombre_linea).split(" - ")[-1].strip()
-    m = re.match(r"VIDEO FINAL (VERTICAL )?(\d+) MIN$", e, re.I)
+    m = re.match(r"VIDEO FINAL (VERTICAL |HORIZONTAL )?(\d+) MIN$", e, re.I)
     if m:
-        return ("VERTICAL " if m.group(1) else "") + "%smin" % m.group(2)
+        return ("VERTICAL " if (m.group(1) or "").upper().startswith("V") else "") + "%smin" % m.group(2)
     return e
 
 
@@ -171,13 +171,24 @@ def nombre_linea(evento, etiqueta):
 
 def nombre_video(nombre_linea):
     """Como se llama el video (y su plantilla .drp), para reconocerlo rapido (la persona, 2026-11-16):
-    «XV ANA 2026-11-08 - 15min» -> «VIDEO FINAL 15 MIN»; «... - VERTICAL 1min» -> «VIDEO FINAL VERTICAL 1 MIN»."""
+    «XV ANA 2026-11-08 - 15min» -> «VIDEO FINAL 15 MIN»; «... - VERTICAL 1min» -> «VIDEO FINAL VERTICAL 1 MIN».
+    (19-nov, la persona: «tienes que explicarme si utilicé una plantilla o la edición, vertical u horizontal... solo
+    renómbrala con la plantilla 1 y la fecha») «... - 1min» -> «VIDEO FINAL HORIZONTAL 1 MIN»; una de plantilla de
+    Material, «BODA 2026-11-15 - PLANTILLA 1» -> «PLANTILLA 1 VERTICAL - 2026-11-15» (todas en la misma carpeta)."""
     import re
+    import time as _t
     etiqueta = etiqueta_de(nombre_linea)
-    vertical = etiqueta.upper().startswith("VERTICAL")
+    e = etiqueta.upper()
+    if e.startswith("PLANTILLA"):
+        f = re.search(r"\d{4}-\d{2}-\d{2}", str(nombre_linea))
+        n = re.match(r"PLANTILLA\s*(\d+)", e)
+        base = ("PLANTILLA %s" % n.group(1)) if n else limpiar_nombre(e.replace(" HORIZONTAL", ""), "PLANTILLA")
+        return "%s %s - %s" % (base, "HORIZONTAL" if "HORIZONTAL" in e else "VERTICAL",
+                               f.group(0) if f else _t.strftime("%Y-%m-%d"))
+    vertical = e.startswith("VERTICAL")
     m = re.search(r"(\d+)\s*min", etiqueta, re.I)
-    tiempo = ("%s MIN" % m.group(1)) if m else limpiar_nombre(etiqueta.upper(), "VIDEO")
-    return "VIDEO FINAL %s%s" % ("VERTICAL " if vertical else "", tiempo)
+    tiempo = ("%s MIN" % m.group(1)) if m else limpiar_nombre(e, "VIDEO")
+    return "VIDEO FINAL %s%s" % ("VERTICAL " if vertical else "HORIZONTAL ", tiempo)
 
 CAPTURAS = os.path.join(BASE, "CAPTURAS")          # fotos de la intro sacadas del video cuando no hay JPG (por dentro)
 ANALISIS = os.path.join(DATOS, "analisis")
@@ -445,11 +456,25 @@ def abrir(ruta):
         subprocess.Popen(["xdg-open", ruta])
 
 
+def entorno_limpio():
+    """El entorno sin lo nuestro: DaVinci abierto con PYTHON3HOME/PYTHONHOME del .exe hace que su Python de Fusion
+    no arranque ('No module named encodings') y se cae a los 10 s (18-nov, 3 veces seguidas)."""
+    env = {k: v for k, v in os.environ.items()
+           if not (k.upper().startswith("PYTHON") or k.upper().startswith("_PYI") or k.upper().startswith("_MEIPASS")
+                   or k.upper() in ("QT_PLUGIN_PATH", "QML2_IMPORT_PATH", "TCL_LIBRARY", "TK_LIBRARY", "SSL_CERT_FILE"))}
+    base = getattr(sys, "_MEIPASS", None)
+    if base and "PATH" in env:
+        env["PATH"] = os.pathsep.join(p for p in env["PATH"].split(os.pathsep)
+                                      if p and not os.path.normcase(p).startswith(os.path.normcase(base)))
+    return env
+
+
 def abrir_resolve():
     if ES_MAC:
-        subprocess.Popen(["open", "-a", RESOLVE_APP if os.path.exists(RESOLVE_APP) else "DaVinci Resolve"])
+        subprocess.Popen(["open", "-a", RESOLVE_APP if os.path.exists(RESOLVE_APP) else "DaVinci Resolve"],
+                         env=entorno_limpio())
     elif os.path.exists(RESOLVE_APP):
-        subprocess.Popen([RESOLVE_APP], cwd=os.path.dirname(RESOLVE_APP))
+        subprocess.Popen([RESOLVE_APP], cwd=os.path.dirname(RESOLVE_APP), env=entorno_limpio())
     else:
         return False
     return True

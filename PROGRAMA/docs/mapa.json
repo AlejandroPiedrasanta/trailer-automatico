@@ -1,5 +1,57 @@
 [
  {
+  "id": "que-entra",
+  "resumen": "Material > «Qué entra al video» (reemplaza a la Linea del dia): el plan de cada version plano por plano, lo que queda fuera con su motivo, «No la uses» / «Úsala de todos modos», y el tiempo estimado que ya no cuenta lo analizado",
+  "claves": [
+   "que entra al video",
+   "plan",
+   "planos",
+   "fuera",
+   "no la uses",
+   "usala",
+   "linea del dia",
+   "ya analizado",
+   "80 minutos"
+  ],
+  "archivos": [
+   "PROGRAMA/interfaz/plan_video.py",
+   "PROGRAMA/armado/receta.py",
+   "PROGRAMA/armado/build_trailers.py",
+   "PROGRAMA/interfaz/trailer_xv.py",
+   "PROGRAMA/analisis/analizar_material.py"
+  ],
+  "simbolos": [
+   "PlanVideo",
+   "plan_ventana",
+   "decisiones",
+   "_cargar_plan",
+   "_toma_decidida",
+   "_minis_plan",
+   "cuantos_faltan",
+   "_item_ventana",
+   "_estimar"
+  ],
+  "notas": [
+   "(18-nov) La persona: «línea del día no entiendo qué hace... rediseña para que sea algo útil de verdad»; de tres propuestas (docs/capturas/propuestas_material, hechas con scratch maquetas.py y datos reales) eligio la A. La LineaDia sigue creada pero oculta (self.linea.hide()).",
+   "PLANTILLAS DE REFERENCIA (18-nov, la persona: «te daré videos que quiero que los conviertas en plantillas y detectes los cortes para poner mis videos, y usa la música de cada plantilla»): armado/plantilla_ref.py convierte un video (Reel/TikTok/CapCut) en DATOS/plantillas_ref/<NOMBRE>/ (musica.m4a = su audio tal cual, portada.jpg, referencia.*, info.json con planos [ini, fin, dur, entra: inicio|corte|destello|fundido] y final = segundos de logo sobre negro). CORTES: scdet de ffmpeg NO sirve (0 cortes en una, planos de 23 s en otra): CAMBIO(t) = distancia color (histograma 3x16) O forma (gris 8x14 sin brillo medio) entre 0,4 s antes y 0,4 s despues; picos >= 0,30 separados 0,45 s (0,9 si entra en fundido); el cuadro exacto: pico de brillo (destello), mayor salto entre vecinos (corte) o la mitad (fundido). Mirado contra hojas de contacto de las 4 de la persona (Escritorio PLANTILLA 1-4.mov, verticales 720x1280 30 c/s): 10/20/9/10 planos. armado/armar_ref.py arma «<evento> - PLANTILLA N» (1080x1920 a los c/s de la plantilla): tomas del planificador de siempre (receta._planes vertical, SIN la APERTURA que mezcla momentos, a saltos parejos, 0,4 s de margen a cada lado), una por hueco con SU duracion; musica de la plantilla en A1 y ninguna otra; fundido -> Cross Dissolve 10 c (AddTransition), destello -> overlays.poner (DESTELLO propio); el final con logo -> la foto final de siempre puesta seguida (una foto en la linea dura ~1,5 s aunque se pida mas); color en grupo PLANTILLA (DCTL + look del 1 min); render en cola (VIDEO FINAL PLANTILLA N.mov) y renderizar.py la masteriza. OJO MediaPool.AppendToTimeline: endFrame NO entra (con «-1» cada toma quedaba 1 cuadro corta: cuadro negro en cada corte). motor.armar_plantillas_ref (estado plantillas_ref) va tras los pases y antes del render; lineas_del_evento incluye «- PLANTILLA » al final. Material > «Plantillas de video» (interfaz/plantillas_ui.PlantillasRef: tarjetas 9:16 con portada, clic = elegir varias, soltar un video = convertirlo; «Agregar plantilla»). scratch probar_ref.py arma y renderiza una con la boda.",
+   "(19-nov) LA 1.6.19 SE CAIA AL ABRIR: NameError px en Ventana._tarjeta_plantillas (px es local de cada _pagina_*). py_compile NO lo ve: correr python -m pyflakes sobre lo tocado (undefined name) antes de compilar. armar_ref.elegir_tomas: el planificador elige por MOMENTO la zona entera (Planificador.zona con corte = (hueco mas largo, x1,15)) y cada plano se RECORTA a su hueco desde el principio de su tramo bueno; antes alargaba planos de ~1 s a huecos de 3,8 s y entraba el piso. Peso de cada momento segun su material bueno (capacidad_f). Boda: P2 12 tomas distintas en 20 huecos (antes 6), P3 7 en 9, sin piso. ▶ con «PLANTILLA 3» elegida probado de punta a punta (scratch armar_con_plantilla.py): 3 de 3 videos, sus .drp y marcadores.",
+   "(19-nov, la persona: «debe detectar cuántos cortes tiene cada plantilla... me lo dejas en una carpeta en escritorio que diga plantilla utilizada 1, 2, 3... con material puedo mover... no me puedes meter tomas que no tiene esa plantilla») Cada plantilla elegida es una VERSION mas en «Qué entra al video» (receta.plan_ventana -> armar_ref.plan_ventana: un plano por hueco = por corte, nunca otro; la foto del final si tenia logo): pestañas de reserva VERS_PLAN[6:] que toman su nombre al cargar. Arrastrar = estado orden_planos[«PLANTILLA N»] (armar_ref._orden_a_mano: cada hueco conserva su duracion); doble clic saca/mete (tomas_no / tomas_si: el hueco recibe otra toma). Salida: motor.carpeta_plantilla_usada -> Escritorio/«PLANTILLA UTILIZADA N»/<evento>.mov (o «PLANTILLA UTILIZADA - NOMBRE»). Probado: pestaña con 20 huecos, arrastre en el orden esperado, carpeta con BODA 2026-11-15.mov (17 tomas distintas en 20 huecos).",
+   "(19-nov) OJO am.leer_ultimo() es el RESUMEN de la ventana (sin «vista» de cada medio segundo): armar_plantillas_ref lo usaba y el planificador no aplicaba ningun filtro por tramo (45 de 45 tomas sin medidas: entro un plano de suelo y sillas en la Plantilla 1). Para armar, SIEMPRE el analisis completo (am._cache_ruta()). Ademas Planificador.vista aplica los cuadros malos de la IA aunque falten las medidas. motor.plantillas_a_mp4: los videos de «PLANTILLA UTILIZADA» pasan a .mp4 sin recomprimir (-map 0:v:0 -map 0:a:0: la pista de codigo de tiempo de DaVinci no entra en MP4 y con -map 0 salia vacio) y se borra el .mov.",
+   "VISION_IA.modelo: a igual familia elige el de MAS parametros (con qwen3-vl:4b y :8b instalados ganaba el 4b por orden alfabetico).",
+   "(18-nov, la persona: «que pueda mover el orden de las tomas... doble clic... un slider para decir cuántas tomas») PlanVideo: DOBLE CLIC saca una toma del plan (tomas_no) o mete una de fuera (tomas_si); ARRASTRAR una toma del plan la mueve (señal reordenada -> estado orden_planos[clave] = [id_plano...]; build_trailers.aplicar_orden: cada HUECO conserva su duracion y su corte a la musica y recibe la toma puesta ahi, ini recortado para que quepa); CLIC DERECHO = el menu de antes + «Volver al orden del programa». Slider «Cuántas tomas» (estado tomas_ritmo 0-100, 50 = siempre; build_trailers.factor_planos x2 a x0,7 sobre corte y apertura): boda 1 min 28 / 43 / 65 planos con 0 / 50 / 100. plan_ventana da id y dur de cada plano y a_mano_orden. Probado en la ventana real con QTest (scratch mod/guion_plan.py): arrastre = el orden esperado por id, doble clic saca, slider 10 -> 22 planos.",
+   "VIDSTAB (18-nov, «que el análisis me dé la toma ya recortada y estabilizada»): ffmpeg trae vidstabdetect/vidstabtransform. MEDIDO en tomas de iPhone 4K de la boda a 1080: 0,75-1 s de proceso por segundo de video; temblor (medida del analisis) 022: 6,39 -> 4,29 (normal) / 3,77 (fuerte: shakiness 10, smoothing 40, optzoom 2, recorta bordes); 016: 5,29 -> 4,97; los picos casi igual. Ninguna baja de TEMBLOR_MAX 2,6: estabilizar TODO en el analisis no compensa (en la boda, 19 min de video = ~15 min mas). Solo serviria para RESCATAR las casi buenas (2,6-4,4): en la boda 2 tomas, 25 s. No puesto; scratch medir_vidstab.py.",
+   "receta.plan_ventana(analisis, tipo): las 6 versiones (4 horizontales + V 1min, V 3min) en 0,8 s, sin DaVinci. Lo llama Ventana._cargar_plan en un hilo leyendo material.json completo.",
+   "Decisiones a mano: estado tomas_no / tomas_si (nombres de archivo). build_trailers.decisiones las aplica al cargar el analisis (descartar / forzada); una forzada no cuenta como accidental y sus tramos malos POR MEDIDAS se usan (los que vio mal la IA no). Forzar no garantiza que entre: de 6 probadas entraron 4.",
+   "Probar sin tocar el estado de la persona: guardar motor.leer_estado(), poner tomas_no/tomas_si, receta.plan_ventana, restaurar en finally. (Parchear motor.leer_estado no sirve: build_trailers carga su propio modulo con _modulo.)",
+   "material_ventana2.json (_item_ventana): el resumen que lee la ventana ahora lleva ruta, ia (escena + instantes) y oido; sin eso Material decia «IA 0/129» y las miniaturas salian negras.",
+   "am.cuantos_faltan(): videos sin analizar contando la ficha .trailer del material; _estimar se lo pasa a motor.estimar_segundos (antes suponia todo sin analizar: 58 min en vez de 19).",
+   "(18-nov) Ajustes > Sonido: la voz original de 30 min ya se puede apagar (VOZ_SIEMPRE vacio, motor.VOZ_DEFECTO con 30min). DOBLE CLIC en un estilo de Musica -> popup con sus canciones (vistas_ajustes.ListaCanciones, clic = oir 25 s) y en un tipo de Intro -> ejemplo animado con las fotos del evento, su ritmo y su SFX (vistas_ajustes.VistaIntro). Van dentro de piezas.Popup (parametro contenido). Sonido SIN QtMultimedia (excluido del instalador): ffmpeg saca un WAV temporal y lo toca winsound (hiddenimport) o afplay en Mac. Ventana._ver_canciones / _ver_intro / eventFilter (self._doble). Prueba: scratch arnes2 (manda MouseButtonDblClick, captura y cierra con popup_abierto.botones[0].click()).",
+   "REGLAS ESTRICTAS E HISTORIA (18-nov, la persona: «no tomas al piso, paredes, borrosas, quemadas, muy movidas o sin sentido... mejora el armado para crear historias»). Mirando la hoja de contacto del VIDEO FINAL 3 MIN: lo malo NO era lo que marca la IA (el plan ya respeta sus cuadros; los unicos «malos» dentro de un plano son de dron, donde no se piden caras) sino (1) un barrido borroso del DRON, dos veces: al dron no se le pedia enfoque -> FOCO_DRON 0,65 y BARRIDO_DRON 3,2; (2) verticales en el horizontal con los lados rellenos -> PESO_VERTICAL 0,35 (solo si falta material); (3) el mismo encuadre 25 s -> TOPE_MISMO_ENCUADRE 0,22 -> 0,15; (4) abria con el pastel y luego iba al maquillaje -> la APERTURA se arma por momentos EN ORDEN (25 % preparativos, 30 % ceremonia, 45 % fiesta). Umbrales: FOCO_ABS_MIN 0,55 -> 0,62, QUEMADO_MAX 0,25 -> 0,20, BARRIDO_MAX 6 -> 4,5, TEMBLOR_MAX 3 -> 2,6. ESTRICTO (TRAILER_ESTRICTO=0 lo apaga): el estorbo queda fuera en TODAS las versiones y ya no se readmite cuando falta material. HISTORIA[tipo][momento] = pasos (maquillaje, vestido... entrada, vals, brindis, pastel, baile): en Planificador.zona, si ninguna toma elegida muestra un paso que el material tiene, entra la mejor que lo muestra (_lo_que_muestra). COSTO medido en el XV: 1 min igual; 3 min repite 6 planos (antes 0); 15 min 44 (antes 29); 30 min 70 (antes 41): solo 22,6 min del material pasan las reglas. Pendiente visto: la misma toma en 3 planos seguidos cuando el momento tiene poco material (maquillaje: 1,2 min buenos). Guion grafico sin DaVinci: scratch guion.py; comparar reglas: scratch reglas.py.",
+   "Hallazgos del plan real del XV 8-nov que esta vista deja ver: 78 de 129 tomas fuera (el filtro de enfoque parece estricto con maquillaje), un plano de cesped 3 veces en el de 1 min, Iglesia con 3 tomas.",
+   "Arnes de la ventana real: scratch arnes/lanzar.py + prueba_arrastre.py (mete su Guion en sys.modules; PROGRAMA/nucleo/prueba_arrastre.py es OTRO, la prueba de soltar). Si un arnes se cuelga queda programa.lock tomado: terminar el python con Invoke-CimMethod Terminate. c.render()/repaint() en bucle sobre las piezas tumba el proceso (0xC0000005)."
+  ]
+ },
+ {
   "id": "boton-play",
   "resumen": "El boton GO hace todo: analizar, armar en DaVinci, renderizar, masterizar, abrir carpeta",
   "claves": [
@@ -71,7 +123,7 @@
  },
  {
   "id": "ventana",
-  "resumen": "Ventana sin marco: portada al instante, pestanas Material/Textos/Ajustes (voz original, verticales, ruido), chequeo de arranque, instancia unica",
+  "resumen": "Ventana sin marco: portada al instante, pestanas Inicio/Tráilers/Plantillas/Ajustes (Material y Textos ocultas desde el 19-nov) (voz original, verticales, ruido), chequeo de arranque, instancia unica",
   "claves": [
    "interfaz",
    "ui",
@@ -112,6 +164,13 @@
   "claves": [],
   "archivos": [
    "PROGRAMA/interfaz/piezas.py",
+   "PROGRAMA/interfaz/barra_qml.py",
+   "PROGRAMA/interfaz/qml/BarraInicio.qml",
+   "PROGRAMA/interfaz/qml/Trabajo.qml",
+   "PROGRAMA/interfaz/qml/Popup.qml",
+   "PROGRAMA/interfaz/qml/Trailers.qml",
+   "PROGRAMA/interfaz/qml/Plantillas.qml",
+   "PROGRAMA/interfaz/qml/Ajustes.qml",
    "PROGRAMA/interfaz/linea_dia.py",
    "PROGRAMA/interfaz/trailer_xv.py",
    "PROGRAMA/nucleo/miniaturas.py",
@@ -149,9 +208,40 @@
    "qss_diseno",
    "guardar_excepcion",
    "_mascara",
-   "_de_mascara"
+   "_de_mascara",
+   "_elegir_videos",
+   "_ver_plantillas",
+   "_ver_mas_ajustes",
+   "_sub_material",
+   "_trailer",
+   "_plantillas",
+   "_editar_nombre",
+   "_pagina_trailers",
+   "_pagina_plantillas",
+   "BarraQML",
+   "_barra_a_qml",
+   "tapar_quick",
+   "TrabajoQML",
+   "PasosQML",
+   "VersionesQML",
+   "PopupQML",
+   "_nombre_elegido",
+   "_agregar_version",
+   "PaginaQML",
+   "_datos_trailers",
+   "_datos_plantillas",
+   "_datos_ajustes",
+   "_soltar_plantillas"
   ],
   "notas": [
+   "(19-nov, armado real con QML: salieron 6 videos y solo se veia «1 min») la pantalla de trabajo muestra TODOS: _arrancar agrega las plantillas marcadas (las que existen); el VERTICAL 1 min automatico entra al leer «se arma tambien el VERTICAL 1 min» (_agregar_version, va tras los horizontales). _versiones_vista entiende «<evento> - PLANTILLA 1 lista: N planos» y la cola de render parte por parte («1min Complete 100% | PLANTILLA 1 Rendering 12% | ...»). Con mas de 4 filas, filas mas bajas (Trabajo.qml). Medido: 6 videos (1 min + vertical + 4 plantillas) en 30 min, 20 de render. Y analizar_material._guardar_json reintenta os.replace si otro hilo tiene el archivo abierto ([WinError 5] cortaba el armado si se pulsaba a los pocos segundos de abrir).",
+   "(1.7, parte 4: «las páginas») qml/Trailers.qml (estilos de musica en tarjetas con icono y descripcion, la intro con 8 fotos que laten a su ritmo, boton redondo/doble clic = oir o ver), qml/Plantillas.qml (tarjetas 9:16 con portada, palomita, entrada en cascada; soltar videos encima = plantillas, DropArea) y qml/Ajustes.qml (Video, Voz y ruido con deslizador propio, Inteligencia con punto que late, Disco con barra dorada, Programa); piezas comunes qml/Tarjeta, Interruptor, Boton. barra_qml.PaginaQML: leer() -> dict de los widgets de siempre (siguen guardando el estado, escondidos), cada 400 ms si se ve y cambio -> propiedad d; accion(nombre, valor) -> acciones de la ventana (_acciones_trailers/_plantillas/_ajustes). Las listas de QML solo se renuevan si cambian (si no, el Repeater rehace las tarjetas). El alto de la rejilla de Plantillas va calculado (el de la Flow no se actualizaba al llegar tarjetas). currentChanged -> entrar() (el fundido de paginas de Qt no le llega a QML).",
+   "(1.7, parte 3: «los popups») qml/Popup.qml: fondo = foto borrosa de la ventana (proveedor image://fondo), tarjeta de vidrio con filo dorado que respira, emblema con aro de luz que gira y su simbolo dibujado (! en triangulo, ?, i, cruz, palomita), titulo, texto, botones en pastilla (verde con destello) y una forma: «trailer» (formato + duraciones de cada formato), «nombre» (tipo + campo) o «videos» (una pastilla por video, uno o varios). barra_qml.PopupQML.preguntar(...) -> (boton, resultado) con un QEventLoop; piezas.preguntar lo usa para todo popup SIN pieza propia (si ya hay uno abierto, el de widgets). _elegir_videos, _editar_nombre y _elegir_de_videos usan sus formas; los que traen pieza propia (canciones, intro) siguen en widgets. Se crea en _barra_a_qml. Ojo: en QML «escape» es palabra reservada (la propiedad se llama esc). Pruebas: ventana.popup_abierto / popup_qml.botones[i].click().",
+   "(1.7, parte 2: «pantalla de trabajo») qml/Trabajo.qml: la fila de pasos (activo late con halo y arco que gira, la luz corre por la linea, al quedar hecho onda verde y rebote; error en rojo) y la tarjeta de versiones (barra que avanza suave con brillo, «Armando…» = luz dorada que va y viene, palomita con rebote, cruz roja, hora con RichText y «Cancelar»). barra_qml.TrabajoQML cambia self.pasos / self.versiones por PasosQML / VersionesQML (MISMA API que piezas.Pasos / piezas.Versiones: reiniciar, poner, activo, estado; poner_versiones, poner, poner_eta, filas[etq].poner/.estado, b_cancelar.setEnabled/setText) en _barra_a_qml; la ventana no cambia. Ojo (medido): si un QQuickWidget cambia de alto escondido, sigue pintando en el lienzo viejo y sale estirado: TrabajoQML._alto lo rehace al verse. La letra de QML = la de la ventana (propiedad familia).",
+   "(1.7, la persona: «quédate con QML / Qt Quick por partes; es más rápido») las piezas nuevas se hacen en QML (interfaz/qml/*.qml) y entran a la ventana de widgets con QQuickWidget (barra_qml.py). Parte 1: la barra del Inicio (qml/BarraInicio.qml: foco de luz que sigue al raton con Shapes/RadialGradient, brillo que cruza el Tráiler, resorte al apretar, entrada subiendo). Iconos = piezas.icono por el proveedor image://icono/<tipo>/<RRGGBB>/<lado>. El QQuickWidget lleva WA_AlwaysStackOnTop (si no, no es transparente): se pinta encima de todo, asi que piezas.Popup y la Hoja lo esconden mientras estan abiertos (tapar_quick / destapar_quick). Crearla cuesta ~180 ms + ~350 ms el primer cuadro (medido): entra 700 ms despues de abrir (_barra_a_qml); antes se ven los botones de widgets (mismo diseño). TRAILER_QML=0 o sin Qt Quick: quedan esos. Los .spec ya no excluyen QtQml/QtQuick/QtQuickWidgets/QtNetwork/QtOpenGL y llevan interfaz/qml como qml/ (sin compilar aun). Se descarto la interfaz web (React en QWebEngine): +150 MB y arranque lento.",
+   "(19-nov, la persona: «crea una página para plantillas y otra de tráilers súper minimalista, solo de escoger el estilo y listo; la de Material elimínala») pestañas a la vista: Inicio · Tráilers · Plantillas · Ajustes. self.tabs se crea en el orden de las paginas (0 Inicio, 1 Material, 2 Textos, 3 Ajustes, 4 Tráilers, 5 Plantillas: _ir usa ese indice) y se agrega a la barra en otro orden; Material y Textos ocultas pero sus paginas siguen (el material se suelta en la ventana; _pedir_material abre _agregar_carpeta). Tráilers (_pagina_trailers): «Elige el estilo» + la tarjeta Música de Ajustes (tarjeta_musica: seg_musica e seg_intro, se guardan solos). Plantillas (_pagina_plantillas): _tarjeta_plantillas siempre abierta (sin b_ver_pl). Ajustes: aj_mas a la vista y sin «Más opciones».",
+   "(19-nov, la persona eligio la «C1» entre 3 propuestas: «más minimalista, 3 botones») el panel del Inicio es UNA barra sin margen (dock): b_nombre (lapiz + solo el nombre; _editar_nombre: popup con el tipo de evento, el nombre y «Evento nuevo» = _proyecto_nuevo) | b_plantillas (_plantillas: popup con una pastilla por video; «Abrir en DaVinci» abre el primero marcado, «Renderizar» saca los marcados; antes chip_editar / chip_render, que ya no se ven) | b_trailer verde (_trailer: popup con lo que hay o falta, la hora y caja_videos; «Empezar» = _play). Estilos #barra_c / #barra_trailer (radio dock_r); el brillo al pasar usa animacion.brillo_al_pasar(abierto=izq/der/ambos) para no redondear donde se toca con el vecino. chip_mat, chip_evento, chip_que, l_eta y chip_nuevo siguen (se llenan) pero ocultos. (19-nov, la persona: «la página de Textos elimínala») tabs[\"Textos\"] oculta; la pagina sigue en self.paginas (indice 2) porque e_nombre, e_frase, e_fecha y c_tipo se leen al armar (vacios = automaticos).",
+   "(19-nov, la persona: «hazla más amigable, que no tenga tantas cosas que abrumen») Inicio: el panel es UNA fila: chip_mat (lo que falta o lo que hay; chips_mat siguen ocultos), chip_evento (nombres), chip_que («1 · 3 · 15 · 30 min»: un clic abre _elegir_videos, popup con caja_videos = seg_formato arriba + pills; al cerrar vuelve al dock porque Popup.esperar hace deleteLater; lleva el estilo de la app porque el del popup pisa los botones), la hora y «nuevo». «Editar en DaVinci» / «Renderizar lo editado» solo con el evento terminado y sin material nuevo esperando. La pastilla de arriba no se ve con «Todo listo» (solo trabajando o con avisos: «1 aviso»). Material: el cuerpo de «Plantillas de video» cerrado (b_ver_pl) salvo que ya haya elegidas; en «Qué entra al video» las pestañas verticales y de plantilla salen solo cuando el plan las trae (las 12 ensanchaban la pagina y tapaban «Agregar carpeta»). Ajustes: a la vista solo «Música» (estilo e intro); «Más opciones» cambia a Video, Voz y ruido, Inteligencia, Disco y Programa (aj_mas) y «Volver».",
    "(17-nov) La persona: «hazlo así, exactamente así». Maquetas en docs/capturas/propuesta_1..5; ilustracion de Ajustes y fondo de la vista previa hechos en Higgsfield: recursos/ilustracion_ajustes.jpg y fondo_titulo.jpg.",
    "Cancelar: rutas.PARAR + rutas.Detenido (BaseException). Lo miran el log del hilo Trabajo, armar_todo, los hilos del analisis, el oido y el render (StopRendering).",
    "Avisos: la franja ya no queda fija (se va a los 7 s; 20 s si es problema); el chequeo va a la pastilla.",
@@ -430,7 +520,8 @@
    "nombre_video(linea): «... - 15min» -> «VIDEO FINAL 15 MIN»; «... - VERTICAL 1min» -> «VIDEO FINAL VERTICAL 1 MIN» (video y su .drp).",
    "pasar_adentro (lo llama tareas.instalar): lo de la carpeta de trabajo vieja a la vista (config.carpeta_trabajo o Escritorio/Trailer automatico) pasa a su sitio y la carpeta se quita si queda vacia. La que tiene PROGRAMA/ (la del proyecto) nunca se toca.",
    "El codigo va en carpetas (nucleo, analisis, armado, entrega, interfaz, herramientas): import rutas las pone en sys.path; rutas.codigo(nombre) y rutas.CONFIG_PROG. En el .exe todo queda junto.",
-   "(16-nov) La carpeta del proyecto solo tiene PROGRAMA y 3 INSTALADORES: desde el codigo BASE = PROGRAMA/datos/trabajo y SALIDA = Escritorio (igual que instalado); lanzadores en PROGRAMA/herramientas; empaquetar usa dirname(rutas.PROGRAMA)."
+   "(16-nov) La carpeta del proyecto solo tiene PROGRAMA y 3 INSTALADORES: desde el codigo BASE = PROGRAMA/datos/trabajo y SALIDA = Escritorio (igual que instalado); lanzadores en PROGRAMA/herramientas; empaquetar usa dirname(rutas.PROGRAMA).",
+   "(19-nov, la persona) Nombres: VIDEO FINAL HORIZONTAL 1 MIN / VIDEO FINAL VERTICAL 1 MIN (edicion) y PLANTILLA 1 VERTICAL - 2026-11-15 (plantillas de Material, en MP4): TODO en EVENTO TERMINADO - <evento>/VIDEO TERMINADO y su .drp en PLANTILLAS DE LOS VIDEOS (rutas.nombre_video; ya no hay carpetas PLANTILLA UTILIZADA). Plantillas: interruptores en Material (estado plantillas_texto / plantillas_destellos / plantillas_fundidos); todo apagado = la plantilla tal cual (cortes y musica). Llevan ruido y CDL por toma como las versiones y destellos al 60 %."
   ]
  },
  {
@@ -491,6 +582,7 @@
    "_sincronizar_por_audio",
    "_cruce",
    "_envolvente",
+   "_conf",
    "_nombres_originales",
    "instantes",
    "en_gpu",
@@ -500,6 +592,7 @@
    "_instantes_con_ia"
   ],
   "notas": [
+   "(18-nov) DIA DEL EVENTO: si hay un telefono (iPhone, o EXIF Apple/Samsung/Google... = TELEFONOS) o un dron con hora, el dia lo votan SOLO esas camaras (se ponen en hora por la red). Antes 230 fotos de una Sony A7 III con el reloj en 2018 ganaban por numero a 44 videos de un iPhone 17 y el evento salia «BODA 2018-12-03»; ahora 2026-11-15 y la Sony se alinea con el reloj corrido (3b).",
    "(1.5.7) vision_ia: el mejor modelo de vision de Ollama (qwen3-vl primero; capabilities=vision), 3 cuadros por video (Pillow para fotos), JSON {momento PREPARATIVOS|IGLESIA|FIESTA|OTRO, escena, etiquetas, util}; ~4 s por toma, 3 en paralelo; cache «ia» por archivo. clasificar -> _segun_lo_que_ve: _en_orden (DP MAQUILLAJE<=IGLESIA<=FIESTA que menos contradice a la IA; sin preparativos confirmados no hay MAQUILLAJE); util=false -> descartar. Boda 7-nov: antes la ceremonia salia MAQUILLAJE; ahora 0/14/53 bien.",
    "Cache material.json con clave nombre|tamano (sobrevive a mover carpetas); VERSION sube y lo viejo se completa solo.",
    "Relojes: UTC se detecta comparando la fecha del ARCHIVO (hora local de la camara) con creation_time; fecha mala con hora buena se pasa al dia del evento; lo demas se ordena por contenido.",
@@ -551,12 +644,20 @@
    "colgado",
    "dialogo",
    "reenlazar",
-   "fusionscript"
+   "fusionscript",
+   "vigia",
+   "congelado",
+   "trabado"
   ],
   "archivos": [
-   "PROGRAMA/nucleo/motor.py"
+   "PROGRAMA/nucleo/motor.py",
+   "PROGRAMA/nucleo/vigia_davinci.py"
   ],
   "simbolos": [
+   "vigilar",
+   "reintentar",
+   "principal",
+   "_ventana_colgada",
    "conectar_resolve",
    "_conectar_resolve",
    "_Vigilante",
@@ -568,8 +669,13 @@
   ],
   "notas": [
    "NUNCA pm.SaveProject() sobre el Untitled Project: saca 'Crear proyecto' y la API se cuelga para siempre.",
+   "(18-nov) En ESTA computadora DaVinci tiene UNA sola base, «REDES SOCIALES» (E:/.../GANCHOS PACK/Resolve Projects), y EVENTOS CINEMA vive ahi: no hay base EVENTOS. Si la hubiera y DaVinci abriera en otra, _conectar_resolve pasa a EVENTOS aunque el proyecto se llame igual. El cuelgue del 18-nov (10 min, .drp de 15 min, «Driver not loaded» en davinci_resolve.log) fue de DaVinci con su base: lo arregla vigia_davinci (tema resolve). editable.proyecto_por_video anota «Haciendo la plantilla de X...» antes de cada una.",
+   "VIGIA ES OTRO PROCESO (probado): una llamada de la API de DaVinci bloqueada NO suelta el GIL y congela TODO el Python del programa, hilos incluidos: un hilo vigia no hace nada. vigia_davinci lanza 'python vigia_davinci.py --vigia <pid>' (en el .exe: TrailerAutomatico.exe --vigia <pid>, main() de trailer_xv) y se hablan por DATOS/vigia/secciones.json y matadas.json; el vigia escribe directo en registro.log y se cierra cuando el programa ya no esta. motor.armar_todo (2 intentos, sin tope) y motor.preparar_edicion (3 intentos; cada plantilla tope 180 s) van con reintentar.",
+   "VIGIA (vigia_davinci.py): with vigilar(nombre, tope) / reintentar(fn, nombre): CONGELADO = la ventana principal no contesta un WM_NULL en 2 s (SendMessageTimeout; IsHungAppWindow da False si nadie le manda mensajes: probado) Y menos de 0,25 nucleos de media durante 15 s (TRAILER_CONGELADO_S); TRABADO = la seccion pasa su tope. Entonces cierra DaVinci (la llamada bloqueada se suelta), lanza Trabado y reintentar vuelve a conectar y repite. Los primeros 90 s del proceso no cuenta el congelado (al abrir la ventana tampoco contesta ~20 s: probado, daba falso positivo). Probado congelando DaVinci a proposito (NtSuspendProcess): scratch probar_vigia.py.",
+   "ABRIR: si DaVinci se cierra solo al abrir (sin proceso dos veces seguidas), conectar lo abre otra vez enseguida (hasta 2 veces) en vez de esperar 2 + 3 min a ciegas; «DaVinci contestó en N s» queda en el registro.",
    "estado_davinci no usa la API (tasklist/pgrep + titulo de ventana).",
-   "Desde el .exe: PYTHON3HOME=_MEIPASS y os.add_dll_directory(carpeta de Resolve)."
+   "Desde el .exe: PYTHON3HOME=_MEIPASS y os.add_dll_directory(carpeta de Resolve).",
+   "rutas.abrir_resolve abre DaVinci con rutas.entorno_limpio(): heredando PYTHON3HOME/PYTHONHOME del .exe su Python de Fusion no arranca ('No module named encodings') y DaVinci se cae a los 10 s (18-nov)."
   ]
  },
  {
@@ -753,6 +859,8 @@
   ],
   "notas": [
    "NUNCA InsertFusionTitleIntoTimeline: inserta en V1 con ripple. Textos nuevos = PNG transparente + AddFusionComp.",
+   "(18-nov, la persona con captura) 9:16: el credito de la intro (macro MultiText: «UN FILM DE» a la izquierda x 0,338 y «CINEMA PRODUCTIONS» a la derecha x 0,653, zoom 0,5 y corrido) salia chico y torcido: _multitext_a_vertical apila sus lineas centradas (orden de arriba abajo, ESPACIO_LINEAS_V 0,037), sin Pan/Tilt y zoom 1,6 (~75 % del ancho). «Cine Bars» (franjas 2,39:1) se apaga en 9:16 (SIN_EN_VERTICAL): dejaban la imagen en una franja delgada. Frases propias de mas de 20 letras en 9:16: en dos lineas por el espacio mas cercano a la mitad, tamaño por la linea mas larga y a y 0,27 (0,19 quedaba bajo los botones de Reels/TikTok); tarjeta final 0,075 mas arriba. Mirado en DaVinci cuadro a cuadro.",
+   "(18-nov, boda vista en DaVinci con get_image) 9:16: titulos_a_vertical ya no agranda todo 1,5: _zoom_vertical mira el texto: MAYUSCULAS (ocupan el ancho, «NUESTRA BODA») 1,12; frases/nombres zoom = 0,88 / (0,025 x letras) entre 1,0 y 2,2 («Un sueño que empieza» 1,76; «Te elijo hoy, mañana y siempre» 1,17). Los titulos propios (disenar_titulo) en 9:16: tamaño = 0,80 / (0,25 x letras) hasta 0,30 («Cindy & Dereck» 0,11 -> 0,229 = 82 % del ancho) y subtitulo x1,6. El Size de Text+ va contra el ANCHO del cuadro: por eso en 9:16 quedaba diminuto. Medido y mirado cuadro a cuadro; scratch probar_titulos_v.py / probar_nombre_v.py lo aplican a una linea ya armada.",
    "Nunca la herramienta Shadow de Fusion (pidio 47 GB y tumbo Resolve): sombreado de Text+ (elementos 3 y 5).",
    "Los titulos propios de la plantilla son macros (mWedding, MultiText): no se pueden redisenar; velos_plantilla pone un velo oscuro en la pista TEXTOS (debajo de ellos) mientras estan en pantalla.",
    "disenar_titulo(abajo=True): la tarjeta final en el tercio inferior. Frases 0,088 de tamano y velo 0,55.",
@@ -809,7 +917,8 @@
    "VOZ a -10 LUFS medido en crudo: el aislamiento le quita el ambiente y con -15 quedaba 6 dB bajo la musica.",
    "Cambio de cancion (cruces_de_musica mide el sonido con ffmpeg): si la que sale sigue sonando, se alarga 2,5 s y se apaga en 4 s; si se ACABA antes (huecos casi en silencio), se retrasa entera para terminar donde entra la otra, de la ultima a la primera: la primera se alarga y la musica de fiesta no se mueve de su marcador.",
    "SFX PROPIOS (recursos/sfx/XV_*.wav, los crea herramientas/hacer_sfx.py con numeros, sin licencias): golpe y subida a la entrada de la fiesta (marcador ACTO ... FIESTA), destellos en el titulo y el final, paso en capitulos, obturador en las fotos de la intro. Pista «SFX MOMENTOS».",
-   "(1.5.7) SFX 2-3 dB mas bajos (mezcla.OBJETIVOS) y whoosh con fundido de entrada/salida."
+   "(1.5.7) SFX 2-3 dB mas bajos (mezcla.OBJETIVOS) y whoosh con fundido de entrada/salida.",
+   "(18-nov, la persona: «le falta más SFX de emoción, alegría») sfx.emocion: donde la IA vio un MOMENTO CLAVE en ese plano (it['ia']['instantes'] en [ini, ini+dur]: beso, pastel, primer_baile, brindis, entrada -> vitores/aplausos de la plantilla; anillos, votos -> XV_BRILLO a -6 dB), en el corte, en SFX PUBLICO 2 / SFX PUBLICO sin pisar otros, uno cada 8 s (14 en los largos), hasta 12, nunca en la intro (FIN_INTRO_S) ni donde hay voz (pasajes {'ini','fin',...} de la toma). Boda 1 min vertical: 15 planos con momento clave, 4 con su sonido. Va antes de mezcla.nivelar."
   ]
  },
  {
@@ -932,16 +1041,27 @@
    "proxies_y_cache",
    "proyecto_por_video",
    "hacer_proxy",
-   "cache"
+   "cache",
+   "videos_editables",
+   "abrir_proyecto_video",
+   "abrir_video_editable",
+   "abrir_al_terminar",
+   "renderizar_videos_editados",
+   "_editar_listo",
+   "carpetas_movidas",
+   "_carpetas_al_dia"
   ],
   "notas": [
+   "(19-nov, probado en DaVinci con el XV) Al abrir un video, reenlazar: si el evento se movio de carpeta (D:\\XV 8 NOV -> D:\\TERMIANDO\\XV 8 NOV) carpetas_movidas lo busca con la misma ruta uno o dos niveles mas adentro (u otro disco, no C:), reenlaza y pone estado.carpetas al dia; el .drp se vuelve a exportar. Un proyecto de video que quedo sin linea (cuelgue) se rehace desde EVENTOS CINEMA.",
    "Al terminar (con o sin render) DaVinci queda en la pagina Edicion con la linea mas corta del evento abierta (dejar_editable); las lineas viven en 02 EVENTOS/<evento> del proyecto EVENTOS CINEMA.",
    "Copia por video: EVENTO TERMINADO - <evento>/PLANTILLAS DE LOS VIDEOS/VIDEO FINAL 1 MIN.drt + LEEME.txt (rutas.plantillas_evento + rutas.nombre_video; build_trailers.EDITABLE la apaga). Los videos al lado, en VIDEO TERMINADO.",
    "renderizar_editado: vuelve a poner en cola cada linea TAL COMO ESTA (entre sus marcas de entrada y salida), renderiza, masteriza a -14 LUFS y rehace los .drp (proxies y cache). No arma nada.",
    "▶ sobre un evento ya armado con el mismo material (estado.huella == motor.huella()) pregunta: Renderizar lo editado / Volver a armar (reemplaza las lineas) / Cancelar. El armado automatico tras soltar material no pregunta (_play(auto=True)).",
    "Trabajo(op, funcion): el mismo hilo y la misma escena para armar todo o renderizar lo editado (_arrancar).",
    "(1.5.7) La linea se llama como el video: rutas.nombre_linea -> «EVENTO - VIDEO FINAL 1 MIN»; rutas.etiqueta_de entiende el nombre de antes («EVENTO - 1min») y el nuevo.",
-   "(1.5.7) Al entregar: proxies 540p con la GPU (BASE/PROXIES) enlazados con LinkProxyMedia, cache de render smart+auto, y un proyecto por video (VIDEO FINAL 1 MIN.drp en PLANTILLAS DE LOS VIDEOS, solo esa linea y sus clips; reemplaza al .drt)."
+   "(1.5.7) Al entregar: proxies 540p con la GPU (BASE/PROXIES) enlazados con LinkProxyMedia, cache de render smart+auto, y un proyecto por video (VIDEO FINAL 1 MIN.drp en PLANTILLAS DE LOS VIDEOS, solo esa linea y sus clips; reemplaza al .drt).",
+   "(19-nov, la persona: «no me des tantas lineas de tiempo abiertas») EVENTOS CINEMA tiene las lineas de TODOS los eventos: ya no se le entrega. Al terminar (abrir_al_terminar) DaVinci queda en el proyecto propio del primer video (carpeta <evento>, «<evento> - VIDEO FINAL HORIZONTAL 1 MIN», una sola linea). «Editar en DaVinci» pide el video (popup con pastillas) y abrir_proyecto_video guarda/cierra lo abierto y abre SOLO ese; si no existe lo importa del .drp o lo hace desde la linea de EVENTOS CINEMA. estado.editando (+ editando_evento) apunta los abiertos: «Renderizar lo editado» los saca desde su proyecto (renderizar_videos_editados). _PROYECTO_VIDEO solo vale mientras corre una operacion: si quedara puesto, el proximo ▶ armaria dentro del proyecto del video.",
+   "(19-nov, revision del flujo) conectar_resolve(log, quedarse=True) acepta el proyecto de video abierto (estado.proyecto_video): lo usan abrir/renderizar por video, leer el ruido e indexar (que se salta si no esta en EVENTOS CINEMA; el IntelliSearch automatico al entregar ya no corre). Si DaVinci se reinicia a mitad, conectar_resolve vuelve a _PROYECTO_VIDEO en su carpeta y el .drp solo se exporta si sigue en ese proyecto. ▶ limpia editando/proyecto_video y quita «terminado» del evento que se rearma. preparar_edicion(solo=lineas renderizadas): no rehace los proyectos de los demas videos (ahi viven los retoques). «Renderizar lo editado» pide los videos (popup, marcados los abiertos) -> renderizar_editado(videos=...). videos_editables deja un solo .drp por video (nombre viejo sin HORIZONTAL vs nuevo). Linea «00» (de _por_drt antes del arreglo) se renombra al abrir. Marcadores rojos «REVISAR (IA)»: llegan despues de hacer los proyectos por video, asi que poner_revision_ia (en EVENTOS CINEMA) los guarda en estado.marcas_ia {linea: [desde, segundos]} y abrir_proyecto_video los pone al abrir ese proyecto (y reexporta su .drp); tras «Renderizar lo editado» se ponen en su linea (quedarse=True). revision_ia.marcar quita antes los del mismo nombre (no se duplican). _exportar_drp: temporal «x (nuevo).drp» (DaVinci agrega .drp: «x.drp.nuevo» quedaba «x.drp.nuevo.drp» y el .drp no se actualizaba). videos_editables = .drp + lineas del evento sin .drp."
   ]
  },
  {
@@ -1307,7 +1427,8 @@
    "PROGRAMA/analisis/escenas_ia.py",
    "PROGRAMA/analisis/vision_ia.py",
    "PROGRAMA/analisis/analizar_material.py",
-   "PROGRAMA/analisis/oido.py"
+   "PROGRAMA/analisis/oido.py",
+   "PROGRAMA/armado/receta.py"
   ],
   "simbolos": [
    "estimar_segundos",
@@ -1315,21 +1436,41 @@
    "_por_carpeta",
    "_instantes_con_ia",
    "instantes",
+   "servidor_rapido",
+   "cuadros",
+   "tramos_fuera",
    "_ver_cuadro",
    "escuchar",
    "corrida"
   ],
   "notas": [
-   "AVANCE SIN GASTAR TOKENS: python PROGRAMA/herramientas/avance.py (etapa, ultima linea, hace cuanto, errores y avisos) y 'avance.py tiempos' (minutos por etapa de la ultima corrida). No leer registro.log ni el .log del scratchpad con Get-Content.",
+   "AVANCE SIN GASTAR TOKENS: python PROGRAMA/herramientas/avance.py (lee el registro MAS RECIENTE, codigo o instalado; Estado en curso/TERMINADO/FALLO/¿colgado?, etapa, 3 ultimas lineas, errores con archivo:linea y avisos; cada ▶ deja «▶ pulsado» y «▶ no arranca: motivo») y 'avance.py tiempos' (minutos por etapa de la ultima corrida). No leer registro.log ni el .log del scratchpad con Get-Content.",
    "Armar desde la consola: estado (motor.usar_carpeta(carpeta); estado nombre_xv, versiones, versiones_vertical) y 'python -u PROGRAMA/interfaz/trailer_xv.py --todo' en segundo plano; el sistema avisa al terminar (no consultar mientras).",
    "MEDIDO (XV 8-nov, 17-nov: 319 fotos, 125 videos, 4 dron, 45 GB, 69 min de video; i5-12400 de 6 nucleos, RTX 5070 Ti 16 GB): analisis + primera vista de la IA 7 min (129 tomas en 340 s); IA cuadro por cuadro 29 min (1368 cuadros en 1726 s = 1,26 s/cuadro, PARALELO 3); oido 22 min PERO corre a la vez que la revision de la IA (no suma); media pool 1 min.",
    "PERSONAS (IntelliSearch): MediaPoolItem.AnalyzeForIntellisearch cuesta ~11 s FIJOS por llamada (12 s por foto; 420 archivos = 80 min). (17-nov) reconocer(raiz=root) -> _por_carpeta usa Folder.AnalyzeForIntellisearch: carpeta entera de una vez, 0,83 s por foto (16 fotos en 13 s; 275 archivos en 6,6 min). La carpeta de videos largos (38 de FIESTA/CAMARA) tarda mas de 10 min sola. La API de DaVinci atiende UNA llamada a la vez: no hay paralelo posible.",
    "OIDO: earshot es torch SOLO CPU (2.15+cpu) y ya usa 8 de 12 hilos (HILOS): correr varias tomas a la vez NO acelera. GPU pediria reinstalar torch con CUDA en la herramienta de la persona (2,5 GB): no.",
-   "Cuello de botella que queda: la revision cuadro por cuadro (vision_ia.instantes: un ffmpeg por cuadro + una pregunta a Ollama). Ideas SIN MEDIR: no revisar las tomas que las medidas 'vista' ya descartan (50 de 125 aqui), imagen mas chica, OLLAMA_NUM_PARALLEL. Medir con DaVinci cerrado (en_gpu).",
+   "ACELERADO (18-nov, misma XV): primera vista 340 -> 258 s; revision cuadro por cuadro 1726 -> ~840 s; oido 22 -> ~12 min (a la vez). Como: (1) vision_ia.servidor_rapido: el programa enciende SU Ollama en el puerto 11439 con OLLAMA_NUM_PARALLEL=4 (el del usuario atiende UNA pregunta a la vez y esa opcion solo se lee al encender) y lo apaga al salir: 1,07 -> 0,77 s por cuadro, +1,8 GB de video; si no cabe en la GPU vuelve al de siempre. (2) receta.tramos_fuera (Planificador.vista sin DaVinci, SOLO_DEFINIR): los cuadros cuyo tramo entero (medio paso a cada lado) ya esta fuera por las medidas no se preguntan y quedan [t, [], None, 'medidas']; si pueden cambiar la regla de 'toma entera fuera' (parte_mala vs limite) se miran igual; las accidentales no. 1090 de 1368 cuadros. (3) cuadros con ffmpeg aparte (vision_ia.cuadros, EXTRAER a la vez). (4) oido: ventanas alternas y las solapadas solo donde una vecina oyo algo (PISO_AFINAR): 39 % menos, mismas detecciones (1910 de 1910).",
+   "OJO AL MEDIR la IA: Ollama guarda en cache las imagenes repetidas (misma imagen: 0,5 s; nueva: 1,07 s). Medir SIEMPRE con cuadros nuevos (scratch prueba_paralelo.py). La imagen cuesta ~1040 tokens sea del tamaño que sea (Ollama la reescala) y la respuesta 59 tokens = 0,5 s. NO sirvio (medido): revision adaptativa cada 6 s (solo 11 % menos, mitad de los cuadros tienen momento clave), pregunta en mensaje de sistema o JSON en una linea (cambia 1 de cada 8 veredictos; entre dos corridas iguales ya cambia el 3-4 %), -hwaccel, imagen mas chica. ffmpeg a la vez NO frena a la IA.",
+   "LIBERAR (18-nov, la persona: «cierra todos los procesos que consumen RAM... automáticamente»): nucleo/liberar.py, al empezar motor.armar_todo cierra con la X (WM_CLOSE: cada uno puede pedir guardar; NUNCA a la fuerza) los programas de liberar.PESADOS (DxO PureRAW/PhotoLab, Photoshop, Premiere, After Effects, Lightroom, Topaz, Capture One, CineCaptions, OBS, Chrome, Edge, Firefox, Brave, Opera); nunca Windows, DaVinci, Ollama ni el programa; el que no se cierra en 10 s se queda y se avisa. Ajustes › Video «Cerrar programas pesados al armar» (estado liberar_auto, por defecto si); TRAILER_LIBERAR=0 lo apaga. Los servicios de telemetria de Windows NO se tocan (configuracion del sistema). python PROGRAMA/nucleo/liberar.py dice que cerraria sin cerrar nada.",
+   "LINEA DE BASE (18-nov, boda entera, 4 versiones, ya analizada): 19 min 51 s = plan 14 s + armado 4 lineas 2 min 05 + render 6 min 02 + terminar audio/medidas 1 min 54 + REVISION IA 4 min 13 + proxies 10 s + PLANTILLAS .drp 4 min 56 (4 x ~70 s: importar el proyecto entero 35 s). Ahora: la revision IA va en segundo plano mientras proxies y plantillas (renderizar.poner_revision_ia pone los marcadores al final) y las plantillas van por .drt (editable._por_drt: exportar la linea .drt 0,3 s, proyecto vacio con los mismos ajustes, ImportTimelineFromFile 1,7 s, exportar .drp: ~6 s y 0,4 MB en vez de 41 MB; comparada con la original: 21 pistas clip a clip y marcadores iguales y los cuadros iguales; si falla va por el camino de siempre). revision_ia.CUADROS_MAX 180 -> 100.",
+   "IA NO MAS RAPIDA SIN PERDER CRITERIO (18-nov, 120 cuadros nuevos de la boda, DaVinci abierto; scratch comparar_modelos.py / probar_claves_cortas.py / desglose_ia.py): qwen3-vl:8b-instruct 0,82 s por cuadro (4 a la vez). qwen3-vl:4b-instruct 0,49 s pero se le escapan 15 de 40 cuadros malos (87 % de acuerdo): NO. Claves cortas en el JSON de respuesta: 0,98 s y 88 % de acuerdo (los nombres largos le ayudan a entender): NO. OLLAMA_FLASH_ATTENTION=1 + OLLAMA_KV_CACHE_TYPE=q8_0 en el servidor propio: 96 contra 98 s (igual) pero menos memoria de video con DaVinci abierto: SI se queda (vision_ia.OPCIONES_SERVIDOR). Una pregunta: entrada 1636 tokens 0,53 s + respuesta 61 tokens 0,47 s (129 tok/s). Ollama 0.40.16. Tras el render, con DaVinci llenando la memoria, la revision fue a 4,1 s por cuadro: el limite real es la memoria de video, no Ollama.",
+   "ANALISIS DESDE CERO MEDIDO (18-nov, muestra de la boda: 12 videos iPhone 4K HEVC + 40 fotos, scratch medir_analisis.py anota GPU % y CPU % cada 2 s y apaga _leer_incrustados/_leer_fichas, si no RECUPERA todo de los archivos y no mide nada): 705 s -> 285 s. Revision cuadro por cuadro 565 -> 158 s y oido 159 -> 103 s con vision_ia._cuadro leyendo con -hwaccel cuda (0,24 -> 0,15 s por cuadro, derechos; 3 fallos = procesador). En la 1a la GPU estaba al 12 % con la memoria de video llena (15,7 de 16,3 GB: DaVinci + DxO PureRAW + modelo) y en_gpu() decia que si: vision_ia.aviso_memoria lo dice en el registro (al empezar y si va a mas de 1,5 s por cuadro) con los programas abiertos. OJO: parte de la mejora puede ser que la memoria estaba menos llena en la 2a.",
+   "BODA 18-nov (230 fotos, 45 videos, 1 + 15 min H y 1 + 3 min V): armado 4 pases ~5 min, render 278 s, REVISION CON IA de los 4 videos finales ~260 s (34 + 160 + 15 + 50; 15 min = 180 cuadros), proxies 57 s. NO SIRVIO (medido): revision_ia.revisar_varios, una sola cola para todos los videos en vez de uno tras otro: 80 s contra 79 s en 3 videos (91 cuadros, 0,87 s por cuadro con DaVinci abierto): la GPU es el limite. Se queda porque deja «Revision con IA: N cuadros en S s» en el registro. Lo que SI ahorraria: no volver a preguntar por los tramos del video final que salen de tomas ya revisadas por vision_ia.instantes (habria que mapear segundo final -> clip y segundo de origen con la linea).",
+   "Cuello de botella que queda: la IA es limite de GPU (0,77 s por cuadro) y las personas de DaVinci (IntelliSearch, 21 min, una llamada a la vez).",
+   "NO SIRVIO (18-nov, medido): reemplazar la revision cuadro por cuadro de Qwen por CLIP ViT-B/32 (ONNX, 67 ms por cuadro en un nucleo) + detector de caras, con una regresion lineal sobre sus 512 numeros entrenada con los 1368 veredictos guardados y validada por tomas enteras: solo 80 % de acuerdo en sirve / no sirve (se le escapan 99 de 288 cuadros malos y tiraria 175 buenos); dejandole solo lo que tiene claro decide el 70 % con 88 % de acuerdo y se le escapan 41 malos. Momentos clave: pastel y primer baile bien, votos / brindis / lagrimas casi nada. Qwen contra si mismo repite el 96-97 %. No se cambia. scratch clip_prueba/probar_clip.py (guarda los embeddings en .npz).",
+   "RENDER QUE FALLA (18-nov): «NVENC nvEncOpenEncodeSessionEx ... Internal Error / Nvidia codec cannot be initialized / Cannot find appropriate codec» en davinci_resolve.log (AppData/Roaming/Blackmagic Design/DaVinci Resolve/Support/logs). REPRODUCIDO: en una sesion de DaVinci, tras renderizar UNA vez con un codificador del procesador (mov H265), H265_NVIDIA y H264_NVIDIA ya no abren con ningun ajuste; cerrar y abrir DaVinci lo arregla. NUNCA llamar SetCurrentRenderFormatAndCodec con un codec de procesador. SetRenderSettings({'VideoQuality': n}) lo rechaza (False). renderizar.py: reintenta, y si sigue, _reiniciar_davinci (SaveProject + Quit + esperar) y renderiza otra vez: probado de verdad (los 4 videos del XV salieron tras el reinicio automatico). El 15 min rindio en ~2 min 47 s (11 s por minuto de video). La cola de render NO siempre sobrevive al reinicio: motor.renderizar_editado la vuelve a poner. Cada video se termina (audio, medidas, oido) en un hilo en cuanto sale del render.",
+   "PROXIES ACOSTADOS (18-nov, boda): la via toda en la tarjeta (-hwaccel_output_format cuda + scale_cuda) NO gira: los videos de celular en vertical (3840x2160 con rotation -90) salian de 960x540 sin rotacion y en DaVinci se veian de lado (18 de 44). hacer_proxy: si el original va girado no usa esa via; un proxy ya hecho y acostado se rehace (_girado) y se vuelve a enlazar con Unlink + Link (_REHECHOS: con la misma ruta DaVinci se queda con el viejo).",
+   "PROXIES (18-nov):eran 670 s para 52 clips con el programa en 97 %: se rehacian tras renombrar (la ruta va en el nombre del proxy) y ffmpeg leia el 4K con el procesador. editable.seguir_renombrado renombra el proxy con su video; hacer_proxy prueba primero todo en la tarjeta (-hwaccel cuda + scale_cuda + h264_nvenc: 12x el tiempo real, medido en 60 s de un 4K), luego -hwaccel auto (7x) y al final como antes (4x). PARALELO 4.",
+   "PERSONAS CON IA PROPIA (18-nov, la persona: «si no lo analizara DaVinci fuera más rápido, o sea con otra IA»): analisis/caras.py = YuNet (detecta, MIT) + SFace (huella de 128, Apache 2.0) de OpenCV Zoo en recursos/modelos, corridos con onnxruntime + numpy + Pillow (SIN OpenCV, que no va en el instalador). am._caras lo lanza en un hilo junto al oido; caras.guardar_personas deja el resultado en el personas.json de escenas_ia (mismo formato {nombre|tamaño: ['Persona 1', ...]}) y DaVinci ya no tiene pendientes. MEDIDO en la XV 8-nov: 448 archivos en 222 s (8 hilos); la festejada = Persona 1 en 101 archivos, mirada en una hoja de caras: es ella con y sin maquillaje, corona y lentes; la 2 es la mama. Contra DaVinci (186 archivos con dato de los dos): de acuerdo 80 % en fotos y 92 % en videos; la IA propia ve caras en mas fotos. Flojo: con lentes oscuros u ojos cerrados parte de sus fotos cae en otros grupos (cuenta de menos, no se equivoca de persona). Validado contra cv2.FaceDetectorYN / FaceRecognizerSF (mismas cajas; scratch validar_caras.py, comparar_caras.py, hoja_caras.py). TRAILER_CARAS=0 lo apaga. Las voces (transcripcion) siguen siendo de DaVinci.",
+   "RENOMBRAR Y CLAVES (18-nov): motor.renombrar_material cambiaba el nombre y lo guardado por «nombre|tamaño» fuera del cache del analisis (personas, voces, ruido, volumen, estabilizador, caras) quedaba huerfano: DaVinci volvia a reconocer todo. motor.migrar_claves pasa esas claves en todos los .json de datos/analisis y en .trailer. El instalado y el codigo tienen datos APARTE (clasificacion distinta): el mismo material puede renombrarse otra vez (182 archivos MAQUILLAJE -> CEREMONIA).",
+   "ARMADO MEDIDO (18-nov, XV 8-nov, 1 min + 15 min, sin render, analisis y personas ya hechos; scratch medir_armado.py arma el evento «PRUEBA TIEMPOS» sin tocar el real ni el estado y saca los segundos entre mensajes): 328 s, de ellos 235 en ESTABILIZAR (141 planos): casi todo era LEER el tramo de cada plano con ffmpeg en el procesador (aplicar en Fusion son 4 s en total). Ahora estabilizar.leer usa -hwaccel auto (0,94 -> 0,61 s por plano, mismo resultado en 40 de 40; si falla 3 veces vuelve al procesador), ESTAB_PARALELO 8 y lo medido se guarda en datos/analisis/estabilizar.json (clave archivo|tamaño|ini|dur): 186 s la primera vez y 91 s al volver a armar. Lo que queda: texto detras de la persona 16 s por version (aunque luego no lo ponga), media pool 10-16 s.",
+   "RENDER MEDIDO (18-nov): 60 s de video en 24-27 s; el proyecto YA usa mov + H265_NVIDIA (9,6 Mb/s, 71 MB por min; GetCurrentRenderFormatAndCodec da codec '' hasta que se fija uno). La GPU va al 36 % de media: el limite es el procesado de DaVinci, no el codificador (H265 del procesador tarda lo mismo y pesa 274 MB por min). OJO: SetCurrentRenderFormatAndCodec cambia el ajuste del usuario: dejarlo en H265_NVIDIA. Con la memoria de video casi llena (13 de 16 GB, DxO PureRAW abierto) el render con H265_NVIDIA falla al 1-6 % en 1 s.",
    "estimar_segundos (boda 7-nov) por plantilla: armado 1min 45 s, 3min 50 s, 15min 140 s, 30min 260 s, vertical +40 s; render ~0,55 x duracion + 70 s (incluye el .drp editable); proxies gb x 8 s.",
    "DaVinci colgado en la portada «Cargando proyectos» (17-nov, 9 min, 1 nucleo ocupado, la API no conecta): cerrarlo y abrirlo de nuevo lo arreglo (conecto en 24 s). motor._bloqueos(False) devuelve ['Resolve'] en ese caso.",
    "instalar_dctl copiaba tambien .cf/desktop.ini (icono de carpeta) y fallaba con Permission denied: ya los salta.",
-   "PROXIES: editable.proxies_y_cache hacia proxy de TODOS los videos del media pool (129, mas de 20 min); (17-nov) solo de los que estan en alguna linea de evento (o ya tienen proxy). Personas por carpeta, final: 313 archivos en 21 min (188 fotos en 34 s; la carpeta de 38 videos largos, 14 min)."
+   "PROXIES: editable.proxies_y_cache hacia proxy de TODOS los videos del media pool (129, mas de 20 min); (17-nov) solo de los que estan en alguna linea de evento (o ya tienen proxy). Personas por carpeta, final: 313 archivos en 21 min (188 fotos en 34 s; la carpeta de 38 videos largos, 14 min).",
+   "IA DE VISTA, NO SIRVIO (19-nov, boda, 96 cuadros nuevos, scratch probar_mosaico.py / medir_iguales.py): 4 cuadros en UNA imagen 2x2 con una sola pregunta: 0,83 -> 0,33 s por cuadro PERO solo marco 10 malos de 37 (acuerdo sirve/no 68 % contra 92 % de volver a preguntar uno por uno): deja pasar techo/sin cara. Saltar cuadros casi iguales (miniatura 32x32, diferencia < 10): solo el 3 % de los pares en tomas de celular en mano y la IA les daba otro veredicto 1 de cada 4: no ahorra.",
+   "ESTABILIZADOR (19-nov, 14 tomas mas movidas de la boda, scratch probar_estab.py, jueces independientes DIS y LK): medir siguiendo puntos (OpenCV LK + RANSAC, estabilizar._puntos) quita 44 %/94 % del temblor contra 40 %/33 % de las tejas por fase y tarda 5,1 s contra 6,6 s: adoptado (fase de respaldo en los pares sin puntos). NO SIRVIO: mas zoom (1,15) y suavizado tipo gimbal de 2 s (mismo temblor, mas recorte); flujo denso DIS como medidor (8,6 s, igual que LK). Los videos del iPhone no traen giroscopio: Gyroflow no aplica."
   ]
  },
  {

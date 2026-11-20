@@ -43,6 +43,20 @@ def carpeta():
     return os.path.join(rutas.BASE, "RECORTES")
 
 
+def _es_vertical(it):
+    """¿El clip es un video grabado en vertical? (nombre renombrado «VIDEO VERTICAL ...» o resolucion alto > ancho)"""
+    try:
+        m = it.GetMediaPoolItem()
+        if m is None:
+            return False
+        if "VERTICAL" in (m.GetName() or "").upper():
+            return True
+        w, h = [int(x) for x in (m.GetClipProperty("Resolution") or "0x0").lower().split("x")[:2]]
+        return h > w > 0
+    except Exception:
+        return False
+
+
 def _es_material(it):
     try:
         m = it.GetMediaPoolItem()
@@ -130,7 +144,8 @@ def tapado(con_texto, sin_texto, persona, dur_s):
 
 
 MIN_TAPADO = 0.10                            # (17-nov) con casi todo tapado el nombre no se leia: asi no se pone
-MAX_TAPADO = float(os.environ.get("TRAILER_TEXTO_DETRAS_MAX", 0.45))     # visto con el 57 %: «Adriana Raquel» no se leia
+# visto con el 57 %: «Adriana Raquel» no se leia; (18-nov, boda) «Cindy & Dereck» con ~40 % tampoco: 30 %
+MAX_TAPADO = float(os.environ.get("TRAILER_TEXTO_DETRAS_MAX", 0.30))
 
 
 def aplicar(resolve, project, tl, mp, carpeta_mp, log=print):
@@ -148,8 +163,19 @@ def aplicar(resolve, project, tl, mp, carpeta_mp, log=print):
         return 0
     hechos = 0
     limpio = "".join(c if c.isalnum() else "_" for c in tl.GetName())[:60]
+    try:
+        horizontal = int(tl.GetSetting("timelineResolutionWidth") or 16) >= int(tl.GetSetting("timelineResolutionHeight") or 9)
+    except Exception:
+        horizontal = True
     for k, (a, b) in enumerate(sorted(set(titulos))):
         medio = (a + b) // 2
+        # (18-nov, boda) en el horizontal una toma VERTICAL va entera al centro con fondo desenfocado: el recorte agarra
+        # tambien las siluetas borrosas de los lados y tapa las letras a trozos. Ahi el titulo queda normal.
+        bajo = [it for v in range(1, n_v + 1) for it in tl.GetItemListInTrack("video", v) or []
+                if it.GetStart() <= medio < it.GetEnd() and _es_material(it)]
+        if horizontal and any(_es_vertical(it) for it in bajo):
+            log("  texto detrás: debajo hay una toma vertical con fondo desenfocado; el título queda normal.")
+            continue
         apagadas = []
         pista_p = next((t for t in range(1, n_v + 1)
                         if (tl.GetTrackName("video", t) or "").strip().upper() == PISTA), None)

@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 import rutas
 
 ALTO_PROXY = 540
-PARALELO = 3
+PARALELO = 4                 # (18-nov) con la tarjeta leyendo y comprimiendo, 4 a la vez
 EXT_VIDEO = (".mp4", ".mov", ".mxf", ".mts", ".m2ts", ".avi", ".mkv", ".m4v")
 
 
@@ -63,11 +63,58 @@ def ruta_proxy(original):
     return os.path.join(carpeta_proxies(), "%s_%s_proxy.mov" % (base, h))
 
 
+def seguir_renombrado(hechos):
+    """(18-nov) Al renombrar un video, su proxy (que lleva la ruta en el nombre) quedaba huerfano y se volvia a hacer
+    entero: 52 proxies, 11 min, con el programa parado en 97 %. Ahora el proxy se renombra con el. Devuelve cuantos."""
+    n = 0
+    for a, b in hechos:
+        try:
+            tam = os.path.getsize(b)
+            h = hashlib.sha1(("%s|%d" % (os.path.normcase(os.path.abspath(a)), tam)).encode("utf-8")).hexdigest()[:12]
+            viejo = os.path.join(carpeta_proxies(), "%s_%s_proxy.mov" % (os.path.splitext(os.path.basename(a))[0][:60], h))
+            nuevo = ruta_proxy(b)
+            if os.path.exists(viejo) and not os.path.exists(nuevo):
+                os.replace(viejo, nuevo)
+                n += 1
+        except OSError:
+            pass
+    return n
+
+
+_REHECHOS = set()                   # proxies rehechos en esta sesion (hay que volver a enlazarlos aunque la ruta sea igual)
+
+
+def _girado(ruta):
+    """True si el video lleva rotacion de 90/270 (celular en vertical: 3840x2160 con rotation -90)."""
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                            "stream=width,height:stream_side_data=rotation:stream_tags=rotate", "-of", "json", ruta],
+                           capture_output=True, text=True, timeout=60, creationflags=rutas.SIN_VENTANA)
+        import json
+        s = (json.loads(r.stdout).get("streams") or [{}])[0]
+        rot = [d.get("rotation") for d in s.get("side_data_list") or [] if "rotation" in d]
+        rot = rot[0] if rot else (s.get("tags") or {}).get("rotate", 0)
+        return abs(int(float(rot or 0))) % 180 == 90, s.get("width") or 0, s.get("height") or 0
+    except Exception:
+        return False, 0, 0
+
+
 def hacer_proxy(original, log=print, codificador=None):
     """Hace el proxy (si no esta hecho). Devuelve su ruta o None."""
     destino = ruta_proxy(original)
+    girado, _, _ = _girado(original)
     if os.path.exists(destino) and os.path.getsize(destino) > 0:
-        return destino
+        # (18-nov) los proxies hechos todo en la tarjeta de un video vertical de celular salian ACOSTADOS (960x540 sin
+        # rotacion: con -hwaccel_output_format cuda ffmpeg no gira) y en DaVinci se veia la toma de lado
+        if girado and _girado(destino)[1] > _girado(destino)[2] and not _girado(destino)[0]:
+            log("Proxy acostado de %s: lo rehago derecho." % os.path.basename(original))
+            try:
+                os.remove(destino)
+            except OSError:
+                return destino
+            _REHECHOS.add(destino)
+        else:
+            return destino
     os.makedirs(os.path.dirname(destino), exist_ok=True)
     c, extra = codificador or _codificador()
     tmp = destino + ".tmp.mov"
@@ -75,6 +122,22 @@ def hacer_proxy(original, log=print, codificador=None):
              "-vf", "scale=-2:%d" % ALTO_PROXY, "-c:v", c] + extra + ["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k",
                                                                        "-movflags", "+faststart", tmp]
     try:
+        # (18-nov, la persona: «necesito procesos más rápidos... bajar más los tiempos») Leer el 4K con el procesador
+        # era lo lento (4 veces el tiempo real). Con la tarjeta NVIDIA todo el camino (leer, achicar y comprimir) va a
+        # 12 veces; leyendo con la tarjeta y achicando con el procesador, a 7. Si no puede, sigue el camino de antes.
+        rapidas = []
+        if c == "h264_nvenc" and not girado:            # girado: la via toda en la tarjeta no gira (salia acostado)
+            rapidas.append(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-hwaccel", "cuda",
+                            "-hwaccel_output_format", "cuda", "-i", original, "-map", "0:v:0", "-map", "0:a?",
+                            "-vf", "scale_cuda=-2:%d:format=nv12" % ALTO_PROXY, "-c:v", c] + extra +
+                           ["-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", tmp])
+        if c != "libx264":
+            rapidas.append(orden[:4] + ["-hwaccel", "auto"] + orden[4:])
+        for rapida in rapidas:
+            r = subprocess.run(rapida, capture_output=True, text=True, timeout=7200, creationflags=rutas.SIN_VENTANA)
+            if r.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 0:
+                os.replace(tmp, destino)
+                return destino
         r = subprocess.run(orden, capture_output=True, text=True, timeout=7200, creationflags=rutas.SIN_VENTANA)
         if r.returncode != 0 and c != "libx264":         # la GPU no pudo (formato raro): con el procesador
             orden[orden.index(c)] = "libx264"
@@ -143,7 +206,13 @@ def proxies_y_cache(project, log=print):
                 continue
             for c in clips:
                 try:
-                    if (c.GetClipProperty("Proxy Media Path") or "") != p:
+                    if p in _REHECHOS:                  # mismo archivo, rehecho: DaVinci tiene el viejo en memoria
+                        try:
+                            c.UnlinkProxyMedia()
+                        except Exception:
+                            pass
+                        c.LinkProxyMedia(p)
+                    elif (c.GetClipProperty("Proxy Media Path") or "") != p:
                         c.LinkProxyMedia(p)
                     n += 1
                 except Exception:
@@ -221,10 +290,176 @@ def _borrar_proyecto(pm, nombre):
     p = pm.LoadProject(nombre)
     if p is not None:
         pm.CloseProject(p)
-    return bool(pm.DeleteProject(nombre)) or nombre not in (pm.GetProjectListInCurrentFolder() or [])
+    for _ in range(4):                  # (18-nov, 2a vuelta de las plantillas) recien cerrado, DaVinci tarda en soltarlo
+        if pm.DeleteProject(nombre) or nombre not in (pm.GetProjectListInCurrentFolder() or []):
+            return True
+        time.sleep(1.5)
+    return False
 
 
-def proyecto_por_video(resolve, evento, lineas, log=print):
+LINEA_TIPOS = ("timeline", "compound", "línea de tiempo", "linea de tiempo", "clip compuesto", "compuesto")
+
+
+def _es_linea(clip, lineas):
+    """¿Es una linea (o un clip compuesto) del media pool? (18-nov) Con DaVinci en español el tipo sale «Línea de
+    tiempo», no «Timeline»: se miraba solo en ingles y las lineas se borraban como clips sobrantes. Se mira el tipo en
+    los dos idiomas Y el nombre de las lineas que quedan."""
+    try:
+        tipo = (clip.GetClipProperty("Type") or "").strip().lower()
+        return tipo in LINEA_TIPOS or (clip.GetName() or "") in lineas
+    except Exception:
+        return True                     # en la duda, no se borra
+
+
+def _recortar_base(pm, tmp, carpeta, lineas, log):
+    """Una copia del proyecto con SOLO las lineas del evento y sus clips, exportada a otro .drp: cada plantilla por
+    video se importa de esta (mucho mas chica) en vez del proyecto entero. Devuelve su ruta, o None."""
+    import vigia_davinci
+    nombre = "%s - BASE" % carpeta
+    salida = tmp.replace(".drp", "_evento.drp")
+    t0 = time.time()
+    try:
+        with vigia_davinci.vigilar("copia del evento", tope=180):
+            _borrar_proyecto(pm, nombre)
+            if not pm.ImportProject(tmp, nombre):
+                return None
+            p = pm.LoadProject(nombre)
+            if p is None:
+                return None
+            mp = p.GetMediaPool()
+            quedan, otras = [], []
+            for i in range(1, p.GetTimelineCount() + 1):
+                t = p.GetTimelineByIndex(i)
+                (quedan if t.GetName() in lineas else otras).append(t)
+            if otras:
+                mp.DeleteTimelines(otras)
+            usados = set()
+            for t in quedan:
+                usados |= _usados(t)
+            sobran = [c for c in _clips(mp.GetRootFolder()) if c.GetUniqueId() not in usados
+                      and not _es_linea(c, [t.GetName() for t in quedan])]
+            for k in range(0, len(sobran), 200):
+                mp.DeleteClips(sobran[k:k + 200])
+            pm.SaveProject()
+            ok = pm.ExportProject(nombre, salida, True)
+            pm.CloseProject(p)
+            _borrar_proyecto(pm, nombre)
+        if ok:
+            log("Copia solo con este evento: %d lineas, %d clips fuera, %.1f MB en %.0f s." % (
+                len(quedan), len(sobran), os.path.getsize(salida) / 1e6, time.time() - t0))
+            return salida
+    except Exception as ex:
+        log("Aviso: no se pudo hacer la copia chica del evento (%s): uso el proyecto entero." % ex)
+    return None
+
+
+def proyecto_por_video(resolve, evento, lineas, log=print, desde=None):
+    """desde: (18-nov) en un reintento tras un cuelgue, las plantillas ya hechas desde ese momento no se rehacen."""
+    if desde:
+        destino0 = rutas.plantillas_evento(evento)
+        hechas = [l for l in lineas if os.path.exists(os.path.join(destino0, rutas.nombre_video(l) + ".drp"))
+                  and os.path.getmtime(os.path.join(destino0, rutas.nombre_video(l) + ".drp")) >= desde]
+        if hechas:
+            log("Ya hechas en el intento anterior: %s." % ", ".join(rutas.nombre_video(l) for l in hechas))
+        lineas = [l for l in lineas if l not in hechas]
+        if not lineas:
+            return [os.path.join(destino0, rutas.nombre_video(l) + ".drp") for l in hechas]
+    hechos = []
+    try:
+        hechos, lineas = _por_drt(resolve, evento, lineas, log)
+    except Exception as ex:
+        log("Aviso: plantillas por el camino rápido: %s; sigo por el de siempre." % ex)
+    return hechos + (_proyecto_por_video(resolve, evento, lineas, log) if lineas else [])
+
+
+def _por_drt(resolve, evento, lineas, log=print):
+    """(18-nov, MEDIDO en la boda) El camino de siempre importaba el proyecto ENTERO (85 MB de project.xml) por cada
+    video y luego le borraba casi todo: ~70 s por plantilla y un .drp de 41 MB. Aqui: la linea se exporta a .drt (0,3 s),
+    se crea un proyecto vacio con los mismos ajustes, se importa la linea (1,7 s) y se exporta el .drp: ~6 s y 0,4 MB.
+    Comparado con la linea original: las 21 pistas, clip por clip, y los marcadores, iguales; los cuadros (titulos,
+    color, brillos), iguales. Devuelve ([.drp hechos], [lineas que fallaron: van por el camino de siempre])."""
+    import vigia_davinci
+    pm = resolve.GetProjectManager()
+    actual = pm.GetCurrentProject()
+    if actual is None or "untitled" in (actual.GetName() or "").lower():
+        return [], lineas
+    nombre_p = actual.GetName()
+    destino = rutas.plantillas_evento(evento)
+    os.makedirs(destino, exist_ok=True)
+    carpeta = rutas.limpiar_nombre(evento)
+    tmp = tempfile.mkdtemp(prefix="trailer_drt_")
+    ajustes = actual.GetSetting() or {}
+    drts = {}
+    for i in range(1, actual.GetTimelineCount() + 1):
+        t = actual.GetTimelineByIndex(i)
+        if t.GetName() in lineas and t.GetName() not in drts:
+            ruta = os.path.join(tmp, "%02d.drt" % len(drts))
+            if t.Export(ruta, resolve.EXPORT_DRT) and os.path.exists(ruta):
+                drts[t.GetName()] = ruta
+    pm.SaveProject()
+    hechos, fallan = [], [l for l in lineas if l not in drts]
+    try:
+        pm.GotoRootFolder()
+        if carpeta not in (pm.GetFolderListInCurrentFolder() or []):
+            pm.CreateFolder(carpeta)
+        pm.OpenFolder(carpeta)
+        for linea in [l for l in lineas if l in drts]:
+            video = rutas.nombre_video(linea)
+            nombre = "%s - %s" % (carpeta, video)
+            t0 = time.time()
+            try:
+                with vigia_davinci.vigilar("plantilla de %s" % video, tope=120):
+                    for viejo in [n for n in pm.GetProjectListInCurrentFolder() or [] if n.startswith(nombre + " (")]:
+                        _borrar_proyecto(pm, viejo)
+                    if not _borrar_proyecto(pm, nombre):
+                        nombre = "%s (%s)" % (nombre, time.strftime("%H%M%S"))
+                    p = pm.CreateProject(nombre)
+                    if p is None:
+                        fallan.append(linea)
+                        continue
+                    for k, v in ajustes.items():          # mismos ajustes (resolucion, cuadros, color...)
+                        try:
+                            if v not in (None, "") and p.GetSetting(k) != v:
+                                p.SetSetting(k, v)
+                        except Exception:
+                            pass
+                    mp = p.GetMediaPool()
+                    nt = mp.ImportTimelineFromFile(drts[linea], {"timelineName": linea, "importSourceClips": True})
+                    if nt is None:
+                        pm.CloseProject(p)
+                        _borrar_proyecto(pm, nombre)
+                        fallan.append(linea)
+                        continue
+                    p.SetCurrentTimeline(nt)
+                    if nt.GetName() != linea:         # (19-nov) DaVinci le pone el nombre del .drt («00»)
+                        nt.SetName(linea)
+                    try:
+                        proxies_y_cache(p, lambda m: None)     # los proxies ya hechos y la cache de render
+                    except Exception:
+                        pass
+                    pm.SaveProject()
+                    drp = os.path.join(destino, video + ".drp")
+                    if os.path.exists(drp):
+                        os.remove(drp)
+                    if pm.ExportProject(nombre, drp, True):
+                        hechos.append(drp)
+                        log("Plantilla de %s: %s en %.0f s (%.1f MB)." % (video, os.path.basename(drp), time.time() - t0,
+                                                                       os.path.getsize(drp) / 1e6))
+                    else:
+                        fallan.append(linea)
+                    pm.CloseProject(p)
+            except Exception as ex:
+                log("Aviso: la plantilla rápida de %s falló (%s): va por el camino de siempre." % (video, ex))
+                fallan.append(linea)
+    finally:
+        pm.GotoRootFolder()
+        pm.LoadProject(nombre_p)
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
+    return hechos, fallan
+
+
+def _proyecto_por_video(resolve, evento, lineas, log=print):
     """Un proyecto de DaVinci por video, con SOLO esa linea y los clips que usa, exportado como .drp en
     EVENTO TERMINADO/PLANTILLAS DE LOS VIDEOS. lineas: [nombres de las lineas del evento]. Devuelve los .drp hechos."""
     pm = resolve.GetProjectManager()
@@ -234,6 +469,16 @@ def proyecto_por_video(resolve, evento, lineas, log=print):
     nombre_p = actual.GetName()
     if "untitled" in (nombre_p or "").lower():          # guardar «Untitled Project» cuelga la API
         return []
+    try:                                                # (18-nov) en otra base DaVinci se colgo al crear la carpeta
+        import motor
+        base = (pm.GetCurrentDatabase() or {}).get("DbName")
+        bases = [d.get("DbName") for d in (pm.GetDatabaseList() or [])]
+        if base and base != motor.BASE_DATOS and motor.BASE_DATOS in bases:   # (sin EVENTOS, la que haya vale)
+            log("Aviso: DaVinci esta en la base «%s», no en «%s»: no hago los proyectos por video."
+                % (base, motor.BASE_DATOS))
+            return []
+    except Exception:
+        pass
     pm.SaveProject()
     destino = rutas.plantillas_evento(evento)
     os.makedirs(destino, exist_ok=True)
@@ -248,19 +493,45 @@ def proyecto_por_video(resolve, evento, lineas, log=print):
         if carpeta not in (pm.GetFolderListInCurrentFolder() or []):
             pm.CreateFolder(carpeta)
         pm.OpenFolder(carpeta)
+        # (18-nov, probado) la copia chica NO sirvio: pesaba lo mismo (42,6 MB; lo pesado es project.xml, no los clips)
+        # y las lineas se perdian por el camino. Apagada hasta revisar el filtro de tipo de clip.
+        if False and len(lineas) >= 3:
+            chico = _recortar_base(pm, tmp, carpeta, lineas, log)
+            if chico:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+                tmp = chico
         for linea in lineas:
             video = rutas.nombre_video(linea)
             nombre = "%s - %s" % (carpeta, video)
+            log("Haciendo la plantilla de %s..." % video)      # (18-nov) si DaVinci se cuelga, se ve en cual
+            import vigia_davinci
+            t_uno = time.time()
+            pasos, t_paso = [], [time.time()]
+
+            def marca(que):                      # (18-nov) cada plantilla tardaba 57 s: cuanto se lleva cada paso
+                pasos.append("%s %.0f" % (que, time.time() - t_paso[0]))
+                t_paso[0] = time.time()
             try:
+              with vigia_davinci.vigilar("plantilla de %s" % video, tope=180):   # una tarda ~1 min; 3 min = trabada
+                for viejo in [n for n in pm.GetProjectListInCurrentFolder() or [] if n.startswith(nombre + " (")]:
+                    _borrar_proyecto(pm, viejo)          # las que se hicieron con otro nombre la vez anterior
                 if not _borrar_proyecto(pm, nombre):
-                    log("Aviso: no se pudo reemplazar el proyecto de %s (esta abierto en DaVinci)." % video)
-                    continue
+                    # (18-nov) antes se saltaba y faltaba el .drp: se hace con otro nombre dentro de DaVinci (el
+                    # archivo .drp se llama igual) y el viejo se borra la proxima vez
+                    nombre = "%s (%s)" % (nombre, time.strftime("%H%M%S"))
+                    log("Aviso: DaVinci no soltó el proyecto viejo de %s: lo hago como «%s»." % (video, nombre))
+                marca("borrar")
                 if not pm.ImportProject(tmp, nombre):
                     log("Aviso: no se pudo crear el proyecto de %s." % video)
                     continue
+                marca("importar")
                 p = pm.LoadProject(nombre)
                 if p is None:
                     continue
+                marca("cargar")
                 mp = p.GetMediaPool()
                 queda, otras = None, []
                 for i in range(1, p.GetTimelineCount() + 1):
@@ -278,19 +549,24 @@ def proyecto_por_video(resolve, evento, lineas, log=print):
                 time.sleep(0.5)
                 if otras:
                     mp.DeleteTimelines(otras)
+                marca("lineas")
                 usados = _usados(queda)
                 sobran = [c for c in _clips(mp.GetRootFolder()) if c.GetUniqueId() not in usados
-                          and (c.GetClipProperty("Type") or "").lower() not in ("timeline", "compound")]
+                          and not _es_linea(c, [linea])]
                 for k in range(0, len(sobran), 200):         # por tandas: DeleteClips con miles a la vez se traba
                     mp.DeleteClips(sobran[k:k + 200])
+                marca("clips")
                 cache(p, lambda m: None)
                 pm.SaveProject()
+                marca("guardar")
                 drp = os.path.join(destino, video + ".drp")
                 if os.path.exists(drp):
                     os.remove(drp)
                 if pm.ExportProject(nombre, drp, True):
+                    marca("exportar")
                     hechos.append(drp)
-                    log("Plantilla de %s: %s (solo esa linea y sus %d clips)." % (video, os.path.basename(drp), len(usados)))
+                    log("Plantilla de %s: %s (solo esa linea y sus %d clips) en %.0f s (%s)." % (
+                        video, os.path.basename(drp), len(usados), time.time() - t_uno, ", ".join(pasos)))
                 pm.CloseProject(p)                       # que no quede cargado: si no, la proxima vez no se borra
             except Exception as ex:
                 log("Aviso: no se pudo hacer el proyecto de %s (%s)" % (video, ex))

@@ -76,7 +76,8 @@ def versiones_guardadas(est):
     h = est.get("versiones")
     h = list(motor.VERSIONES) if h is None else [x for x in motor.VERSIONES if x in h]
     v = [x for x in motor.VERSIONES if x in (est.get("versiones_vertical") or [])]
-    return (h or ([] if v else list(motor.VERSIONES))), v
+    # (1.8.2) sin versiones pero con plantillas de referencia elegidas: solo las plantillas
+    return (h or ([] if v or est.get("plantillas_ref") else list(motor.VERSIONES))), v
 
 
 def opciones_guardadas():
@@ -3774,7 +3775,8 @@ def app():
         # ============================================================== play
         def _guardar(self):
             versiones, verticales = self._versiones(), self._versiones_v()
-            if not versiones and not verticales:
+            # (1.8.2) sin versiones pero con plantillas marcadas: SOLO las plantillas (antes salian tambien las 4)
+            if not versiones and not verticales and not sorted(getattr(self.plantillas, "marcadas", None) or []):
                 versiones = list(motor.VERSIONES)
             d = motor.leer_estado()
             d.update({"tipo_evento": self.c_tipo.currentData(), "nombre_xv": self.e_nombre.text().strip(),

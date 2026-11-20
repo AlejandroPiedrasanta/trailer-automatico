@@ -3221,6 +3221,17 @@ def sanear_pool(mp, pool, items):
         except Exception:
             continue
         if cuadros > 0 and fps_c > 0 and abs(cuadros / fps_c - i["dur"]) > max(0.6, 0.03 * i["dur"]):
+            # (1.8.2, MEDIDO en el XV 8-nov: 42 clips asi por el renumerado viejo) DaVinci RELEE el archivo de esa ruta
+            # (ReplaceClip, 0,02 s): toma su largo y su codigo de tiempo de verdad y su proxy ya no se rechaza.
+            # Si no puede, como antes: el plan usa el largo menor
+            try:
+                if c.ReplaceClip(i["ruta"]):
+                    cuadros, fps_c = float(c.GetClipProperty("Frames") or 0), float(c.GetClipProperty("FPS") or 0)
+                    if cuadros > 0 and fps_c > 0 and abs(cuadros / fps_c - i["dur"]) <= max(0.6, 0.03 * i["dur"]):
+                        n += 1
+                        continue
+            except Exception:
+                pass
             corto = min(float(i["dur"]), cuadros / fps_c)
             if corto < i["dur"]:
                 i["dur_real"] = i["dur"]
@@ -3463,8 +3474,8 @@ def main():
     try:
         viejos_pool = sanear_pool(mp, pool, items)
         if viejos_pool:
-            print("Media pool: %d clips miden para DaVinci distinto que su archivo; el plan usa el largo menor "
-                  "(para que no queden huecos en negro)." % viejos_pool)
+            print("Media pool: %d clips medían para DaVinci distinto que su archivo: DaVinci los volvió a leer (los que "
+                  "no pudo, el plan los usa con el largo menor)." % viejos_pool)
     except Exception as ex:
         aviso("No se pudo revisar el largo de los clips del media pool (%s)" % ex)
     print("Media pool: %d archivos en carpetas MAQUILLAJE / IGLESIA / FIESTA con colores" % len(pool))

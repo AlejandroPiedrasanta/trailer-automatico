@@ -2173,7 +2173,7 @@ def preanalizar(log=print):
 
 
 def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", frase="", tipo_evento="xv",
-          ruido=None, igualar=True, voz=None, verticales=True, formato="horizontal"):
+          ruido=None, igualar=True, voz=None, verticales=True, formato="horizontal", solo_analisis=False):
     """Analiza el material y lo arma en las plantillas. Devuelve el reporte.
     voz: {"1min": bool, "3min": bool, "15min": bool} = en que versiones va la voz original (None = lo de siempre:
     activada en la de 15 min; en la de 30 min va siempre).
@@ -2218,6 +2218,7 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
                     log("Midiendo en segundo plano el ruido de %d videos (para la reducción de ruido)." % n_r)
             except Exception as ex:
                 log("Aviso: no se pudo adelantar la medida del ruido (%s)" % ex)
+        previo = None
         try:                                  # el plan se ve ya, antes de abrir DaVinci (y aunque DaVinci falle)
             log("== Plan previo ==")
             previo = plan_previo(analisis, log, solo=solo, tipo_evento=tipo_evento, evento=evento,
@@ -2228,6 +2229,19 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
                 return None
         except Exception as ex:
             log("Aviso: no pude calcular el plan previo (%s)" % ex)
+        if solo_analisis:
+            # (1.8.2, la persona: «solo plantillas 1, 2, 3, 4») sin versiones del programa: el analisis, los nombres y
+            # el evento quedan listos; las plantillas de referencia se arman despues (armar_plantillas_ref)
+            ev = evento or (previo or {}).get("evento")
+            if not ev:                        # sin plan: el mismo nombre que le pondria build_trailers
+                pf = (cargar_perfiles() or {}).get(tipo_evento) or {}
+                ev = "%s %s" % (pf.get("prefijo") or tipo_evento.upper(), analisis.get("fecha") or time.strftime("%Y-%m-%d"))
+            est = leer_estado()
+            est.update({"huella": analisis["huella"], "evento": ev, "armado": time.strftime("%Y-%m-%d %H:%M"),
+                        "timelines": [], "resumen_versiones": []})
+            guardar_estado(est)
+            log("Material analizado y ordenado para las plantillas (%.0f s)." % (time.time() - t0))
+            return {"evento": ev, "versiones": [], "material": resumen, "seco": False}
         log("== Conectando con DaVinci Resolve ==")
         instalar_fuentes(log)
         resolve = conectar_resolve(log)
@@ -2373,7 +2387,10 @@ def _armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, *
     def paso(pct, texto):
         if avance:
             avance(pct, texto)
-    pases = [("horizontal", op.get("solo"))] if horizontal or not vertical else []
+    # (1.8.2, la persona: «solo plantillas 1, 2, 3, 4») ni versiones horizontales ni verticales y si plantillas de
+    # referencia elegidas: solo se arman esas (antes salian tambien las 4 versiones del programa)
+    solo_ref = not horizontal and not vertical and bool(leer_estado().get("plantillas_ref"))
+    pases = [] if solo_ref else ([("horizontal", op.get("solo"))] if horizontal or not vertical else [])
     if vertical:
         pases.append(("vertical", [v for v in VERSIONES if v in vertical]))
     auto_vertical = op.pop("auto_vertical", True)
@@ -2422,6 +2439,12 @@ def _armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, *
                 if verticales:
                     log("Hay %d videos verticales: se arma tambien el VERTICAL 1 min." % len(verticales))
                     pases.append(("vertical", ["1min"]))
+        if solo_ref:                             # (1.8.2) solo plantillas: el analisis y el evento, sin versiones
+            rep = armar(log, **dict(op, solo=None, formato="horizontal", solo_analisis=True))
+            if not rep:
+                raise RuntimeError("No hay material para armar las plantillas.")
+            evento = rep.get("evento")
+            paso(20, "Armando las plantillas")
         etiquetas += armar_plantillas_ref(evento, op.get("tipo_evento", "xv"), log)      # (18-nov) las de Material
         salida = {"evento": evento, "videos": [], "carpeta": rutas.carpeta_terminado(evento) if evento else rutas.SALIDA,
                   "avisos": avisos}

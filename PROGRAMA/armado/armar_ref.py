@@ -605,18 +605,42 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
         items = list(analisis.get("items") or [])
         objetivos = g["objetivos_de_luz"](items)
         sat_evento = g["objetivo_de_saturacion"](items)
+        # (1.8.2) la MISMA revision de color que las versiones (color_guardia): cada plano medido con forma de onda y
+        # vectorscopio antes de ponerle su CDL; si quema, aplasta negros, satura o tiñe, se suaviza
+        cdls, vigilados = {}, {}
+        for x, it_, a_s, d_s in con_toma:
+            if it_.get("tipo") != "foto":
+                c0 = g["cdl_para"]({"item": it_, "tipo": it_.get("tipo"), "ini": a_s, "dur_f": d_s * 24.0},
+                                   objetivos.get(it_.get("momento"), 0.42), sat_evento)
+                if c0:
+                    cdls[id(x)] = c0
+        try:
+            import color_guardia
+            imgs = color_guardia.cuadros([(it_.get("ruta"), round(a_s + d_s / 2.0, 1)) for x, it_, a_s, d_s in con_toma
+                                          if id(x) in cdls])
+            trabajos = {id(x): (cdls[id(x)], imgs.get((it_.get("ruta"), round(a_s + d_s / 2.0, 1))))
+                        for x, it_, a_s, d_s in con_toma if id(x) in cdls}
+            for k, (c, f, _t) in color_guardia.vigilar_varios(
+                    {k: v for k, v in trabajos.items() if v[1] is not None},
+                    os.path.join(rutas.PROGRAMA, "dctl", os.path.basename(LOOK))).items():
+                cdls[k] = c
+                if f:
+                    vigilados[k] = f
+        except Exception as ex:
+            log("  plantilla: color sin medir (%s); va el calculado." % ex)
         for x, it_, a_s, d_s in con_toma:
             if it_.get("tipo") == "foto":
                 continue
             try:
                 if rd.aplicar(x, intensidad, medidas.get(os.path.normcase(it_.get("ruta") or "")), drx) is not None:
                     n_ruido += 1
-                cdl = g["cdl_para"]({"item": it_, "tipo": it_.get("tipo"), "ini": a_s, "dur_f": d_s * 24.0},
-                                    objetivos.get(it_.get("momento"), 0.42), sat_evento)
+                cdl = cdls.get(id(x))
                 if cdl and x.SetCDL(cdl):
                     n_color += 1
             except Exception:
                 pass
+        if vigilados:
+            log("  plantilla: color medido plano por plano, %d con la corrección suavizada." % len(vigilados))
     except Exception as ex:
         log("  plantilla: sin ruido ni color por toma (%s)" % ex)
     # 5) color: correccion por plano y look suave, en su grupo
@@ -626,6 +650,8 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
         pre, post = grupo.GetPreClipNodeGraph(), grupo.GetPostClipNodeGraph()
         pre.SetLUT(1, DCTL_COLOR)
         post.SetLUT(1, LOOK)
+        pre.SetNodeLabel(1, "1 BASE (TODAS LAS TOMAS)")         # (1.8.2) como las versiones: el orden de la cadena
+        post.SetNodeLabel(1, "3 LOOK CINE TEAL ORANGE (SIN QUEMAR NI SATURAR)")
         for it, _h in puestos:
             it.AssignToColorGroup(grupo)
     except Exception as ex:

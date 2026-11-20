@@ -2200,8 +2200,10 @@ def analizar(base=DEF_BASE, log=print, hilos=4):
         return {"fecha": None, "items": [], "huella": "", "clasificacion": {}, "avisos": [], "camaras": []}
     os.makedirs(rutas.ANALISIS, exist_ok=True)
     cache = _leer_cache()
-    recuperadas = _leer_fichas(cache)   # (17-nov) el analisis que viaja con el material («.trailer» en su carpeta)
-    recuperadas += _leer_incrustados(cache, lista)          # y el incrustado en cada archivo
+    recuperadas = 0
+    if not os.environ.get("TRAILER_SIN_RECUPERAR"):          # (1.8.2) las pruebas «desde cero» no lo recuperan
+        recuperadas = _leer_fichas(cache)   # (17-nov) el analisis que viaja con el material («.trailer» en su carpeta)
+        recuperadas += _leer_incrustados(cache, lista)      # y el incrustado en cada archivo
     if recuperadas:
         log("Recuperé el análisis de %d archivos (va guardado junto al material): no se vuelven a analizar."
             % recuperadas)

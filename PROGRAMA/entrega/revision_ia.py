@@ -59,6 +59,11 @@ def tramos_vistos(tl, desde_frame=None):
     desde = tl.GetStartFrame() if desde_frame is None else desde_frame
     out = []
     for v in range(1, tl.GetTrackCount("video") + 1):
+        try:                                       # (revision) una pista apagada no es lo que se ve
+            if not tl.GetIsTrackEnabled("video", v):
+                continue
+        except Exception:
+            pass
         for it in tl.GetItemListInTrack("video", v) or []:
             if not pdl._es_material(it):
                 continue
@@ -69,9 +74,11 @@ def tramos_vistos(tl, desde_frame=None):
                 inst = [x for x in ((d or {}).get("ia") or {}).get("instantes") or [] if len(x) > 2]
                 if inst:
                     fps_m = float(m.GetClipProperty("FPS") or fps) or fps
-                    lo = it.GetLeftOffset() / fps_m
+                    # (revision) GetLeftOffset: cuadros del clip o de la linea, segun el caso: se toma el rango que
+                    # cubre las dos lecturas (mas cuadros que mirar = mas prudente)
+                    los = (it.GetLeftOffset() / fps_m, it.GetLeftOffset() / fps)
                     dur = (it.GetEnd() - it.GetStart()) / fps
-                    rango = [x for x in inst if lo - 1.5 <= x[0] <= lo + 2 * dur + 1.5]
+                    rango = [x for x in inst if min(los) - 1.5 <= x[0] <= max(los) + 2 * dur + 1.5]
                     ok = bool(rango) and all(x[2] is True for x in rango)
             except Exception:
                 ok = False

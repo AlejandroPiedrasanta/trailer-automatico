@@ -103,7 +103,7 @@ def recortar(video, salida, ini_s=0.0, dur_s=None, log=print):
     return {"cuadros": n, "cobertura": round(cob / n, 3), "centro": round(cen / n, 3), "fps": fps}
 
 
-def alfas(video, tiempos, ancho=512, previos=5):
+def alfas(video, tiempos, ancho=ANCHO_IA, previos=5):
     """{t: alfa (alto x ancho, 0-1)} de la gente en esos segundos de `video`, sin escribir nada. (19-nov) Para decidir
     ANTES de recortar todo el tramo (~5 cuadros/s) si el texto detras se va a poner: RVM es recurrente, asi que cada
     punto se calienta con `previos` cuadros anteriores (con 0 el primer alfa sale flojo)."""
@@ -112,6 +112,7 @@ def alfas(video, tiempos, ancho=512, previos=5):
     k = ancho / float(max(w, h))
     wi, hi = int(round(w * k / 2.0)) * 2, int(round(h * k / 2.0)) * 2
     s, out = _sesion_ia(), {}
+    baja = np.array([0.5 if max(wi, hi) > 512 else 1.0], np.float32)     # (revision) igual que recortar()
     for t in tiempos:
         ini = max(0.0, t - previos / float(fps or 24))
         r = subprocess.run(["ffmpeg", "-v", "error", "-ss", "%.3f" % ini, "-i", video, "-frames:v", str(previos + 1),
@@ -121,7 +122,7 @@ def alfas(video, tiempos, ancho=512, previos=5):
         for i in range(len(r.stdout) // tam):
             src = np.frombuffer(r.stdout[i * tam:(i + 1) * tam], np.uint8).reshape(hi, wi, 3).transpose(2, 0, 1)[None]
             _, pha, *rec = s.run(None, {"src": src.astype(np.float32) / 255.0, "r1i": rec[0], "r2i": rec[1],
-                                        "r3i": rec[2], "r4i": rec[3], "downsample_ratio": np.array([1.0], np.float32)})
+                                        "r3i": rec[2], "r4i": rec[3], "downsample_ratio": baja})
             a = np.clip((pha[0, 0] - 0.08) / 0.84, 0.0, 1.0)
         if a is not None:
             out[t] = a

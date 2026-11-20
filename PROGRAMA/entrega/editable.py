@@ -19,6 +19,7 @@ videos en proxies y es fluida la reproducción».
 """
 import os
 import re
+import threading
 import time
 import hashlib
 import subprocess
@@ -207,8 +208,10 @@ def _retiempo(ruta, fps):
     actual = _fps(ruta)
     if not actual or abs(actual - fps) < 0.005:
         return [], ""
-    v = ("%.3f" % fps).rstrip("0").rstrip(".")
-    return ["-r", v], "setpts=N/(%s*TB)" % v
+    # (19-nov, revision) 29,97 es 30000/1001, no 2997/100: con el numero redondeado DaVinci lo seguiria rechazando
+    v = next((q for n, q in ((23.976, "24000/1001"), (29.97, "30000/1001"), (59.94, "60000/1001"), (47.952, "48000/1001"))
+              if abs(fps - n) < 0.01), None) or ("%.3f" % fps).rstrip("0").rstrip(".")
+    return ["-r", v], "setpts=N/((%s)*TB)" % v
 
 
 def _audio_proxy(proxy):
@@ -312,9 +315,21 @@ def _girado(ruta):
         return False, 0, 0
 
 
+_CANDADOS = {}
+_CANDADO_LISTA = threading.Lock()
+
+
 def hacer_proxy(original, log=print, codificador=None, start_tc=None, fps=None):
     """Hace el proxy (si no esta hecho). fps: el que DaVinci lee del clip (el proxy sale a ese). Devuelve su ruta o
-    None."""
+    None. (19-nov, revision) Un candado por proxy: los adelantados durante el render y los de despues (o los de dos
+    renders seguidos) nunca escriben el mismo .tmp.mov a la vez; el segundo espera y encuentra el proxy hecho."""
+    with _CANDADO_LISTA:
+        candado = _CANDADOS.setdefault(os.path.normcase(os.path.abspath(original)), threading.Lock())
+    with candado:
+        return _hacer_proxy(original, log, codificador, start_tc, fps)
+
+
+def _hacer_proxy(original, log=print, codificador=None, start_tc=None, fps=None):
     destino = ruta_proxy(original)
     if not os.path.exists(destino):              # (19-nov) hecho cuando el video estaba en otra carpeta: no se rehace
         destino = proxy_huerfano(original) or destino
@@ -381,9 +396,12 @@ def _sin_proxy(ruta):
     """(19-nov) Lo que NO lleva proxy: las luces del programa (XV_BRILLOS_H...) y los recortes con transparencia del
     texto detras (…_persona_0.mov). Venian tambien de OTRA instalacion (su carpeta recursos no es la de esta) y un
     proxy H.264 les quita la transparencia: editando con proxies la persona taparia el titulo con un cuadro entero."""
-    partes = {x.upper() for x in os.path.normpath(ruta).split(os.sep)}
+    # (revision) solo las carpetas DEL PROGRAMA: material en «D:\RECURSOS\XV ANA» si lleva proxy
+    partes = [x.upper() for x in os.path.normpath(ruta).split(os.sep)]
     nombre = os.path.basename(ruta).upper()
-    return bool(partes & {"RECURSOS", "RECORTES", "OVERLAYS", "_INTERNAL"}) or "_PERSONA_" in nombre or \
+    de_programa = "_INTERNAL" in partes or ("RECURSOS" in partes and "OVERLAYS" in partes) or \
+        ("TRABAJO" in partes and "RECORTES" in partes)
+    return de_programa or re.search(r"_PERSONA_\d+\.MOV$", nombre) is not None or \
         re.match(r"^(XV|BODA)_(DESTELLO|BRILLOS)_[HV]\.", nombre) is not None
 
 
@@ -420,6 +438,7 @@ def adelantar(project, log=print):
     pool); lo que hace despues es solo ffmpeg. No devuelve nada; proxies_y_cache espera."""
     if not rutas.proxies_activos() or os.environ.get("TRAILER_PROXIES_EN_RENDER") == "0":
         return
+    esperar_adelanto(log)                    # (revision) el de un render anterior (Renderizar lo editado, video a video)
     try:
         videos = _videos_para_proxy(project)
         faltan = {}
@@ -438,8 +457,12 @@ def adelantar(project, log=print):
     cod = _codificador()
     ex = ThreadPoolExecutor(PARALELO_RENDER, thread_name_prefix="proxies")
     t0 = time.time()
-    futuros = [ex.submit(hacer_proxy, o, log, cod, tc, fps) for o, (tc, fps) in faltan.items()]
-    ex.shutdown(wait=False)
+    def uno(o, tc, fps):
+        if rutas.PARAR.is_set():             # (revision) «Cancelar»: los que faltan no se empiezan
+            return None
+        return hacer_proxy(o, log, cod, tc, fps)
+    futuros = [ex.submit(uno, o, tc, fps) for o, (tc, fps) in faltan.items()]
+    ex.shutdown(wait=False, cancel_futures=False)
     _ADELANTO["trabajo"] = (futuros, t0)
     log("Proxies en segundo plano mientras se renderiza: %d videos." % len(faltan))
 

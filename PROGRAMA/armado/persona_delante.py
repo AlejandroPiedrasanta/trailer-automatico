@@ -245,6 +245,7 @@ def aplicar(resolve, project, tl, mp, carpeta_mp, log=print):
         if not r or parte is None or not (MIN_TAPADO <= parte <= MAX_TAPADO):
             log("  texto detrás: %s; el título queda normal." % (
                 "no se pudo medir" if parte is None else
+                "no se pudo recortar a la persona" if MIN_TAPADO <= parte <= MAX_TAPADO else
                 "la persona taparía el %.0f %% de las letras (solo se pone entre el %d y el %d %%)"
                 % (100 * parte, 100 * MIN_TAPADO, 100 * MAX_TAPADO)))
             try:

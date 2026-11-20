@@ -11,6 +11,7 @@ motor.py - Motor del programa "Trailer XV automatico" (sin interfaz).
 Habla con DaVinci por su API de scripting (la misma que usa el MCP de Resolve), todo en local.
 """
 import os
+import re
 import sys
 import json
 import time
@@ -381,9 +382,29 @@ def renombrar_material(analisis, log=print):
             t = "VIDEO HORIZONTAL" if i.get("horizontal", True) else "VIDEO VERTICAL"
         grupos.setdefault(t, []).append(i)
     plan = []
+    # (1.8.2, MEDIDO en la XV del 8-nov) antes se numeraba de nuevo por hora en CADA armado: al entrar material o
+    # cambiar una hora, dos archivos INTERCAMBIABAN su numero. DaVinci sigue cada clip por su ruta, asi que una linea ya
+    # armada mostraba OTRO video sin avisar (la «061» paso de una toma de 205 MB a una de 1,1 GB y salio oscura: el
+    # color era el de la otra). Ahora un archivo que ya tiene su nombre CONSERVA su numero (solo se le corrige el
+    # momento) y los nuevos siguen despues del ultimo numero de su tipo.
+    patron = re.compile(r"^(FOTO|DRON|VIDEO HORIZONTAL|VIDEO VERTICAL) (\d{3,})(?: \([^)]*\))?$", re.I)
     for t, lista in grupos.items():
         lista.sort(key=lambda i: (str(i.get("hora") or ""), i["nombre"]))
-        for k, i in enumerate(lista, 1):
+        usados, numero = set(), {}
+        for i in lista:                       # los que ya tienen nombre del programa: su numero es suyo
+            m = patron.match(os.path.splitext(os.path.basename(i["ruta"]))[0])
+            if m and m.group(1).upper() == t and int(m.group(2)) not in usados:
+                numero[id(i)] = int(m.group(2))
+                usados.add(int(m.group(2)))
+        siguiente = max(usados) + 1 if usados else 1
+        for i in lista:                       # los nuevos, por hora, despues del ultimo
+            if id(i) not in numero:
+                while siguiente in usados:
+                    siguiente += 1
+                numero[id(i)] = siguiente
+                usados.add(siguiente)
+        for i in lista:
+            k = numero[id(i)]
             mom = MOMENTO_NOMBRE.get(i.get("momento"))
             ext = os.path.splitext(i["ruta"])[1]
             nombre = "%s %03d%s%s" % (t, k, " (%s)" % mom if mom else "", ext)
@@ -1101,6 +1122,25 @@ def conectar_resolve(log, quedarse=False):
         return _conectar_resolve(log, quedarse)
 
 
+_CONEXION = {"r": None}
+
+
+def _conexion_viva():
+    """(1.8.2, la persona: «pule la rapidez de respuesta con DaVinci») La conexion de la vez anterior, si DaVinci
+    sigue contestando por ella (una llamada barata); si DaVinci se cerro o se reinicio, None y se conecta de nuevo.
+    Antes cada accion (Editar, Renderizar lo editado, el ruido, IntelliSearch) volvia a llamar a scriptapp."""
+    r = _CONEXION.get("r")
+    if r is None:
+        return None
+    try:
+        if r.GetProjectManager() is not None:
+            return r
+    except Exception:
+        pass
+    _CONEXION["r"] = None
+    return None
+
+
 def _conectar_resolve(log, quedarse=False):
     abiertos = _bloqueos(False)
     t0 = time.time()
@@ -1111,7 +1151,21 @@ def _conectar_resolve(log, quedarse=False):
         raise RuntimeError("DaVinci tiene abierto: %s. Cierralo y vuelve a intentar."
                            % ", ".join("«%s»" % t for t in abiertos))
     dvr = _dvr()
-    r = dvr.scriptapp("Resolve")
+    r = _conexion_viva()
+    if r is None:
+        r = dvr.scriptapp("Resolve")
+    if r is None and any(" - " in t for t in _titulos_resolve(True)):
+        # (1.8.2, MEDIDO el 20-nov) DaVinci YA abierto con un proyecto (ya cargo) y aun asi no contesta: antes se
+        # esperaban 75 s mas. Dos intentos mas (~8 s) y se dice que hacer.
+        for _ in range(2):
+            rutas.revisar_parada()
+            r = dvr.scriptapp("Resolve")
+            if r is not None:
+                break
+        if r is None:
+            raise RuntimeError("DaVinci está abierto pero no deja que el programa lo controle. Ciérralo y ábrelo otra "
+                               "vez; si sigue igual, en DaVinci: Preferencias > Sistema > General > Scripting externo "
+                               "= Local.")
     if r is None and rutas.abrir_resolve():
         log("Abriendo DaVinci Resolve...")
 
@@ -1215,6 +1269,7 @@ def _conectar_resolve(log, quedarse=False):
     if abiertos:
         raise RuntimeError("DaVinci sigue con %s abierto. Cierralo y vuelve a intentar."
                            % ", ".join("«%s»" % t for t in abiertos))
+    _CONEXION["r"] = r
     return r
 
 
@@ -1423,7 +1478,7 @@ def instalar_fuentes(log=print):
 
 def abrir_timeline(nombre):
     with CANDADO:
-        r = _dvr().scriptapp("Resolve")
+        r = _conexion_viva() or _dvr().scriptapp("Resolve")
         p = r.GetProjectManager().GetCurrentProject() if r else None
         if p is None:
             return False
@@ -2088,6 +2143,35 @@ def preparar_edicion(evento, log=print, solo=None):
         log("Aviso: no se pudieron preparar los proxies y las plantillas por video (%s)" % ex)
 
 
+def calentar_ia():
+    """(1.8.2) Carga ya el modelo de la IA local en la tarjeta (y el servidor rapido de Ollama) en otro hilo, mientras
+    se miden los videos: cuando el analisis llega a la IA, no espera a que el modelo se cargue."""
+    def correr():
+        try:
+            import vision_ia
+            vision_ia.en_gpu()
+        except Exception:
+            pass
+    threading.Thread(target=correr, name="calentar_ia", daemon=True).start()
+
+
+def preanalizar(log=print):
+    """(1.8.2, la persona: «aplica todo»: analizar mientras se espera) El analisis entero (medidas, IA local, oido,
+    personas) en cuanto se suelta la carpeta, mientras la persona escribe el nombre y elige las versiones. Toma el
+    mismo CANDADO que el armado: si pulsa «Empezar» antes de que termine, el armado espera y despues no repite nada
+    (todo queda guardado). Devuelve el analisis, o None si el motor estaba ocupado o no hay material."""
+    if os.environ.get("TRAILER_PREANALISIS") == "0":
+        return None
+    if not CANDADO.acquire(timeout=1):
+        return None
+    try:
+        calentar_ia()
+        esperar_copias(log)
+        return am.analizar(BASE, log=log)
+    finally:
+        CANDADO.release()
+
+
 def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", frase="", tipo_evento="xv",
           ruido=None, igualar=True, voz=None, verticales=True, formato="horizontal"):
     """Analiza el material y lo arma en las plantillas. Devuelve el reporte.
@@ -2099,6 +2183,8 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
     with CANDADO:
         t0 = time.time()
         log("== Analizando material ==")
+        if not seco:
+            calentar_ia()                     # (1.8.2) el modelo se carga mientras se mide
         esperar_copias(log)
         analisis = am.analizar(BASE, log=log)
         if not analisis.get("items"):

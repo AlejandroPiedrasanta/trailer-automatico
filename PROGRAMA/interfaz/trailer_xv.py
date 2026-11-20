@@ -607,6 +607,18 @@ def app():
                 registro.error("Armado: %s" % traceback.format_exc())     # emitia ni fin ni fallo
                 self.fallo.emit("el armado se detuvo (%s)" % (ex.__class__.__name__,))
 
+    class Preanalisis(QThread):
+        """(1.8.2) El analisis en segundo plano en cuanto se suelta la carpeta (motor.preanalizar)."""
+        linea = Signal(str)
+
+        def run(self):
+            try:
+                motor.preanalizar(lambda m: self.linea.emit(str(m)))
+            except rutas.Detenido:
+                pass
+            except Exception:
+                registro.error("Preanalisis: %s" % traceback.format_exc())
+
     class Copia(QThread):
         """Copia ordenada a 1 MATERIAL. Si es un evento nuevo, antes guarda aparte el material del anterior."""
         avance = Signal(float, str, int, int)            # fraccion (por bytes), archivo, i, n
@@ -3323,6 +3335,39 @@ def app():
                 self._sub("Falta material: %s  ·  pulsa el botón y te digo qué agregar" % ", ".join(
                     _cuantos(n, t) for t, n in m["faltan"]))
 
+        def _preanalizar(self):
+            """(1.8.2, la persona: «aplica todo») Analiza mientras la persona escribe el nombre y elige: al pulsar
+            Empezar casi todo ya esta medido y visto por la IA. Si ya hay uno andando (otra carpeta soltada), el que
+            sigue lo encadena al terminar: el analisis es por archivo y lo hecho no se repite."""
+            pre = getattr(self, "preanalisis", None)
+            if pre is not None and pre.isRunning():
+                self._preanalisis_otra = True
+                return
+            self._preanalisis_otra = False
+            self.preanalisis = Preanalisis()
+            self.preanalisis.linea.connect(self._linea_preanalisis)
+            self.preanalisis.finished.connect(self._fin_preanalisis)
+            self.preanalisis.start()
+
+        def _fin_preanalisis(self):
+            if getattr(self, "_preanalisis_otra", False) and self.trabajo is None:
+                self._preanalizar()
+            elif self.trabajo is None and self._en_espera:
+                self._ya_analizado = True
+                self._sub("Material analizado: pulsa Empezar y va directo a las plantillas.", "ok")
+
+        def _linea_preanalisis(self, m):
+            """Si ya se pulso Empezar, el avance del analisis se ve como el del trabajo; si no, en una linea discreta."""
+            if self.trabajo is not None:
+                self._linea(m)
+                return
+            registro.info("[preanalisis] " + m)
+            a = re.match(r"\s+(\d+)/(\d+)\s+(\S.*)$", m)
+            if a and self.flujo is None:
+                self._sub("Analizando mientras esperas: %s de %s" % (a.group(1), a.group(2)))
+            elif m.startswith(("La IA local", "Viendo cada toma", "El oído")) and self.flujo is None:
+                self._sub("Analizando mientras esperas: " + m.split(":")[0].split("(")[0].strip().lower())
+
         def _revisar_material_fondo(self):
             """Lo mismo, pero contando los archivos en otro hilo: recorrer 1 MATERIAL frenaba la ventana unos 60 ms
             cada vez que cambiaba la carpeta y justo al abrir."""
@@ -3399,6 +3444,47 @@ def app():
             else:
                 self._estado("1 aviso" if len(mal) == 1 else "%d avisos" % len(mal), "warn",
                              "Chequeo de arranque:\n" + detalle)
+            QTimer.singleShot(800, self._revisar_permisos)
+
+        # ---- (1.8.2, la persona: «un popup con todos los permisos... si ya tiene todos ya no sale») permisos.py
+        def _revisar_permisos(self, despues=None):
+            import permisos
+
+            def listo(res, error):
+                if error is not None or res is None:
+                    return
+                faltan = permisos.faltan(res)
+                if despues is not None:
+                    despues(faltan)
+                    return
+                if faltan and self.trabajo is None:
+                    self._pedir_permisos(faltan)
+            qt_kit.correr_en_hilo(self, permisos.revisar, listo)
+
+        def _pedir_permisos(self, faltan, mensajes=()):
+            import permisos
+            lista = "\n".join("·  %s" % p["nombre"] for p in faltan)
+            previo = ("\n\n" + "\n".join(mensajes)) if mensajes else ""
+            if self._popup("Para trabajar con total libertad el programa necesita:\n\n%s%s\n\n%s" % (
+                               lista, previo, "Lo que pide administrador va en una sola ventana de Windows."
+                               if rutas.ES_WIN else "Se abre Privacidad: activa «Tráiler automático» en cada lista."),
+                           ("Dar permisos", "Ahora no"), "aviso", titulo="Permisos",
+                           # (20-nov) Enter/Esc = «Ahora no»: lo que pide administrador solo con un CLIC a proposito
+                           # (en una prueba un Enter suelto lo acepto y Windows lo dio sin preguntar)
+                           primario=1) != 0:
+                return
+            self._avisar("Dando los permisos…")
+
+            def hecho(msj, error):
+                msj = list(msj or []) + ([str(error)] if error is not None else [])
+
+                def revisado(siguen):
+                    if siguen:
+                        self._pedir_permisos(siguen, msj)
+                    else:
+                        self._avisar("Listo: el programa tiene todos los permisos.", "ok")
+                self._revisar_permisos(revisado)
+            qt_kit.correr_en_hilo(self, lambda: permisos.dar(faltan), hecho)
 
         def _ver_davinci(self):
             if self.trabajo is not None:
@@ -3549,6 +3635,8 @@ def app():
             self._chips_editable(False)                  # (19-nov) material nuevo esperando: editar el de antes, no
             self._falta_datos = self._tipo_copia is None and (self._evento_nuevo or not self.e_nombre.text().strip())
             self._revisar_material()
+            if self.material["ok"] and not getattr(self, "_ya_analizado", False):
+                self._preanalizar()
             self.l_copia.setText(resumen.split("\n")[0].split("  ·  ")[0])      # corto: cabe en una linea junto al boton
             if not self.material["ok"]:
                 self._fin_flujo(resumen.split("\n")[0] + "  ·  todavía falta: " + ", ".join(
@@ -4594,6 +4682,12 @@ def app():
                 self._guardar()
             except Exception:
                 pass
+            pre = getattr(self, "preanalisis", None)
+            if pre is not None and pre.isRunning():          # (1.8.2) el analisis previo se corta (lo hecho ya
+                rutas.PARAR.set()                            # esta guardado por archivo) y se espera un poco
+                if not pre.wait(5000):
+                    registro.info("Cierre: el analisis previo no se detuvo en 5 s; salgo igual.")
+                    os._exit(0)
             if self.actualizacion and not self._instalando:      # la version nueva ya bajada se instala al cerrar
                 self._instalando = True
                 self._lanzar_instalacion(reabrir=False)

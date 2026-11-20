@@ -144,8 +144,27 @@ def medidas(img):
 
 
 # ------------------------------------------------------------------ cuadros
+def _guardado(ruta, t):
+    """(1.8.2) El cuadro que la IA ya saco al analizar (vision_ia.cuadro_guardado), achicado: sin abrir el video."""
+    try:
+        import numpy as np
+        import vision_ia
+        from PIL import Image
+        p = vision_ia.cuadro_guardado(ruta, t)
+        if not p:
+            return None
+        im = Image.open(p).convert("RGB")
+        im = im.resize((ANCHO, max(2, int(round(ANCHO * im.height / float(im.width))))), Image.BILINEAR)
+        return np.asarray(im, np.float32) / 255.0
+    except Exception:
+        return None
+
+
 def cuadro(ruta, t):
     import numpy as np
+    img = _guardado(ruta, t)
+    if img is not None:
+        return img
     try:
         r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-ss", "%.3f" % max(0.0, t), "-i", ruta,
                             "-frames:v", "1", "-vf", "scale=%d:-2:flags=area,format=rgb24" % ANCHO, "-f", "rawvideo",

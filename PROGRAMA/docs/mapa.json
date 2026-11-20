@@ -615,7 +615,8 @@
    "(1.5.7) _sincronizar_por_audio: camara con reloj dudoso puesta en hora por el nivel del audio contra las de reloj bueno; simultaneas (audio=True si el sonido lo confirma). _camara usa nombre_original (renombrados empiezan con VIDEO).",
    "(1.5.7) vision_ia VERSION 2: 'equipo' (camara/flash/celular en primer plano) -> util false; en_gpu(): con DaVinci llenando la GPU no hay instantes y la revision mira 30 cuadros; NUM_CTX 8192.",
    "(16-nov) Revision cuadro por cuadro (INSTANTES_V 4): TODAS las tomas cada 3 s; apunta/de_cabeza/cara/sin_cabeza con respuesta cerrada. Regla de la persona: si sale gente se le ve la cara; techo, de cabeza, sin cabeza, sin cara -> fuera ese tramo; toma entera si es la mitad de una corta o el 80% de una larga.",
-   "(1.8.0, 20-nov) IA local a prueba de caidas: cortacircuitos en vision_ia._pedir (4 fallos seguidos de /api/chat = 90 s sin preguntar, IACaida); un cuadro sin respuesta queda [t, [], None, 'fallo'] y si fallan mas de 1 de 10 (FALLOS_TOPE) instantes() devuelve None: la toma NO se guarda como revisada. describir() devuelve False si Ollama no contesto (no gasta intento) y None si contesto algo roto. caras._imagenes lanza si no salio ningun cuadro (antes quedaba 'nadie sale'). oido: solo 'sin audio' es para siempre; otro error se reintenta una vez."
+   "(1.8.0, 20-nov) IA local a prueba de caidas: cortacircuitos en vision_ia._pedir (4 fallos seguidos de /api/chat = 90 s sin preguntar, IACaida); un cuadro sin respuesta queda [t, [], None, 'fallo'] y si fallan mas de 1 de 10 (FALLOS_TOPE) instantes() devuelve None: la toma NO se guarda como revisada. describir() devuelve False si Ollama no contesto (no gasta intento) y None si contesto algo roto. caras._imagenes lanza si no salio ningun cuadro (antes quedaba 'nadie sale'). oido: solo 'sin audio' es para siempre; otro error se reintenta una vez.",
+   "(1.8.2, 20-nov, la persona: «aplica todo») (1) motor.preanalizar: al soltar la carpeta (sala de espera) el analisis entero corre en un QThread (Preanalisis) con el mismo CANDADO que el armado: si se pulsa Empezar, el armado espera y no repite nada; su avance se ve como el del trabajo. TRAILER_PREANALISIS=0 lo apaga. (2) motor.calentar_ia: vision_ia.en_gpu en un hilo al empezar (modelo cargado mientras se mide). (3) Numeracion ESTABLE en renombrar_material: el que ya tiene nombre conserva su numero (antes se renumeraba por hora y dos archivos intercambiaban nombre: DaVinci mostraba OTRO video en la linea ya armada; asi se estropeo la «061»). La clave nombre|tamaño ya distingue archivos: no hace falta huella. (4) vision_ia guarda los cuadros que saca (analisis/cuadros/<nombre>_<tamaño>/<seg>.jpg, 448 px) y color_guardia los usa (0,1 s contra 0,7 s abriendo el video); en Borrar cache. (5) ruido_tomas.adelantar dentro de am.analizar (CPU mientras la IA usa la GPU). (6) Verticales medidos en 108x192 (antes aplastados a 192x108: temblor 0,26 vs 0,115 real y giro 5 vs 45: se descartaban los de celular; ahora el 1 min trae 5 s de IGLESIA que antes no tenia); se remiden solos (medida_vertical); _vista_cuadros generico (rejilla 3x4 y huella 8x9 en cualquier orientacion). (7) describir con FORMATO_TOMA cerrado y un reintento con otra semilla: 18/18 tomas con el mismo momento y el mismo «sirve» que antes, 0 rotas, 3,0 s c/u. (8) Planificador.lo_que_ve x _peso_ruido: ruido nivel 4 x0,94, nivel 5 x0,86 (preferencia, nunca descarta)."
   ]
  },
  {
@@ -688,7 +689,8 @@
    "ABRIR: si DaVinci se cierra solo al abrir (sin proceso dos veces seguidas), conectar lo abre otra vez enseguida (hasta 2 veces) en vez de esperar 2 + 3 min a ciegas; «DaVinci contestó en N s» queda en el registro.",
    "estado_davinci no usa la API (tasklist/pgrep + titulo de ventana).",
    "Desde el .exe: PYTHON3HOME=_MEIPASS y os.add_dll_directory(carpeta de Resolve).",
-   "rutas.abrir_resolve abre DaVinci con rutas.entorno_limpio(): heredando PYTHON3HOME/PYTHONHOME del .exe su Python de Fusion no arranca ('No module named encodings') y DaVinci se cae a los 10 s (18-nov)."
+   "rutas.abrir_resolve abre DaVinci con rutas.entorno_limpio(): heredando PYTHON3HOME/PYTHONHOME del .exe su Python de Fusion no arranca ('No module named encodings') y DaVinci se cae a los 10 s (18-nov).",
+   "(1.8.2) motor._CONEXION / _conexion_viva: la conexion se reusa mientras DaVinci conteste (GetProjectManager); scriptapp sin respuesta tarda 4,1 s cada vez (MEDIDO). Si DaVinci ya esta abierto CON proyecto (titulo con « - ») y no contesta, 2 intentos mas y error claro en 12 s (antes 75 s de espera): «Cierralo y abrelo otra vez». Visto el 20-nov: DaVinci abierto en EVENTOS CINEMA, Scripting = Local en config.dat, no elevado, y aun asi ni el programa ni el MCP conectaban (reiniciar DaVinci lo arregla)."
   ]
  },
  {
@@ -1692,6 +1694,38 @@
    "En DaVinci: build_trailers.metadatos_davinci(pool, items) tras organizar_pool: SetMetadata Description / Comments / Keywords (separadas por coma) / Scene (momento) en cada clip. Con pywin32 la escritura por el sistema de propiedades de Windows daba «Acceso denegado» en los MP4 de Sony: por eso el editor de atomos propio.",
    "METADATOS AMPLIADOS y FOTOS (18-nov, la persona: «nivel de exposición, si hay sonido o voz útil, más metadatos útiles aunque crezca el triple; en cualquier análisis y también en las fotos»): metadatos.campos_de(item, voz, caras) arma el comentario por partes: CONTENIDO (momento, escena, se ve, momentos clave con su minuto, belleza, % que no sirve y por que, SIRVE/NO SIRVE) | IMAGEN (exposicion por la luz mediana: <0,20 muy oscura, <0,30 algo oscura, <=0,58 correcta, <=0,68 clara; negros, luces quemadas, saturacion, tono por los grises, contraste, enfoque por nitidez >=35 nitido / >=15 normal, camara por temblor) | SONIDO (nivel dB, aplausos/gritos/risas del oido con su minuto, musica del lugar, VOZ UTIL con los pasajes de escenas_ia y su texto) | PERSONAS | TECNICO (tamaño, c/s, duracion, camara, hora real, nombre original). 330-820 caracteres.",
    "FOTOS JPG: paquete XMP propio (segmento APP1), sin recomprimir (pixeles, EXIF e ICC identicos, probado) ni tocar el EXIF; si la foto ya trae XMP (DxO: 17 KB) se AGREGA un rdf:Description marcado con el atributo trailer:v=\"1\". NO usar comentarios XML <!-- --> dentro del XMP: Windows deja de leer TODO el paquete (hasta las etiquetas que ya traia la foto). Windows muestra Titulo (dc:title), Comentarios (exif:UserComment) y Etiquetas (dc:subject; si la foto ya traia las suyas, se respetan y las nuestras no se agregan). Se escribe el archivo entero al lado y se cambia de golpe (os.replace) conservando fechas; la cabecera original queda en .trailer/original/<foto>.<tamaño>.cabecera. XV 8-nov: 448 archivos en 13 s, segunda pasada 0."
+  ]
+ },
+ {
+  "id": "permisos",
+  "resumen": "Popup de permisos al abrir (solo si falta alguno): controlar DaVinci (Scripting externo), carpetas protegidas de Defender, escribir en Escritorio/Videos, leer todos los discos, rutas largas; en Mac acceso total al disco, Accesibilidad, Automatizacion y Grabacion de pantalla",
+  "claves": [
+   "permisos",
+   "permiso",
+   "administrador",
+   "uac",
+   "defender",
+   "acceso total al disco",
+   "accesibilidad",
+   "scripting externo",
+   "privacidad"
+  ],
+  "archivos": [
+   "PROGRAMA/nucleo/permisos.py",
+   "PROGRAMA/interfaz/trailer_xv.py"
+  ],
+  "simbolos": [
+   "revisar",
+   "faltan",
+   "dar",
+   "_como_admin",
+   "_scripting",
+   "_cfa",
+   "_revisar_permisos",
+   "_pedir_permisos"
+  ],
+  "notas": [
+   "(1.8.2, 20-nov, la persona: «un popup con todos los permisos... si ya tiene todos ya no sale») permisos.revisar() tras el chequeo de arranque, en un hilo (0,04 s; 0,75 s si Defender se lee con Get-MpPreference). Solo si alguno da False sale el popup «Permisos» (Dar permisos / Ahora no) y despues de dar se vuelve a revisar. Lo de administrador va en UNA ventana (Start-Process -Verb RunAs con -EncodedCommand). Scripting de DaVinci: System.Scripting.Mode en Preferences/config.dat y .config.data (1 = Local); se cambia solo con DaVinci cerrado (copia .antes_trailer). OJO: en esta PC UAC esta en «elevar sin preguntar» (ConsentPromptBehaviorAdmin = 0): por eso Enter/Esc = «Ahora no» (primario=1) y en las pruebas (TRAILER_PERMISOS_PRUEBA / TRAILER_PRUEBA_ARRASTRE) dar() no toca nada: el 20-nov una prueba lo acepto sola y agrego python/ffmpeg/ffprobe a las apps permitidas de Defender (el Acceso controlado esta apagado: sin efecto)."
   ]
  }
 ]

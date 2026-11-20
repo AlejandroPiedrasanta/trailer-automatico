@@ -269,6 +269,30 @@ def _gesto(f):
     return 1.0 + 0.15 * bool(m.get("sonrie")) + 0.05 * bool(m.get("mira"))
 
 
+# (1.8.2, la persona: «aplica todo») el ruido medido (ruido_tomas, ya medido al analizar) como preferencia SUAVE:
+# entre dos tomas parecidas entra la limpia. Nunca descarta: ruido alto x0,94, muy alto x0,86.
+PESO_RUIDO = {4: 0.94, 5: 0.86}
+_RUIDO_PLAN = {}
+
+
+def _peso_ruido(v):
+    if v.get("tipo") == "foto":
+        return 1.0
+    if "medidas" not in _RUIDO_PLAN:
+        try:
+            rt, rdm = _modulo("ruido_tomas"), _modulo("ruido")
+            _RUIDO_PLAN.update(medidas=rt.leer_cache(), clave=rt._clave, nivel=rdm.nivel_base)
+        except Exception:
+            _RUIDO_PLAN["medidas"] = None
+    if not _RUIDO_PLAN.get("medidas"):
+        return 1.0
+    try:
+        medida = _RUIDO_PLAN["medidas"].get(_RUIDO_PLAN["clave"](v["ruta"]))
+        return PESO_RUIDO.get(_RUIDO_PLAN["nivel"](medida), 1.0) if isinstance(medida, dict) else 1.0
+    except Exception:
+        return 1.0
+
+
 def _modulo(nombre):
     ruta = rutas.codigo(nombre + ".py")
     spec = importlib.util.spec_from_file_location(nombre, ruta)
@@ -683,7 +707,7 @@ class Planificador:
             p *= 0.75 + 0.05 * max(1, min(10, int(ia["belleza"])))
         except (KeyError, TypeError, ValueError):
             pass
-        return p * (PESO_INUTIL_IA if ia.get("util") is False else 1.0)
+        return p * (PESO_INUTIL_IA if ia.get("util") is False else 1.0) * _peso_ruido(v)
 
     @staticmethod
     def gente(v):

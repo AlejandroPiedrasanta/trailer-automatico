@@ -238,12 +238,15 @@ def _vista_cuadros(f, g, lap):
     res = {"nit": (lap.reshape(n, -1).var(axis=1) * 1000.0).round(3).tolist(),
            "con": g.reshape(n, -1).std(axis=1).round(3).tolist(),
            "quem": _quemado(f).round(3).tolist(), "eje": [], "giro": [], "pico": [], "hash": [], "capa": []}
-    rejilla = (f.reshape(n, 3, 36, 4, 48, 3).mean(axis=(2, 4)) * 255.0).round().astype(np.uint8)
+    alto, ancho = g.shape[1], g.shape[2]         # (1.8.2) 108x192 horizontal o 192x108 vertical
+    rh, rw = alto // 3, ancho // 4               # rejilla de 3 x 4 (en 108x192: 36 x 48, como siempre)
+    rejilla = (f[:, :3 * rh, :4 * rw].reshape(n, 3, rh, 4, rw, 3).mean(axis=(2, 4)) * 255.0).round().astype(np.uint8)
     gx = g[:, 1:-1, 2:] - g[:, 1:-1, :-2]
     gy = g[:, 2:, 1:-1] - g[:, :-2, 1:-1]
     fuerza = gx * gx + gy * gy
     cajon = np.minimum(8, (np.degrees(np.arctan2(gy, gx)) % 90.0 // 10).astype(np.int64))    # 9 cajones de 10 grados
-    chico = g[:, :104, :189].reshape(n, 8, 13, 9, 21).mean(axis=(2, 4))
+    bh, bw = alto // 8, ancho // 9               # huella 8 x 9 (en 108x192: bloques de 13 x 21, como siempre)
+    chico = g[:, :8 * bh, :9 * bw].reshape(n, 8, bh, 9, bw).mean(axis=(2, 4))
     bits = chico[:, :, 1:] > chico[:, :, :-1]
     for k in range(n):
         h = np.bincount(cajon[k].ravel(), weights=fuerza[k].ravel(), minlength=9)
@@ -388,11 +391,13 @@ def _solo_temblor(ruta, dur):
     return _temblor_de(np.concatenate(desp) if desp else [])
 
 
-def _medir_video(ruta, dur, con_audio=True):
+def _medir_video(ruta, dur, con_audio=True, vertical=False):
     """UNA sola lectura del video (a 10 cuadros por segundo, 192x108): temblor con todos los cuadros; calidad, color
     y tramos negros con uno de cada 5 (cada 0,5 s); y el audio. Lee por bloques: no se llena la memoria aunque el
-    video dure una hora."""
-    W, H = 192, 108
+    video dure una hora.
+    (1.8.2, auditoria) vertical: 108x192. Antes un video de celular en vertical (1080x1920) se medía APLASTADO a
+    192x108: los bordes salian inclinados (eje / giro: una toma derecha podia contar como torcida) y la nitidez mal."""
+    W, H = (108, 192) if vertical else (192, 108)
     tam = W * H * 3
     tmp = None
     cmd = ["ffmpeg", "-hide_banner", "-nostats", "-loglevel", "error", "-y", "-hwaccel", "auto", "-i", ruta,
@@ -453,6 +458,8 @@ def _medir_video(ruta, dur, con_audio=True):
                 pass
         return _medir_video(ruta, dur, False)
     todo_desp = np.concatenate(desp) if desp else []
+    # (1.8.2) sin escalar: 1080x1920 a 108x192 tiene la MISMA densidad que 1920x1080 a 192x108 (10 px reales por px en
+    # los dos ejes), asi que el temblor y el barrido quedan en las mismas unidades que los horizontales
     vista["pan"] = _barrido_de(todo_desp)
     res = {"calidad": [], "color": color, "oscuros": _tramos_negros(negro),
            "temblor": _temblor_de(todo_desp), "vista": vista}
@@ -629,8 +636,11 @@ def _analizar_archivo(tipo, ruta, previo=None):
         if d["dur"] <= 0:
             raise ValueError("no se pudo leer la duración (¿archivo incompleto?)")
         if np is not None:
+            vertical = d.get("horizontal") is False
+            # (1.8.2) un vertical medido aplastado (antes) se mide otra vez; lo demas de antes se reusa
             if previo and previo.get("calidad") is not None and previo.get("color") is not None \
-                    and (previo.get("vista") or {}).get("capa") is not None:
+                    and (previo.get("vista") or {}).get("capa") is not None \
+                    and not (vertical and not previo.get("medida_vertical")):
                 d["vista"] = previo["vista"]
                 for k in ("calidad", "color", "oscuros"):
                     d[k] = previo.get(k) or []
@@ -638,7 +648,9 @@ def _analizar_archivo(tipo, ruta, previo=None):
                     (_solo_audio(ruta, d["dur"]) if d["audio_pista"] else [])
                 d["temblor"] = previo["temblor"] if previo.get("temblor") is not None else _solo_temblor(ruta, d["dur"])
             else:
-                d.update(_medir_video(ruta, d["dur"], d["audio_pista"]))
+                d.update(_medir_video(ruta, d["dur"], d["audio_pista"], vertical))
+            if vertical:
+                d["medida_vertical"] = True
         else:
             d.update({"calidad": [], "color": [], "oscuros": [], "audio": [], "temblor": [], "vista": {}})
     if d["hora"] is None:
@@ -2198,7 +2210,10 @@ def analizar(base=DEF_BASE, log=print, hilos=4):
             cache[_clave(r)]["ruta"] = r
     if Image is None:
         log("Aviso: falta Pillow (python -m pip install pillow): las fotos se ordenan por fecha de archivo.")
-    faltan = [(t, r) for t, r in lista if cache.get(_clave(r), {}).get("v", 1) < VERSION or cache[_clave(r)].get("error")]
+    faltan = [(t, r) for t, r in lista if cache.get(_clave(r), {}).get("v", 1) < VERSION or cache[_clave(r)].get("error")
+              # (1.8.2) los verticales medidos aplastados (192x108): solo se vuelve a medir la imagen
+              or (t != "foto" and cache[_clave(r)].get("horizontal") is False
+                  and not cache[_clave(r)].get("medida_vertical"))]
     if not faltan:
         # (18-nov, la persona: «si ya están analizados, que diga videos ya analizados y ya va a ser más rápido para
         # aplicar las plantillas») se dice claro, y el armado pasa directo a las plantillas
@@ -2239,6 +2254,14 @@ def analizar(base=DEF_BASE, log=print, hilos=4):
                 _punto_de_guardado(cache)
         _punto_de_guardado(cache, True)
     _nombres_originales(cache)
+    try:                                        # (1.8.2) el ruido de cada video, en el procesador mientras la IA usa la GPU
+        import ruido_tomas
+        n_r = ruido_tomas.adelantar([(r, (cache.get(_clave(r)) or {}).get("dur")) for t, r in lista if t != "foto"
+                                     and not (cache.get(_clave(r)) or {}).get("error")])
+        if n_r:
+            log("Midiendo el ruido de %d videos en segundo plano (para limpiar y elegir las tomas limpias)." % n_r)
+    except Exception as ex:
+        log("Aviso: no se pudo medir el ruido en el análisis (%s)" % ex)
     ver_caras = _caras(cache, lista, log)       # (18-nov) las personas, con la IA propia, a la vez que lo demas
     oir = _oir(cache, lista, log)               # (1.5.9) el oido (CPU) escucha mientras la IA local (GPU) mira
     _ver_con_ia(cache, lista, log)

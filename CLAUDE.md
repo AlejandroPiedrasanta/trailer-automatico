@@ -53,6 +53,7 @@
 - **musica**: Musica ORIGINAL por estilo (Cine latino, Juvenil, Clasico, Emotivo) en vez de las canciones de la plantilla: papeles, pistas encadenadas para 1-30 min, intro con la rampa de fotos, selector en Ajustes, y escuchar.py para oir sin oidos (earshot)
 - **efectos**: Tipos de intro (ritmo de las 8 fotos + su SFX de rampa), overlays de luz propios (destello en cambios de momento, brillos en titulos; XV/boda, H/V) y el titulo DETRAS de la persona con recorte local (RVM, sin Mascara Magica)
 - **analisis-seguro**: Que el analisis no se pierda ni se repita y SE VEA: metadatos visibles dentro de cada video (titulo y comentario en Windows y DaVinci), punto de guardado cada minuto, incrustado oculto por archivo (flujo NTFS :trailer), ficha en la carpeta del evento y archivo buscable (buscar.py)
+- **permisos**: Popup de permisos al abrir (solo si falta alguno): controlar DaVinci (Scripting externo), carpetas protegidas de Defender, escribir en Escritorio/Videos, leer todos los discos, rutas largas; en Mac acceso total al disco, Accesibilidad, Automatizacion y Grabacion de pantalla
 <!-- MAPA:FIN -->
 
 ## Reglas que no se rompen

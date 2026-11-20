@@ -17,6 +17,7 @@ describir(tipo, ruta, dur) -> {"v", "modelo", "momento": MAQUILLAJE|IGLESIA|FIES
 Lo guarda analizar_material en el cache de cada archivo («ia»): no se vuelve a mirar (tampoco al renombrarlo).
 """
 import os
+import re
 import json
 import time
 import base64
@@ -450,11 +451,63 @@ def _cuadro(ruta, t, lado=448):
                            capture_output=True, timeout=120, creationflags=rutas.SIN_VENTANA)
         if r.returncode == 0 and r.stdout:
             _hw["fallos"] = 0
+            _guardar_cuadro(ruta, t, r.stdout)
             return base64.b64encode(r.stdout).decode()
         _hw["fallos"] += 1
     r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error"] + base,
                        capture_output=True, timeout=120, creationflags=rutas.SIN_VENTANA)
+    if r.returncode == 0 and r.stdout:
+        _guardar_cuadro(ruta, t, r.stdout)
     return base64.b64encode(r.stdout).decode() if r.returncode == 0 and r.stdout else None
+
+
+# (1.8.2, la persona: «aplica todo») los cuadros que ya se sacaron para la IA (cada 3 s de cada toma, 448 px) quedan
+# guardados: al armar, la revision del color de cada plano (color_guardia) los usa en vez de volver a abrir el video
+# (en 4K, 0,4-1,7 s por cuadro). Uno por segundo y decimo; ~30 KB cada uno.
+CARPETA_CUADROS = os.path.join(rutas.ANALISIS, "cuadros")
+_listas = {}
+
+
+def _dir_cuadros(ruta):
+    try:
+        tam = os.path.getsize(ruta)
+    except OSError:
+        return None
+    nombre = re.sub(r"[^\w\- ()]", "_", os.path.basename(ruta))
+    return os.path.join(CARPETA_CUADROS, "%s_%d" % (nombre, tam))
+
+
+def _guardar_cuadro(ruta, t, jpg):
+    d = _dir_cuadros(ruta)
+    if not d:
+        return
+    try:
+        os.makedirs(d, exist_ok=True)
+        p = os.path.join(d, "%07.1f.jpg" % max(0.0, t))
+        if not os.path.exists(p):
+            with open(p + ".tmp", "wb") as f:
+                f.write(jpg)
+            os.replace(p + ".tmp", p)
+            _listas.pop(d, None)
+    except OSError:
+        pass
+
+
+def cuadro_guardado(ruta, t, tolerancia=1.6):
+    """La ruta del cuadro guardado mas cercano a ese segundo (a menos de `tolerancia`), o None."""
+    d = _dir_cuadros(ruta)
+    if not d or not os.path.isdir(d):
+        return None
+    if d not in _listas:
+        try:
+            _listas[d] = sorted(float(f[:-4]) for f in os.listdir(d) if f.endswith(".jpg"))
+        except (OSError, ValueError):
+            return None
+    tiempos = _listas[d]
+    if not tiempos:
+        return None
+    mejor = min(tiempos, key=lambda x: abs(x - t))
+    return os.path.join(d, "%07.1f.jpg" % mejor) if abs(mejor - t) <= tolerancia else None
 
 
 INSTANTES_V = 6               # 6 (17-nov): «sonrisa» y estorbo mas estricto (marcaba 328 de 1368; la mitad eran buenas). 2: equipo de filmacion; 3: solo el equipo que TAPA la imagen; 4: ver abajo; 5: tambien
@@ -656,6 +709,17 @@ def parte_mala(ia, dron=False):
     return len(malos) / float(len(inst)), comun
 
 
+# (1.8.2, auditoria) la respuesta de la primera vista, cerrada como la de los instantes (Ollama «structured outputs»):
+# antes era "json" libre y una respuesta cortada o con otra forma dejaba la toma «sin datos» al segundo intento
+FORMATO_TOMA = {"type": "object", "properties": {
+    "momento": {"type": "string", "enum": ["PREPARATIVOS", "IGLESIA", "FIESTA", "OTRO"]},
+    "escena": {"type": "string"},
+    "etiquetas": {"type": "array", "items": {"type": "string", "enum": list(ETIQUETAS)}},
+    "equipo": {"type": "boolean"}, "util": {"type": "boolean"},
+    "belleza": {"type": "integer", "minimum": 1, "maximum": 10}},
+    "required": ["momento", "escena", "etiquetas", "equipo", "util", "belleza"]}
+
+
 def describir(tipo, ruta, dur=0.0, log=None):
     """Lo que la IA ve en esa toma (3 cuadros de un video, o la foto), o None si no se pudo."""
     nombre = modelo(log)
@@ -673,12 +737,18 @@ def describir(tipo, ruta, dur=0.0, log=None):
     imgs = [x for x in imgs if x]
     if not imgs:
         return None
-    cuerpo = {"model": nombre, "stream": False, "format": "json", "keep_alive": "10m",
+    cuerpo = {"model": nombre, "stream": False, "format": FORMATO_TOMA, "keep_alive": "10m",
               "options": {"temperature": 0, "num_predict": 200, "num_ctx": NUM_CTX},
               "messages": [{"role": "user", "content": PROMPT, "images": imgs}]}
     try:
-        resp = _pedir("/api/chat", cuerpo, timeout=300.0)
-        d = json.loads(resp["message"]["content"])
+        try:
+            resp = _pedir("/api/chat", cuerpo, timeout=300.0)
+            d = json.loads(resp["message"]["content"])
+        except (ValueError, KeyError, TypeError):
+            # (1.8.2, auditoria) respuesta rota (JSON cortado): UN reintento con otra semilla antes de rendirse
+            cuerpo["options"] = dict(cuerpo["options"], seed=7, temperature=0.2)
+            resp = _pedir("/api/chat", cuerpo, timeout=300.0)
+            d = json.loads(resp["message"]["content"])
     except Exception as ex:
         if log and not isinstance(ex, IACaida):          # (en pausa no se repite el aviso por cada toma)
             log("Aviso: la IA local no pudo ver %s (%s)" % (os.path.basename(ruta), str(ex)[:80]))

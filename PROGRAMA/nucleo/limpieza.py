@@ -78,6 +78,9 @@ def que_hay():
     resp = sorted((os.path.join(rutas.RESPALDOS, f) for f in os.listdir(rutas.RESPALDOS)
                    if f.lower().endswith(".drp")), key=os.path.getmtime) if os.path.isdir(rutas.RESPALDOS) else []
     agregar("respaldos", "Respaldos viejos del proyecto (queda el último)", resp[:-1])
+    # (1.8.2) los cuadros que la IA saco al analizar (vision_ia.CARPETA_CUADROS): si se borran, el color del armado
+    # vuelve a sacar sus cuadros del video (un poco mas lento); el analisis no se pierde
+    agregar("cuadros_ia", "Cuadros guardados del análisis", [os.path.join(rutas.ANALISIS, "cuadros")])
     act = os.path.join(rutas.DATOS, "actualizacion")
     actual = _version(rutas.version())
     viejas = []

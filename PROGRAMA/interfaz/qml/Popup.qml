@@ -308,38 +308,51 @@ Item {
         MouseArea { id: zona; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: p.clic() }
     }
 
-    // Tráiler: el formato y sus duraciones (cada formato guarda las suyas)
+    // Tráiler: (1.8.5, la persona: «horizontal o vertical o ambos») las dos filas a la vista, cada una con sus
+    // duraciones; se pueden marcar en las dos. datos.vacio_ok: con plantillas elegidas se puede dejar sin tráiler.
     Component {
         id: formaTrailer
         Column {
-            spacing: px(24)
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: px(12)
-                Repeater {
-                    model: ["Horizontal", "Vertical"]
-                    Pastilla { chica: true; texto: modelData; marcada: raiz.resultado.formato === index
-                        onClic: { var r = Object.assign({}, raiz.resultado)   /* una copia: el mismo objeto no avisa del cambio y la pastilla no se marcaba */; r.formato = index; raiz.resultado = r } }
-                }
-            }
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: px(18)
-                Repeater {
-                    model: raiz.datos.versiones || []
-                    Pastilla {
-                        chica: true
-                        readonly property string lista: raiz.resultado.formato === 1 ? "v" : "h"
-                        texto: modelData[1]
-                        marcada: (raiz.resultado[lista] || []).indexOf(modelData[0]) >= 0
-                        onClic: {
-                            var r = Object.assign({}, raiz.resultado)   /* una copia: el mismo objeto no avisa del cambio y la pastilla no se marcaba */
-                            var l = (r[lista] || []).slice()
-                            var i = l.indexOf(modelData[0])
-                            if (i >= 0) { if (l.length + ((r[lista === "h" ? "v" : "h"] || []).length) > 1) l.splice(i, 1) }
-                            else l.push(modelData[0])
-                            r[lista] = l
-                            raiz.resultado = r
+            spacing: px(30)
+            Repeater {
+                model: [["h", "Horizontal", "pantalla y YouTube"], ["v", "Vertical", "celular, 9:16"]]
+                Column {
+                    id: filaF
+                    readonly property string lista: modelData[0]
+                    readonly property int cuantas: (raiz.resultado[lista] || []).length
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: px(14)
+                    Row {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        spacing: px(14)
+                        Text { text: modelData[1]; color: filaF.cuantas ? "#3BEE9F" : "white"
+                            Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                            font.family: raiz.familia; font.pixelSize: px(32); font.weight: Font.Bold }
+                        Text { anchors.baseline: parent.children[0].baseline; text: "· " + modelData[2]; color: "#9DB0B6"
+                            font.family: raiz.familia; font.pixelSize: px(26) }
+                    }
+                    Row {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        spacing: px(12)
+                        Repeater {
+                            model: raiz.datos.versiones || []
+                            Pastilla {
+                                chica: true
+                                width: px(176)          // las cuatro caben dentro de la tarjeta
+                                texto: modelData[1]
+                                marcada: (raiz.resultado[filaF.lista] || []).indexOf(modelData[0]) >= 0
+                                onClic: {
+                                    var r = Object.assign({}, raiz.resultado)   /* una copia: el mismo objeto no avisa del cambio */
+                                    var lista = filaF.lista
+                                    var l = (r[lista] || []).slice()
+                                    var i = l.indexOf(modelData[0])
+                                    var total = l.length + ((r[lista === "h" ? "v" : "h"] || []).length)
+                                    if (i >= 0) { if (raiz.datos.vacio_ok || total > 1) l.splice(i, 1) }
+                                    else l.push(modelData[0])
+                                    r[lista] = l
+                                    raiz.resultado = r
+                                }
+                            }
                         }
                     }
                 }

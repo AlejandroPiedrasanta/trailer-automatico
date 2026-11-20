@@ -1436,7 +1436,10 @@ def app():
                 import barra_qml
                 if not barra_qml.disponible():
                     return
-                self.barra_qml = barra_qml.BarraQML(self.dock, self._editar_nombre, self._plantillas, self._trailer)
+                # (1.8.5) Plantillas elige las de la pagina Plantillas (antes abria los proyectos de DaVinci, que
+                # siguen en «Editar en DaVinci» / «Renderizar lo editado»)
+                self.barra_qml = barra_qml.BarraQML(self.dock, self._editar_nombre, self._plantillas_barra, self._trailer)
+                self._refrescar_barra()
                 f1 = self._f1_barra
                 for b in (self.b_nombre, self.b_plantillas, self.b_trailer):
                     f1.removeWidget(b)
@@ -1591,8 +1594,9 @@ def app():
                 return None
             qml = getattr(self, "popup_qml", None)
             if qml is not None and not qml.abierto():  # (1.7) en QML: el formato y sus duraciones, en pastillas
+                vacio_ok = bool(self.plantillas.marcadas)      # (1.8.5) con plantillas, el tráiler puede quedar fuera
                 datos = {"formato": max(0, self.seg_formato.actual()), "h": self._versiones(), "v": self._versiones_v(),
-                         "versiones": [[k, VERSION_TEXTO[k]] for k in motor.VERSIONES]}
+                         "versiones": [[k, VERSION_TEXTO[k]] for k in motor.VERSIONES], "vacio_ok": vacio_ok}
                 r, res = qml.preguntar(titulo, texto, botones, "info", 0, None, "trailer", datos)
                 if r == 0:
                     for pills, quiero in ((self.pills, res.get("h") or []), (self.pills_v, res.get("v") or [])):
@@ -1600,10 +1604,16 @@ def app():
                             b.blockSignals(True)
                             b.setChecked(k in quiero)
                             b.blockSignals(False)
-                    f = int(res.get("formato") or 0)
+                    f = 1 if res.get("v") and not res.get("h") else 0      # (1.8.5) ya no hay pestañas: lo marcado
                     self.seg_formato.poner(f)
                     self._ver_formato(f)
-                    self._cambio_plantillas()          # palomitas, texto y la hora en que estara listo
+                    self._cambio_plantillas(vacio_ok=vacio_ok)   # palomitas, texto y la hora en que estara listo
+                    try:                                         # (1.8.5) que quede guardado aunque no se arme aun
+                        d = motor.leer_estado()
+                        d.update({"versiones": self._versiones(), "versiones_vertical": self._versiones_v()})
+                        motor.guardar_estado(d)
+                    except Exception as ex:
+                        registro.info("No se guardo el tráiler elegido: %s" % ex)
                 self._sub_material()
                 return r
             if not self.caja_videos.styleSheet():   # el popup pone su estilo a todos los botones: aqui, el de la ventana
@@ -1620,7 +1630,8 @@ def app():
 
         # (19-nov, la persona: «3 botones: tráiler, plantillas y el nombre») los tres de la barra del Inicio
         def _trailer(self):
-            """Tráiler: qué videos salen, lo que hay de material y la hora en que estará; «Empezar» arma (▶)."""
+            """Tráiler: horizontal, vertical o los dos, con sus duraciones (1.8.5: solo ELIGE; se empieza tocando el
+            centro o «Empezar»). Dice lo que hay de material y la hora en que estará."""
             if self.trabajo is not None:
                 self.b_log.setChecked(True)
                 return
@@ -1632,8 +1643,56 @@ def app():
             texto = "Falta " + " y ".join(falta) if falta else " · ".join(hay) if hay else "Todavía no hay material"
             if self.l_eta.text():
                 texto += "  ·  " + self.l_eta.text().lower()
-            if self._elegir_videos("¿Qué videos salen?", texto, ("Empezar", "Cancelar")) == 0:
-                self._play()
+            texto += "\nMarca horizontal, vertical o los dos. Para empezar, toca el centro o «Empezar»."
+            self._elegir_videos("¿Qué tráiler sale?", texto, ("Listo", "Cancelar"))
+            self._refrescar_barra()
+
+        def _plantillas_barra(self):
+            """(1.8.5, la persona: «en plantillas me debe de cargar las plantillas que tengo en la página Plantillas»)
+            Las plantillas de video (Reel, TikTok, CapCut) en pastillas: se marcan las que salen al armar."""
+            if self.trabajo is not None:
+                self.b_log.setChecked(True)
+                return
+            infos = list(getattr(self.plantillas, "infos", None) or [])
+            if not infos:
+                r = self._popup("Todavía no tienes plantillas de video. Agrega un Reel, TikTok o CapCut y sale un "
+                                "video más con sus cortes y su música.", ("Agregar plantilla", "Ir a Plantillas",
+                                                                          "Cancelar"), "info", titulo="Plantillas")
+                if r == 0:
+                    self._elegir_plantilla()
+                elif r == 1:
+                    self._cambiar_pagina(5)
+                return
+            nombres = [i.get("nombre", "") for i in infos if i.get("nombre")]
+            etiquetas = {n: n.title() for n in nombres}
+            r, lista = self._elegir_de_videos(
+                "¿Qué plantillas salen?", "Cada una sale como un video más, con sus cortes y su música. "
+                "Para empezar, toca el centro o «Empezar».", nombres, set(self.plantillas.marcadas), True,
+                ("Listo", "Agregar otra", "Cancelar"), etiquetas)
+            if r == 0:
+                if sorted(lista) != sorted(self.plantillas.marcadas):
+                    self.plantillas.elegidas(sorted(lista))
+                    self._plantillas_elegidas(sorted(lista))
+            elif r == 1:
+                self._elegir_plantilla()
+
+        def _refrescar_barra(self):
+            """(1.8.5) La barra del Inicio dice lo que va a salir: plantillas elegidas y el tráiler (o nada)."""
+            barra = getattr(self, "barra_qml", None)
+            if barra is None:
+                return
+            h, v = self._versiones(), self._versiones_v()
+            marcadas = sorted(getattr(self.plantillas, "marcadas", None) or [])
+            if not h and not v and not marcadas:
+                h = list(motor.VERSIONES)                  # lo mismo que hace _guardar: sin nada, el tráiler
+            tr = "Horizontal y vertical" if h and v else "Horizontal" if h else "Vertical" if v else ""
+            if h and v:
+                pass                                       # «Horizontal y vertical» ya llena el renglon
+            elif tr and len(h) + len(v) > 1:
+                tr += " · %d videos" % (len(h) + len(v))
+            elif tr:
+                tr += " · " + VERSION_TEXTO[(h or v)[0]]
+            barra.poner_eleccion(marcadas, tr)
 
         def _editar_nombre(self):
             """El nombre del XV o de los novios (y de qué es el evento). «Evento nuevo» deja el programa en blanco."""
@@ -1938,15 +1997,31 @@ def app():
             def listo(res, error):
                 if error is None:
                     self.plantillas.poner(res or [])
-                    self.plantillas.elegidas(self.est.get("plantillas_ref") or [])
+                    # (1.8.5, la persona: «son 4 plantillas que deben estar seleccionadas por default») mientras la
+                    # persona no elija, TODAS marcadas (y guardadas: el motor las lee del estado)
+                    elegidas = self.est.get("plantillas_ref") or []
+                    try:
+                        est = motor.leer_estado()
+                        if not est.get("plantillas_ref_persona"):
+                            elegidas = [i.get("nombre") for i in res or [] if i.get("nombre")]
+                            if sorted(est.get("plantillas_ref") or []) != sorted(elegidas):
+                                est["plantillas_ref"] = list(elegidas)
+                                motor.guardar_estado(est)
+                            self.est["plantillas_ref"] = list(elegidas)
+                    except Exception as ex:
+                        registro.info("Plantillas por defecto: %s" % ex)
+                    self.plantillas.elegidas(elegidas)
+                    self._refrescar_barra()
             qt_kit.correr_en_hilo(self, leer, listo, baja=True)
 
         def _plantillas_elegidas(self, nombres):
             est = motor.leer_estado()
             est["plantillas_ref"] = self.est["plantillas_ref"] = list(nombres)
+            est["plantillas_ref_persona"] = True          # (1.8.5) ya eligio: no se vuelven a marcar todas
             motor.guardar_estado(est)
             self._avisar("Listo: al armar también sale %s." % ", ".join(n.title() for n in nombres) if nombres
                          else "Listo: sin plantillas de video.")
+            self._refrescar_barra()
             self._cargar_plan()                     # su pestaña en «Qué entra al video», con sus huecos
 
         def _plantillas_opcion(self, clave, nombre, si):
@@ -1974,6 +2049,13 @@ def app():
                     self._avisar("No se pudo convertir en plantilla: %s" % error, "warn")
                     return
                 self._avisar("Lista%s: %s." % ("" if len(res) == 1 else "s", ", ".join(n.title() for n in res)))
+                try:                                   # (1.8.5) la que se agrega sale marcada
+                    est = motor.leer_estado()
+                    est["plantillas_ref"] = sorted(set(est.get("plantillas_ref") or []) | set(res))
+                    self.est["plantillas_ref"] = est["plantillas_ref"]
+                    motor.guardar_estado(est)
+                except Exception as ex:
+                    registro.info("No se marco la plantilla nueva: %s" % ex)
                 self._cargar_plantillas()
             qt_kit.correr_en_hilo(self, hacer, listo, baja=True)
 
@@ -3250,8 +3332,8 @@ def app():
                 self.chip_evento.setIconSize(QSize(14, 14))
                 self.chip_evento.setIcon(icono_trazo("lapiz", "#EBCB8F", 14))
 
-        def _cambio_plantillas(self, _=None):
-            if not any(b.isChecked() for b in self._pastillas()):
+        def _cambio_plantillas(self, _=None, vacio_ok=False):
+            if not vacio_ok and not any(b.isChecked() for b in self._pastillas()):
                 quien = self.sender()                             # siempre al menos una, de un formato u otro
                 (quien if quien in self._pastillas() else self.pills[motor.VERSIONES[0]]).setChecked(True)
             for pills in (self.pills, self.pills_v):
@@ -3259,6 +3341,7 @@ def app():
                     b.setIcon(self._palomita if b.isChecked() else QIcon())
                     b.setText((" " if b.isChecked() else "") + VERSION_TEXTO[v])     # un respiro entre palomita y texto
             self._sub_material()
+            self._refrescar_barra()
 
         def _pastillas(self, con_todas=False, con_etiquetas=False):
             """Las pastillas de los dos formatos (y, si se piden, sus botones «Todas» y sus etiquetas)."""
@@ -3441,11 +3524,11 @@ def app():
             if self.trabajo is not None:                 # (19-nov) no pisa «Trabajando» (ni oculta la pastilla)
                 return
             detalle = "\n".join("· " + (d if ok else "Falta: " + d) for n, ok, d in res)
-            if not mal:
-                self._estado("Todo listo", "ok", "Chequeo de arranque: todo en orden (%d de %d)." % (len(res), len(res)))
-            else:
-                self._estado("1 aviso" if len(mal) == 1 else "%d avisos" % len(mal), "warn",
-                             "Chequeo de arranque:\n" + detalle)
+            # (1.8.5, la persona: «elimina eso») sin la pastilla «1 aviso»: lo que falta ya lo dice Ajustes
+            # (Inteligencia, Programa) y queda en el registro; arriba solo se ve trabajando
+            if mal:
+                registro.info("Chequeo de arranque:\n" + detalle)
+            self._estado("Todo listo", "ok", "Chequeo de arranque: %d de %d en orden." % (len(res) - len(mal), len(res)))
             QTimer.singleShot(800, self._revisar_permisos)
 
         # ---- (1.8.2, la persona: «un popup con todos los permisos... si ya tiene todos ya no sale») permisos.py

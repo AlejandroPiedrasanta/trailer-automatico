@@ -243,7 +243,20 @@ static class Instalador
             int cerrados = CerrarPrograma();
             if (cerrados > 0) L(v, "Se cerró el programa abierto (" + cerrados + ").");
             string interno = Path.Combine(Destino, "_internal");
-            if (Directory.Exists(interno)) { Directory.Delete(interno, true); L(v, "Versión anterior quitada."); }
+            if (Directory.Exists(interno))
+            {
+                // (1.8.5) el llama-server de Ollama que abrio una version anterior tenia tomadas sus DLL
+                // (msvcp140...): sin esto el borrado fallaba y la instalacion quedaba a medias
+                try { Directory.Delete(interno, true); }
+                catch (Exception)
+                {
+                    foreach (Process q in Process.GetProcessesByName("llama-server"))
+                        try { q.Kill(); q.WaitForExit(4000); } catch { }
+                    System.Threading.Thread.Sleep(800);
+                    Directory.Delete(interno, true);
+                }
+                L(v, "Versión anterior quitada.");
+            }
             Directory.CreateDirectory(Destino);
             P(v, 0, EstadoPaso.Hecho, -1);
 

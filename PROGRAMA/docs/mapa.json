@@ -156,7 +156,9 @@
    "Portada (QSplashScreen) al instante mientras se construye la ventana (~1,5 s).",
    "Ajustes > Voz original: un interruptor por version corta (1, 3 y 15 min); en 30 min va siempre.",
    "Ajustes > videos verticales (ch_vert -> motor.armar(verticales=)).",
-   "(1.8.0) _arrancar protegido (_arrancar_vista): si falla al preparar la vista, _fallo + _liberar (no queda en 'Trabajando…'); Trabajo.run emite fallo tambien con BaseException. Cerrar mientras arma: PARAR, espera al hilo y cierra (30 s y _cerrar_ya sale con os._exit tras _guardar). 'Listo a las' se recalcula cada 20 s (_reloj_eta) y dice 'Terminando…' si falta menos de 1 min. motor.esperar dice 'Esperando a DaVinci… N s' cada 15 s y corta con Cancelar. Probado con guion_robusto (ventana real): las 3 pasan, sale con codigo 0 en 0,5 s."
+   "(1.8.0) _arrancar protegido (_arrancar_vista): si falla al preparar la vista, _fallo + _liberar (no queda en 'Trabajando…'); Trabajo.run emite fallo tambien con BaseException. Cerrar mientras arma: PARAR, espera al hilo y cierra (30 s y _cerrar_ya sale con os._exit tras _guardar). 'Listo a las' se recalcula cada 20 s (_reloj_eta) y dice 'Terminando…' si falta menos de 1 min. motor.esperar dice 'Esperando a DaVinci… N s' cada 15 s y corta con Cancelar. Probado con guion_robusto (ventana real): las 3 pasan, sale con codigo 0 en 0,5 s.",
+   "1.8.5 barra del Inicio (BarraInicio.qml): Plantillas y Tráiler son INTERRUPTORES que se encienden en verde con su detalle debajo (barra_qml.poner_eleccion, trailer_xv._refrescar_barra). Plantillas abre _plantillas_barra (las de la pagina Plantillas, plantillas_ref; sin ninguna: Agregar / Ir a Plantillas); Tráiler abre _trailer: filas Horizontal y Vertical a la vez (Popup.qml formaTrailer; sin tráiler solo si hay plantillas, datos.vacio_ok). Ninguno arranca: se empieza con el centro (Astrolabio) o «Empezar» (Sala). Los proyectos de DaVinci quedan en los chips «Editar en DaVinci» / «Renderizar lo editado». Sin pastilla «N avisos» del chequeo de arranque (va al registro).",
+   "1.8.5 plantillas por defecto: mientras la persona no elija (estado plantillas_ref_persona), _cargar_plantillas marca y guarda TODAS (son 4: PLANTILLA 1-4); _plantillas_elegidas pone la marca; una importada sale marcada."
   ]
  },
  {
@@ -1182,7 +1184,8 @@
    "Sin autoprueba en el instalador ni espera al terminar: abre el programa y se queda hasta que su ventana se ve.",
    "Icono: hasta 24 px va la version simplificada (la imagen detallada se volvia una mancha); 25-48 px afilada.",
    "(1.6.0) Los accesos del Inicio y el Escritorio llevan System.AppUserModel.ID = CinemaProductions.Trailer (Instalador.cs: Acceso via IShellLinkW + IPropertyStore), el mismo que pone la ventana (SetCurrentProcessExplicitAppUserModelID). Sin eso, abrirlo desde un icono anclado o «Recomendado» daba «Windows no puede encontrar el archivo cinemaproductions.trailer». Comprobar: Get-StartApps -> AppID.",
-   "(1.6.0) El .exe lleva sus datos (trailer.spec: VSVersionInfo -> «Tráiler automático», CINEMA PRODUCTIONS, version); el instalador lee el archivo de estado con FileShare.ReadWrite y tareas._escribir reintenta (antes: «Permission denied: trailer_instalar.txt»). El .ico trae 15 tamaños (16-256); hasta 40 px el dibujo simplificado de icono_app._chico."
+   "(1.6.0) El .exe lleva sus datos (trailer.spec: VSVersionInfo -> «Tráiler automático», CINEMA PRODUCTIONS, version); el instalador lee el archivo de estado con FileShare.ReadWrite y tareas._escribir reintenta (antes: «Permission denied: trailer_instalar.txt»). El .ico trae 15 tamaños (16-256); hasta 40 px el dibujo simplificado de icono_app._chico.",
+   "1.8.5: el llama-server de Ollama (arrancado por vision_ia) heredaba SetDllDirectory/PATH de _MEIPASS y tomaba msvcp140/vcruntime140 de _internal: el instalador fallaba (exit 1) y dejaba _internal a medias. Ahora vision_ia._popen_ajeno arranca Ollama sin nuestras DLL, y el instalador, si no puede borrar _internal, cierra llama-server y reintenta."
   ]
  },
  {

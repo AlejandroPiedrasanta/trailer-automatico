@@ -14,6 +14,12 @@ Item {
     property int tam: 18            // letra (px de piezas.px(36))
     property int radio: 20          // esquinas (dock_r)
     property int icono: 23
+    // (1.8.5, la persona: «puedo seleccionar los dos, plantillas y tráiler») cada uno se ENCIENDE (vidrio verde)
+    // cuando esta elegido y dice debajo que lleva; para empezar: el centro o «Empezar»
+    property bool plantillasOn: false
+    property string plantillasDetalle: ""
+    property bool trailerOn: true
+    property string trailerDetalle: ""
     signal nombreClic()
     signal plantillasClic()
     signal trailerClic()
@@ -48,19 +54,21 @@ Item {
         anchors.fill: parent
         Segmento {
             width: raiz.width * 0.44; height: raiz.height
-            lado: "izq"; texto: raiz.nombre; iconoNombre: "lapiz"; iconoColor: "EBCB8F"; alinear: "izq"
+            lado: "izq"; texto: raiz.nombre; iconoNombre: "lapiz"; alinear: "izq"
             onClic: raiz.nombreClic()
         }
         Rectangle { width: 1; height: raiz.height; color: Qt.rgba(140 / 255, 215 / 255, 200 / 255, 0.30) }
         Segmento {
             width: raiz.width * 0.28 - 1; height: raiz.height
-            lado: "medio"; texto: "Plantillas"; iconoNombre: "claqueta"; iconoColor: "EEF3F4"
+            lado: "medio"; texto: "Plantillas"; iconoNombre: "claqueta"
+            verde: raiz.plantillasOn; detalle: raiz.plantillasDetalle
             onClic: raiz.plantillasClic()
         }
         Rectangle { width: 1; height: raiz.height; color: Qt.rgba(140 / 255, 215 / 255, 200 / 255, 0.30) }
         Segmento {
             width: raiz.width * 0.28 - 1; height: raiz.height
-            lado: "der"; texto: "Tráiler"; iconoNombre: "play"; iconoColor: "04150D"; verde: true   // (1.7.8) oscuro: se lee
+            lado: "der"; texto: "Tráiler"; iconoNombre: "play"
+            verde: raiz.trailerOn; detalle: raiz.trailerDetalle
             onClic: raiz.trailerClic()
         }
     }
@@ -70,7 +78,8 @@ Item {
         property string lado: "medio"
         property string texto: ""
         property string iconoNombre: ""
-        property string iconoColor: "FFFFFF"
+        property string iconoColor: seg.verde ? "04150D" : (seg.lado === "izq" ? "EBCB8F" : "EEF3F4")   // (1.7.8) oscuro en verde: se lee
+        property string detalle: ""         // (1.8.5) lo elegido, chiquito debajo del titulo
         property string alinear: "centro"
         property bool verde: false
         signal clic()
@@ -107,7 +116,12 @@ Item {
         // destello que la cruza cada pocos segundos (recortado a la pastilla)
         Item {
             id: pastillaT
-            visible: seg.verde
+            // (1.8.5) se enciende y se apaga con un resorte (antes estaba siempre)
+            opacity: seg.verde ? 1 : 0
+            scale: seg.verde ? 1 : 0.9
+            visible: opacity > 0.01
+            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: 340; easing.type: (typeof quieto !== "undefined" && quieto) ? Easing.OutQuad : Easing.OutBack; easing.overshoot: 1.8 } }
             anchors.fill: parent
             anchors.margins: Math.round(seg.height * 0.11)
             Vidrio {
@@ -121,7 +135,7 @@ Item {
             }
             Item {
                 anchors.fill: parent
-                layer.enabled: true
+                layer.enabled: pastillaT.visible
                 layer.effect: MultiEffect { maskEnabled: true; maskSource: mascaraT }
                 Rectangle {
                     width: pastillaT.height * 0.9; height: pastillaT.height * 2.2
@@ -141,7 +155,7 @@ Item {
                     }
                 }
             }
-            Item { id: mascaraT; anchors.fill: parent; layer.enabled: true; visible: false
+            Item { id: mascaraT; anchors.fill: parent; layer.enabled: pastillaT.visible; visible: false
                 Rectangle { anchors.fill: parent; radius: height / 2 } }
         }
 
@@ -180,17 +194,31 @@ Item {
                 transform: Translate { x: zona.containsMouse ? (seg.verde ? 3 : 0) : 0
                     Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } } }
             }
-            Text {
+            Column {
                 anchors.verticalCenter: parent.verticalCenter
-                text: seg.texto
-                // (1.7.8, auditoria) en verde, texto oscuro; «Pon el nombre» vacio se ve como invitacion (apagado),
-                // y ya puesto, como dato
-                readonly property bool invita: seg.lado === "izq" && seg.texto.indexOf("Pon ") === 0
-                color: seg.verde ? "#04150D" : (invita ? "#8FA3A8" : "#F1F5F6")
-                font.family: raiz.familia; font.pixelSize: raiz.tam
-                font.weight: seg.verde || (seg.lado === "izq" && !invita) ? Font.DemiBold : Font.Normal
-                elide: Text.ElideRight
-                width: Math.min(implicitWidth, seg.width - raiz.icono - raiz.tam * 4)
+                spacing: raiz.tam * 0.05
+                Text {
+                    text: seg.texto
+                    // (1.7.8, auditoria) en verde, texto oscuro; «Pon el nombre» vacio se ve como invitacion (apagado),
+                    // y ya puesto, como dato
+                    readonly property bool invita: seg.lado === "izq" && seg.texto.indexOf("Pon ") === 0
+                    color: seg.verde ? "#04150D" : (invita ? "#8FA3A8" : "#F1F5F6")
+                    Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                    font.family: raiz.familia; font.pixelSize: raiz.tam
+                    font.weight: seg.verde || (seg.lado === "izq" && !invita) ? Font.DemiBold : Font.Normal
+                    elide: Text.ElideRight
+                    width: Math.min(implicitWidth, seg.width - raiz.icono - raiz.tam * 4)
+                }
+                Text {           // (1.8.5) lo elegido: «2 plantillas», «Horizontal y vertical»
+                    visible: seg.detalle !== ""
+                    text: seg.detalle
+                    color: seg.verde ? "#0B3A24" : "#9DB0B6"
+                    Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                    font.family: raiz.familia; font.pixelSize: Math.round(raiz.tam * 0.66)
+                    font.weight: Font.Medium
+                    elide: Text.ElideRight
+                    width: Math.min(implicitWidth, seg.width - raiz.icono - raiz.tam * 4)
+                }
             }
         }
 

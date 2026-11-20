@@ -114,6 +114,14 @@ class BarraQML:
         self.raiz.setProperty("nombre", texto)
         self.widget.setToolTip(ayuda)
 
+    def poner_eleccion(self, plantillas, trailer):
+        """(1.8.5) Lo que va a salir: plantillas = [nombres], trailer = texto («Horizontal y vertical») o "" si no."""
+        n = len(plantillas)
+        self.raiz.setProperty("plantillasOn", bool(n))
+        self.raiz.setProperty("plantillasDetalle", "%d elegida%s" % (n, "" if n == 1 else "s") if n else "")
+        self.raiz.setProperty("trailerOn", bool(trailer))
+        self.raiz.setProperty("trailerDetalle", trailer or "")
+
 
 # ---------------------------------------------------------------- (1.7) la pantalla de trabajo (qml/Trabajo.qml)
 # Los adaptadores tienen la MISMA API que piezas.Pasos y piezas.Versiones (la ventana los usa igual): guardan el estado

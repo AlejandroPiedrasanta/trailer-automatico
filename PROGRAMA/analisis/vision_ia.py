@@ -23,6 +23,7 @@ import time
 import base64
 import shutil
 import subprocess
+import sys
 import threading
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -196,9 +197,8 @@ def servidor_rapido(nombre=None):
             if not exe:
                 return False
             try:
-                _propio["proc"] = subprocess.Popen(
-                    [exe, "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
-                    creationflags=rutas.SIN_VENTANA,
+                _propio["proc"] = _popen_ajeno(
+                    [exe, "serve"],
                     env=dict(os.environ, OLLAMA_HOST="127.0.0.1:%d" % PUERTO_PROPIO, OLLAMA_NUM_PARALLEL=str(PARALELO),
                              OLLAMA_MAX_LOADED_MODELS="1", **OPCIONES_SERVIDOR))
             except OSError:
@@ -222,14 +222,42 @@ def servidor_rapido(nombre=None):
         return True
 
 
+def _popen_ajeno(args, env=None):
+    """(1.8.5) Arranca un programa AJENO (Ollama) sin que herede las DLL del programa: en el .exe, PyInstaller pone
+    _MEIPASS con SetDllDirectory y en el PATH, y el llama-server de Ollama cargaba de ahi msvcp140/vcruntime140 y
+    las dejaba tomadas: el instalador de la siguiente version no podia borrar _internal y fallaba."""
+    env = dict(os.environ if env is None else env)
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        base = os.path.normcase(os.path.abspath(meipass))
+        env["PATH"] = os.pathsep.join(p for p in env.get("PATH", "").split(os.pathsep)
+                                      if p and not os.path.normcase(os.path.abspath(p)).startswith(base))
+    kernel = None
+    if meipass and os.name == "nt":
+        try:
+            import ctypes
+            kernel = ctypes.windll.kernel32
+            kernel.SetDllDirectoryW(None)            # el hijo hereda la busqueda de DLL: sin la nuestra
+        except Exception:
+            kernel = None
+    try:
+        return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                                creationflags=rutas.SIN_VENTANA, env=env)
+    finally:
+        if kernel is not None:
+            try:
+                kernel.SetDllDirectoryW(meipass)     # la nuestra de vuelta (la necesitan nuestras extensiones)
+            except Exception:
+                pass
+
+
 def _arrancar_ollama():
     """Si Ollama esta instalado pero apagado, lo enciende (sin ventana) y espera un poco."""
     exe = _exe_ollama()
     if not exe:
         return False
     try:
-        subprocess.Popen([exe, "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
-                         creationflags=rutas.SIN_VENTANA)
+        _popen_ajeno([exe, "serve"])
     except OSError:
         return False
     for _ in range(20):

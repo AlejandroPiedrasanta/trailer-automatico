@@ -57,7 +57,8 @@ with zipfile.ZipFile(zipr, 'w') as z:
         for f in fs:
             p = os.path.join(raiz, f)
             rel = os.path.relpath(p, app).replace(os.sep, '/')
-            if publico and ('/recursos/audio/' in '/' + rel or f == 'FogtwoNo5.ttf'):
+            if publico and ('/recursos/audio/' in '/' + rel or f == 'FogtwoNo5.ttf'
+                            or ('/recursos/musica/' in '/' + rel and ' - ' in f)):   # (1.8.7) canciones con derechos
                 continue
             z.write(p, rel, zipfile.ZIP_STORED if f.lower().endswith(guardar) else zipfile.ZIP_DEFLATED)
 print('%.0f MB' % (os.path.getsize(zipr) / 1e6))

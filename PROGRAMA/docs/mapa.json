@@ -697,7 +697,8 @@
    "estado_davinci no usa la API (tasklist/pgrep + titulo de ventana).",
    "Desde el .exe: PYTHON3HOME=_MEIPASS y os.add_dll_directory(carpeta de Resolve).",
    "rutas.abrir_resolve abre DaVinci con rutas.entorno_limpio(): heredando PYTHON3HOME/PYTHONHOME del .exe su Python de Fusion no arranca ('No module named encodings') y DaVinci se cae a los 10 s (18-nov).",
-   "(1.8.2) motor._CONEXION / _conexion_viva: la conexion se reusa mientras DaVinci conteste (GetProjectManager); scriptapp sin respuesta tarda 4,1 s cada vez (MEDIDO). Si DaVinci ya esta abierto CON proyecto (titulo con « - ») y no contesta, 2 intentos mas y error claro en 12 s (antes 75 s de espera): «Cierralo y abrelo otra vez». Visto el 20-nov: DaVinci abierto en EVENTOS CINEMA, Scripting = Local en config.dat, no elevado, y aun asi ni el programa ni el MCP conectaban (reiniciar DaVinci lo arregla)."
+   "(1.8.2) motor._CONEXION / _conexion_viva: la conexion se reusa mientras DaVinci conteste (GetProjectManager); scriptapp sin respuesta tarda 4,1 s cada vez (MEDIDO). Si DaVinci ya esta abierto CON proyecto (titulo con « - ») y no contesta, 2 intentos mas y error claro en 12 s (antes 75 s de espera): «Cierralo y abrelo otra vez». Visto el 20-nov: DaVinci abierto en EVENTOS CINEMA, Scripting = Local en config.dat, no elevado, y aun asi ni el programa ni el MCP conectaban (reiniciar DaVinci lo arregla).",
+   "(1.8.7, 20-nov) DaVinci recien abierto sigue cargando su ultimo proyecto (11 s el de un video): LoadProject(EVENTOS CINEMA) da None aunque esta en la raiz. _conectar_resolve: si el nombre esta en GetProjectListInCurrentFolder, espera y lo pide otra vez (8 x 6 s); solo importa las plantillas si de verdad no existe. La base EVENTOS (PLANTILLA DE DAVINCI) ya no esta en el disco: se trabaja en la que haya (REDES SOCIALES)."
   ]
  },
  {
@@ -727,7 +728,9 @@
   "archivos": [
    "PROGRAMA/armado/build_trailers.py",
    "PROGRAMA/armado/estabilizar.py",
-   "PROGRAMA/armado/profundidad.py"
+   "PROGRAMA/armado/profundidad.py",
+   "PROGRAMA/armado/encuadre.py",
+   "PROGRAMA/armado/armar_ref.py"
   ],
   "simbolos": [
    "Planificador",
@@ -760,7 +763,16 @@
    "_enfoque_evento",
    "_cuadro_malo",
    "_luz_pieza",
-   "enfoque_cine"
+   "enfoque_cine",
+   "_centrar_aereo",
+   "quien_habla",
+   "_por_la_boca",
+   "HABLA_MAX_TOMA",
+   "VOZ_ESCENA_PARTE",
+   "ZOOM_HABLA_MAX",
+   "CARA_HABLA",
+   "el_sacerdote",
+   "CARA_HABLA_SEGURA"
   ],
   "notas": [
    "zonas_de: si el marcador ACTO esta a menos de 5 s, el momento empieza en el cambio de cancion.",
@@ -778,7 +790,14 @@
    "(16-nov) vista(): tramos malos de la IA fuera; nitidez contra la MEJOR camara (FOCO_ABS_MIN 0,55; vertical en horizontal 0,75); TEMBLOR_MAX 3, BARRIDO_MAX 6; estabilizar solo 0,35-2,5; Speed Warp solo en tomas muy firmes; corte al ritmo y encadenado solo en camara lenta, fotos y saltos de luz (SALTO_LUZ).",
    "(1.8.0) Estabilizador: un par que ni los puntos ni la fase midieron se rellena con los vecinos (_rellenar; antes valia 0 y metia un tiron: paneo sintetico 6,02 -> 1,18 px de salto); un ffprobe por archivo (_info) en vez de 3 por plano: 9 tomas reales 50,6 -> 32,5 s (36 % menos), mismo resultado. Sin probar: VFR con -fps_mode passthrough (no se sabe si DaVinci reproduce los VFR cuadro a cuadro). cdl_para mide el tramo que SE VE (dur_f / fps * vel).",
    "(1.8.1) Errores que salieron al ir mas rapido: (1) con el estabilizador guardado (4-9 s en vez de 95) el 15 min salio con 0 transiciones de 142: AddTransition da False con la linea sin asentar tras 128 comps; transiciones() reintenta las que fallan (2+4+6+8 s). (2) Al rearmar el mismo evento, «texto detras: DaVinci no pudo sacar el tramo»: el render del tramo y el recorte _persona_N.mov tenian nombre fijo y la linea vieja los tenia abiertos: ahora llevan la hora en el nombre.",
-   "(1.8.2) «Solo plantillas»: sin versiones (horizontal y vertical vacias) y con plantillas_ref -> _armar_todo no hace pasadas; armar(solo_analisis=True) analiza, renombra, saca el evento del plan previo y deja el estado; luego armar_plantillas_ref. Antes salian tambien las 4 versiones (versiones_guardadas / _guardar ponian todas si no habia ninguna). armar_ref usa ahora color_guardia (boda: QUEMA 1 -> 0 en las 4 plantillas) y los nodos 1 BASE / 3 LOOK. OJO XV 8-nov: 18 clips del media pool con largo de OTRO archivo (renumerado viejo: «048» dice 1665 cuadros y el archivo tiene 30) -> DaVinci rechaza su proxy; se arregla rearmando el XV o con MediaPoolItem.ReplaceClip(misma ruta)."
+   "(1.8.2) «Solo plantillas»: sin versiones (horizontal y vertical vacias) y con plantillas_ref -> _armar_todo no hace pasadas; armar(solo_analisis=True) analiza, renombra, saca el evento del plan previo y deja el estado; luego armar_plantillas_ref. Antes salian tambien las 4 versiones (versiones_guardadas / _guardar ponian todas si no habia ninguna). armar_ref usa ahora color_guardia (boda: QUEMA 1 -> 0 en las 4 plantillas) y los nodos 1 BASE / 3 LOOK. OJO XV 8-nov: 18 clips del media pool con largo de OTRO archivo (renumerado viejo: «048» dice 1665 cuadros y el archivo tiene 30) -> DaVinci rechaza su proxy; se arregla rearmando el XV o con MediaPoolItem.ReplaceClip(misma ruta).",
+   "1.8.7 (la persona, 20-nov: «historia bonita, cámara lenta, aéreas en momentos clave, no repitas más de 2 veces una toma ni de la misma escena; si no hay material, fotos»): Planificador.usos/escenas por version (tope MAX_USOS_TOMA/MAX_USOS_ESCENA = 2; el resumen de los largos no gasta usos y ahi cada toma una vez, tope_toma=1); zona(): dron_clave abre cada capitulo de los largos, luego otra parte de una toma (_reusar con tope), _alargar (planos hasta 2x el corte, como documental) y fotos; repetir es lo ultimo (plan.repetidos). repartir_zonas: cada capitulo entre 0,5 y 1,5x la plantilla segun capacidad_f (2 tramos por toma, hasta hi x LARGO_X). MEDIDO NUESTRA BODA (101 videos, 55 con tramos buenos de 5 s, 31 min): 30 min pasaba de 415 a ~146 fotos de 300 planos; 15 min 29 fotos de 178. Prueba sin DaVinci: scratchpad nb/probar_plan.py y probar_voz.py (pasajes inventados).",
+   "1.8.7 (NUESTRA BODA, hoja de contacto): (1) celular grabado de cabeza = display_matrix rotation -180 y DaVinci NO la aplica (la de 90 si): colocar pone RotationAngle 180 (de_cabeza(it), it['rotacion'] del analisis) y esos planos no se estabilizan (la medida sale derecha). (2) Momentos: Planificador.__init__ corrige el orden del dia cuando la IA VIO preparativos claros (PREPARATIVOS_VISTOS: se maquilla, le ajustan el vestido) -> MAQUILLAJE, y todo lo IGLESIA posterior al fin de la ceremonia (ultima toma de video que la IA vio como iglesia + 10 min) que la IA no vio como iglesia -> FIESTA (la recepcion en casa con pastel y el primer baile eran 25 tomas IGLESIA). (3) Escena continua (tomas sin pausa > ESCENA_PAUSA_S 180 s) como mucho ESCENA_MAX_PARTE 40% de un capitulo de los largos (repartir, _reusar y _alargar via cabe_escena): la bendicion en casa ocupaba 8,5 de 30 min.",
+   "1.8.7 (la persona: «tomas aéreas que no apuntan a nada... paneo o cosas importantes, no cuando despega, y centra al objeto»): utiles() quita al dron DRON_DESPEGUE_S 10 s y DRON_ATERRIZA_S 3 s; _serie premia el paneo parejo (DRON_PANEO 0,35-2,6 px/c: x1,15; quieto x0,8); enfocar() centra cada aerea en lo importante (encuadre.sujeto_aereo: Qwen3-VL con su formato bbox_2d 0-1000 —pedir x, y 0-100 daba siempre 50, 50—; ZOOM_AEREO 1,16 si esta a mas de 0,12 del centro). Plantillas de referencia distintas entre si: armar_ref._VARIEDAD (lo que usaron las anteriores no esta libre y su imagen cuenta como escena vista; semilla por plantilla; motor.armar_plantillas_ref lo vacia). Render: RENDER_QUIETO_S 300 y StopRendering insistido (con la tarjeta llena la primera orden no llega).",
+   "(1.8.7) Plantillas 9:16: el dron horizontal llena la altura y solo se ve su tercio central; armar_ref._centrar_aereo pide a la IA local (encuadre.sujeto_aereo) donde esta lo importante y corre la imagen (Pan, hasta (ancho_imagen - 1080) / 2) para centrarlo.",
+   "(1.8.7, MEDIDO) Quien habla: encuadre.quien_habla mira 2 s (12 cuadros) y gana la cara cuya boca cambia mas que su frente (YuNet da comisuras y ojos); la cara mas grande fallaba en 4 de 4 (el padrino en vez del sacerdote, la novia en vez del abuelo que bendecia) y Qwen3-VL con un solo cuadro tampoco acertaba. Si no esta claro, plano abierto. ubicar_voces: HABLA_MAX_TOMA = 2 vistas por toma y version; elegir_voces: VOZ_ESCENA_PARTE = 0,25 del capitulo para la voz de una escena continua (30 min: 18 -> 12 voces, 7 bendiciones en vez de 13).",
+   "(1.8.7) Cuanto acercar a quien habla: que su cara mida CARA_HABLA (0,11 la 1.a vez, plano medio; 0,20 la 2.a) y lo bastante para traerla al centro, hasta ZOOM_HABLA_MAX = 2x si la toma es 4K (linea de 1080: sin perder nitidez). En la casa las caras median 5 % del alto y con 1,12x quien hablaba seguia al borde. encuadre.acercar corregido: el punto cae justo en el objetivo.",
+   "(1.8.7, MEDIDO) Probado y quitado: que el movimiento de la boca siguiera el volumen del audio de la toma (musica, eco y gente: fallaba con el cura y el abuelo). En la ceremonia (voz PASTOR o DISCURSO en IGLESIA) primero encuadre.el_sacerdote: Qwen3-VL lo ubica por la ropa y se toma la cara de arriba al centro de su caja (con la mas grande salia la novia). BOCA_MIN 2,5 (cura 10-14, abuelo 4,6, novio cabizbajo 1,8); cara de menos de 7 % del alto: hasta 1,5x."
   ]
  },
  {
@@ -898,7 +917,8 @@
    "Nunca la herramienta Shadow de Fusion (pidio 47 GB y tumbo Resolve): sombreado de Text+ (elementos 3 y 5).",
    "Los titulos propios de la plantilla son macros (mWedding, MultiText): no se pueden redisenar; velos_plantilla pone un velo oscuro en la pista TEXTOS (debajo de ellos) mientras estan en pantalla.",
    "disenar_titulo(abajo=True): la tarjeta final en el tercio inferior. Frases 0,088 de tamano y velo 0,55.",
-   "(1.5.7) DUR_CAPITULO/FRASE/GRACIAS 5/6/6,5 s, SEPARACION_TEXTOS 4, frases repartidas despues del capitulo y TRAS_CORTE_S."
+   "(1.5.7) DUR_CAPITULO/FRASE/GRACIAS 5/6/6,5 s, SEPARACION_TEXTOS 4, frases repartidas despues del capitulo y TRAS_CORTE_S.",
+   "1.8.7 (la persona: «que los captions no salgan muy rápido entre cada uno y animaciones más fluidas»): DUR_CAPITULO/FRASE/GRACIAS 6 / 7,5 / 7,5 s, SEPARACION_TEXTOS 12 s, CADA_FRASE 15 min 150 s y 30 min 200 s, FUNDIDO_TEXTO 1,0 / 1,2 s, escritura ESCRITURA_S 0,9-1,6 s (antes 8-22 cuadros) y las frases nunca encima de la voz original (textos_extra(evitar=voces))."
   ]
  },
  {
@@ -928,7 +948,8 @@
    "PROGRAMA/armado/mezcla.py",
    "PROGRAMA/analisis/ritmo.py",
    "PROGRAMA/armado/build_trailers.py",
-   "PROGRAMA/herramientas/hacer_sfx.py"
+   "PROGRAMA/herramientas/hacer_sfx.py",
+   "PROGRAMA/armado/guion_voz.py"
   ],
   "simbolos": [
    "sonorizar",
@@ -943,7 +964,9 @@
    "_final_de_cancion",
    "_mover_cancion",
    "momentos",
-   "sfx_propios"
+   "sfx_propios",
+   "_brillo_sin_hueco",
+   "brillo_titulo_sin_hueco"
   ],
   "notas": [
    "Sin librosa en el .exe: ritmo de las canciones de plantilla en recursos/ritmo_plantillas.json.",
@@ -953,7 +976,12 @@
    "SFX PROPIOS (recursos/sfx/XV_*.wav, los crea herramientas/hacer_sfx.py con numeros, sin licencias): golpe y subida a la entrada de la fiesta (marcador ACTO ... FIESTA), destellos en el titulo y el final, paso en capitulos, obturador en las fotos de la intro. Pista «SFX MOMENTOS».",
    "(1.5.7) SFX 2-3 dB mas bajos (mezcla.OBJETIVOS) y whoosh con fundido de entrada/salida.",
    "(18-nov, la persona: «le falta más SFX de emoción, alegría») sfx.emocion: donde la IA vio un MOMENTO CLAVE en ese plano (it['ia']['instantes'] en [ini, ini+dur]: beso, pastel, primer_baile, brindis, entrada -> vitores/aplausos de la plantilla; anillos, votos -> XV_BRILLO a -6 dB), en el corte, en SFX PUBLICO 2 / SFX PUBLICO sin pisar otros, uno cada 8 s (14 en los largos), hasta 12, nunca en la intro (FIN_INTRO_S) ni donde hay voz (pasajes {'ini','fin',...} de la toma). Boda 1 min vertical: 15 planos con momento clave, 4 con su sonido. Va antes de mezcla.nivelar.",
-   "(1.8.0) Los SFX (sonorizar y emocion) no tapan la voz original: sfx._sin_voz con los tramos de voces_plan (v['pos']); si la voz empieza 2 s o mas despues, el SFX se acorta hasta 0,3 s antes; si ya habla, no va. plantilla_ref: musica de 0 bytes (audio que no cabe en .m4a) se convierte a AAC y se avisa si falta."
+   "(1.8.0) Los SFX (sonorizar y emocion) no tapan la voz original: sfx._sin_voz con los tramos de voces_plan (v['pos']); si la voz empieza 2 s o mas despues, el SFX se acorta hasta 0,3 s antes; si ya habla, no va. plantilla_ref: musica de 0 bytes (audio que no cabe en .m4a) se convierte a AAC y se avisa si falta.",
+   "1.8.7 voz como pelicula de bodas: elegir_voces -> guion_voz (IA local, v5: por frase, etiquetas tipo [voto_promesa, bendicion_familia, bendicion_oracion, agradecimiento, brindis, consejo_deseo, aviso_instruccion, letra_cancion, platica, otro] + palabras_raras + habla_de_los_novios + cierre; la nota la calcula NOTA_TIPO - RESTA_RARAS; MEDIDO con la boda: pedir nota 0-10 daba todo 0 (estricta) o todo 7-8 (hasta a «guarden silencio»); la lista entera de una vez, todo 0) con papeles apertura/historia/cierre; ubicar_voces: historia donde el video cuenta ese momento (hora real), corte J (VOZ_ADELANTO_S), _sincronizar con corte L (VOZ_SALE_ANTES_S), _partir_habla a los VOZ_HABLA_MAX_S (otra camara simultanea o foto del momento), _misma_toma_en_sincro, _cortes_en_pausas (_mover_corte). poner_voces: _reaccion_real (aplausos/risas reales tras la frase en EXTRA AUDIO 1); sfx.tras_voces (XV_BRILLO al final de apertura/cierre/votos); bajar_musica sube en RAMPA_VOZ_SUBE en los largos; ambiente.poner(evitar=voz). VOZ_AISLAR 60. escenas_ia: oraciones con su texto (4o elemento).",
+   "1.8.7: el cierre lo decide el TIPO (TIPOS_CIERRE: bendicion, agradecimiento, brindis, deseos), mejor de la fiesta: la IA no marco «cierre» en ninguna de 62 frases. elegir_voces pone apertura y cierre ANTES de la historia (con la historia primero el tope de voces dejaba fuera el cierre).",
+   "1.8.7 (la persona, 20-nov: «la voz más presente, no poquito; la persona que habla, un par de tomas que la enfoque»): VOCES 15/30 = 10/22, VOZ_LARGO 8-22 / 10-30 s, VOZ_PARTE_ZONA 0,55, MUSICA_BAJO_VOZ -16 dB, guion_voz NOTA_HISTORIA 5. Quien habla se ve DOS veces (_sincronizar pone habla=1; _otra_vez_quien_habla, hacia el final de la voz, habla=2) y enfocar() le pone encuadre con su cara (encuadre.cara: YuNet local; ZOOM_HABLA 1,12 / 1,38, cara a y 0,42, Pan/Tilt sin descubrir bordes) que acercar() aplica en DaVinci.",
+   "(1.8.7, MEDIDO) La plantilla de 15 min deja 14,7-20,3 s sin musica tras la intro (whoosh y el destello del titulo); el destello se apagaba en 19,25 s y quedaba 1,1 s de silencio total («hueco de silencio 0:19» en todos). sfx._brillo_sin_hueco lo corre para que acabe 0,25 s antes de que entre la musica (solo si el hueco es de 0,5 a 2 s).",
+   "(1.8.7, MEDIDO) cruces_de_musica corre DESPUES de los SFX y puede atrasar la cancion que entra tras el titulo: el hueco volvia. sfx.brillo_titulo_sin_hueco, despues de cruces_de_musica, quita y vuelve a poner el destello del titulo (la API no mueve clips) para que acabe 0,25 s antes de la musica."
   ]
  },
  {
@@ -1033,7 +1061,8 @@
    "herramientas/revisar_video.py (hoja | cuadros | audio): revisar un video terminado sin verlo entero.",
    "(1.5.7) revision_ia: la IA mira el video final (cada 3 s, max 180) y pone marcadores rojos REVISAR (IA) en la linea.",
    "(16-nov) revision_ia usa la misma regla que el analisis y dice el motivo de cada marca REVISAR.",
-   "(1.8.0) renderizar.RENDER_QUIETO_S = 600: si el % no se mueve en 10 min, StopRendering y va por el reintento / reinicio de DaVinci. poner_revision_ia espera con tope de 15 min y oyendo Cancelar. editable._exportar_drp exporta a '<video> (nuevo).drp' y solo si salio bien reemplaza (antes se borraba el viejo antes). Trabado de vigia_davinci ya no se lo tragan los except de _recortar_base / proyecto_por_video / _por_drt; el vigia marca SOLO la seccion culpable (la que paso su tope o la mas reciente)."
+   "(1.8.0) renderizar.RENDER_QUIETO_S = 300: si en 5 min no sube el % NI crece el archivo que DaVinci escribe (1.8.7), StopRendering y va por el reintento / reinicio de DaVinci. poner_revision_ia espera con tope de 15 min y oyendo Cancelar. editable._exportar_drp exporta a '<video> (nuevo).drp' y solo si salio bien reemplaza (antes se borraba el viejo antes). Trabado de vigia_davinci ya no se lo tragan los except de _recortar_base / proyecto_por_video / _por_drt; el vigia marca SOLO la seccion culpable (la que paso su tope o la mas reciente).",
+   "(1.8.7, MEDIDO) el de 30 min se detenia en el 6 %: 7 camaras lentas seguidas con Speed Warp a ~1 cuadro/s y la tarjeta llena (Ollama con 7,9 GB). Ahora vision_ia.soltar_gpu() antes de renderizar y el vigilante cuenta tambien el archivo que crece: el de 30 min llego al 30 % en 2 min. Con la IA cargada en la tarjeta el Speed Warp se arrastra."
   ]
  },
  {
@@ -1111,7 +1140,8 @@
    "(19-nov, la persona: «no me des tantas lineas de tiempo abiertas») EVENTOS CINEMA tiene las lineas de TODOS los eventos: ya no se le entrega. Al terminar (abrir_al_terminar) DaVinci queda en el proyecto propio del primer video (carpeta <evento>, «<evento> - VIDEO FINAL HORIZONTAL 1 MIN», una sola linea). «Editar en DaVinci» pide el video (popup con pastillas) y abrir_proyecto_video guarda/cierra lo abierto y abre SOLO ese; si no existe lo importa del .drp o lo hace desde la linea de EVENTOS CINEMA. estado.editando (+ editando_evento) apunta los abiertos: «Renderizar lo editado» los saca desde su proyecto (renderizar_videos_editados). _PROYECTO_VIDEO solo vale mientras corre una operacion: si quedara puesto, el proximo ▶ armaria dentro del proyecto del video.",
    "(19-nov, revision del flujo) conectar_resolve(log, quedarse=True) acepta el proyecto de video abierto (estado.proyecto_video): lo usan abrir/renderizar por video, leer el ruido e indexar (que se salta si no esta en EVENTOS CINEMA; el IntelliSearch automatico al entregar ya no corre). Si DaVinci se reinicia a mitad, conectar_resolve vuelve a _PROYECTO_VIDEO en su carpeta y el .drp solo se exporta si sigue en ese proyecto. ▶ limpia editando/proyecto_video y quita «terminado» del evento que se rearma. preparar_edicion(solo=lineas renderizadas): no rehace los proyectos de los demas videos (ahi viven los retoques). «Renderizar lo editado» pide los videos (popup, marcados los abiertos) -> renderizar_editado(videos=...). videos_editables deja un solo .drp por video (nombre viejo sin HORIZONTAL vs nuevo). Linea «00» (de _por_drt antes del arreglo) se renombra al abrir. Marcadores rojos «REVISAR (IA)»: llegan despues de hacer los proyectos por video, asi que poner_revision_ia (en EVENTOS CINEMA) los guarda en estado.marcas_ia {linea: [desde, segundos]} y abrir_proyecto_video los pone al abrir ese proyecto (y reexporta su .drp); tras «Renderizar lo editado» se ponen en su linea (quedarse=True). revision_ia.marcar quita antes los del mismo nombre (no se duplican). _exportar_drp: temporal «x (nuevo).drp» (DaVinci agrega .drp: «x.drp.nuevo» quedaba «x.drp.nuevo.drp» y el .drp no se actualizaba). videos_editables = .drp + lineas del evento sin .drp.",
    "(1.8.0, 20-nov, PROBADO en DaVinci con el XV 2026-11-08, la persona: «que sea mas ordenada y solo me de la del video») Cada .drp: una sola linea (la del video) en la raiz y el media pool con las MISMAS carpetas y colores del proyecto principal, solo con los clips que usa y numeradas desde 01 (01 VIDEO/<momento>/CAMARA|CELULAR|DRON, 02 FOTOS/<momento>, 03 MUSICA, 04 EFECTOS): _carpetas_del_pool (977 clips en 0,9 s) + _ordenar_pool. Lo nuevo (titulos, overlays) va a EFECTOS. Tiempos de las 8 plantillas: 140 -> ~94 s: ffprobe de los proxies recordado por archivo (_por_archivo: proxies 57 -> ~12 s), _codificador una vez, ajustes del proyecto con GetSetting() de una vez; GetClipProperty() entero (51 clips 0,08 s contra 0,5). Lo que queda es DaVinci: ImportTimelineFromFile 2-3,5 s y SetClipColor 62 ms por clip (no hay en lote). OJO al probar: conectar_resolve() sin quedarse=True vuelve a cargar EVENTOS CINEMA (parece que «Editar» abre todo).",
-   "(1.8.1) _ordenar_linea: en la linea del proyecto de un video se quitan las pistas VACIAS (EXTRA 1/2, EXTRA AUDIO 2, VOZ NATURAL si ese video no lleva voz; la de 1 min quedo con 7 de video y 10 de audio, antes 9 y 12) y «EXTRA AUDIO 1» (ambiente.PISTA) pasa a llamarse «AMBIENTE (SONIDO REAL)». Solo en la copia del video. MEDIDO: SetClipColor 62 ms por clip y NO acelera con hilos (2/4/8 hilos: 2,6 s igual que seguidos) ni con otra carpeta a la vista; no hay color en lote (solo ExportMetadata). La vista de la linea (zoom) no se puede poner por la API."
+   "(1.8.1) _ordenar_linea: en la linea del proyecto de un video se quitan las pistas VACIAS (EXTRA 1/2, EXTRA AUDIO 2, VOZ NATURAL si ese video no lleva voz; la de 1 min quedo con 7 de video y 10 de audio, antes 9 y 12) y «EXTRA AUDIO 1» (ambiente.PISTA) pasa a llamarse «AMBIENTE (SONIDO REAL)». Solo en la copia del video. MEDIDO: SetClipColor 62 ms por clip y NO acelera con hilos (2/4/8 hilos: 2,6 s igual que seguidos) ni con otra carpeta a la vista; no hay color en lote (solo ExportMetadata). La vista de la linea (zoom) no se puede poner por la API.",
+   "1.8.7: proxy de un video de cabeza (rotation 180) hecho con -noautorotate (queda como lo ve DaVinci y el RotationAngle de la linea sirve para los dos; conserva el display_matrix, medido); uno hecho derecho antes se rehace (_de_cabeza(destino))."
   ]
  },
  {
@@ -1591,7 +1621,9 @@
    "(17-nov tarde) Rehechas 6 pistas (las viejas en recursos/musica/_descartadas, fuera del instalador): fiesta Cine latino = reguetón/cumbia (earshot match: reggaeton z 4,5 vs house 3,1), romanticas Juvenil = guitarra acustica, fiestas Clasico = big band. Estado «musica_estilo»: AUTO (POR_TIPO: xv cine latino, boda emotivo, bautizo clasico, graduacion/cumpleanos juvenil), nombre de estilo o PLANTILLA.",
    "Intro: si hay un impacto fuerte (>= 60 % del mayor) entre 1,3 y 2,1 s se usa ESE (3 de 4 intros lo traen en 1,70 s y otro mayor en 3,35): la intro empieza en su principio y suena hasta la cancion siguiente (con el de 3,35 quedaba 1 s a -35 dB).",
    "cruces_de_musica SALTA dos pistas propias del mismo papel puestas seguidas: las «arreglaba» (alargaba la que sale hasta su cola de silencio y la otra entraba 4 s tarde): 2,5 s de silencio en el 14:19 del de 15 min. Encadenar por lo FUERTE (medidas[3], [4]: -32 y -27 dB).",
-   "1.8.5: de fabrica EMOTIVO (trailer_xv.ESTILO_DEFECTO y musica_propia.estilo_elegido) hasta que la persona elija (estado musica_estilo_persona, lo pone _guardar_musica). Trailers.qml: el carrusel se centra en la elegida despues de asentar el modelo (Qt.callLater) y al mostrarse (onEntro)."
+   "1.8.5: de fabrica EMOTIVO (trailer_xv.ESTILO_DEFECTO y musica_propia.estilo_elegido) hasta que la persona elija (estado musica_estilo_persona, lo pone _guardar_musica). Trailers.qml: el carrusel se centra en la elegida despues de asentar el modelo (Qt.callLater) y al mostrarse (onEntro).",
+   "1.8.7: 4 EMOTIVO con 8 pistas de la persona (E:/X/BODAS & XV RECURSOS/MUSICA/BODAS, instrumentales; las cantadas fuera porque chocan con la voz): ROMANTICA C-H (A Thousand Years violin, All of Me piano, Can't Help Falling violin, Perfect violin y piano, Storybook Love piano, River Flows in You), EPICA B (Time, Hans Zimmer), FIESTA B (Dance the Night instrumental). Tienen dueño: en redes pueden silenciarse; la actualizacion publica va sin musica.",
+   "(1.8.7, MEDIDO) La intro suena hasta su final natural (Emotivo: 20 s); si acaba antes que su tramo de la plantilla, plan() hace entrar la cancion siguiente en ese momento (su pista libre en el hueco): quitaba «1 hueco de silencio (0:19, 1.2 s)» de todos los de 15 min con Emotivo."
   ]
  },
  {

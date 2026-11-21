@@ -57,6 +57,11 @@ def tramos_vistos(tl, desde_frame=None):
         return []
     fps = float(tl.GetSetting("timelineFrameRate") or 24)
     desde = tl.GetStartFrame() if desde_frame is None else desde_frame
+    try:
+        horizontal = float(tl.GetSetting("timelineResolutionWidth") or 16) >= float(
+            tl.GetSetting("timelineResolutionHeight") or 9)
+    except Exception:
+        horizontal = True
     out = []
     for v in range(1, tl.GetTrackCount("video") + 1):
         try:                                       # (revision) una pista apagada no es lo que se ve
@@ -72,7 +77,12 @@ def tramos_vistos(tl, desde_frame=None):
                 m = it.GetMediaPoolItem()
                 d = items.get(os.path.normcase(m.GetClipProperty("File Path") or ""))
                 inst = [x for x in ((d or {}).get("ia") or {}).get("instantes") or [] if len(x) > 2]
-                if inst:
+                # (1.8.7, visto en NUESTRA BODA: 13 marcas rojas por video y casi todas falsas) lo que es asi a proposito
+                # no se pregunta: las aereas («no se ve ninguna cara»), las fotos (los anillos de cerca: «gente sin
+                # cabeza») y los videos verticales en la linea horizontal (sus lados difuminados: «algo pegado al lente»)
+                if d and (d.get("tipo") in ("dron", "foto") or (horizontal and not d.get("horizontal", True))):
+                    ok = True
+                elif inst:
                     fps_m = float(m.GetClipProperty("FPS") or fps) or fps
                     # (revision) GetLeftOffset: cuadros del clip o de la linea, segun el caso: se toma el rango que
                     # cubre las dos lecturas (mas cuadros que mirar = mas prudente)

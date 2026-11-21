@@ -230,12 +230,26 @@ def plan(tl, fps, tipo=None):
         todos += [dict(g, pista=t, nombre_pista=pista) for g in grupos if g["fin"] - g["ini"] >= MIN_S * fps]
     out = []
     for g in sorted(todos, key=lambda g: g["ini"]):        # en el orden en que suenan: no repite la misma seguida
-        dur = g["fin"] - g["ini"]
+        ini, dur = g["ini"], g["fin"] - g["ini"]
         papel = papel_de(g["nombre"], g["nombre_pista"])
+        intro = "INTRO" in g["nombre_pista"]
+        # (1.8.7, MEDIDO: «1 hueco de silencio (0:19, 1.2 s)» en todos los de 15 min con Emotivo) la intro suena hasta su
+        # final natural (la de Emotivo dura 20 s); si acaba antes que su tramo, la cancion que sigue entra en ese
+        # momento en vez de en el de la plantilla (antes quedaba 1,3 s en silencio despues del titulo)
+        ant = out[-1] if out else None
+        if ant and ant["intro"] and not intro and ant.get("hueco", 0) >= int(0.3 * fps):
+            fin_ant = st + ant["ini"] + ant["dur"]
+            desde = fin_ant - ant["hueco"]
+            if abs(ini - fin_ant) <= int(0.5 * fps) and all(
+                    x.GetEnd() <= desde or x.GetStart() >= ini for x in tl.GetItemListInTrack("audio", g["pista"]) or []):
+                ini, dur = desde, dur + (ini - desde)
         trozos = _llenar(papel, cat.get(papel) or [], dur, fps, turno) if cat.get(papel) else []
         if trozos:
-            out.append({"pista": g["pista"], "ini": g["ini"] - st, "dur": dur, "papel": papel,
-                        "intro": "INTRO" in g["nombre_pista"], "nombre": g["nombre"], "trozos": trozos})
+            p = {"pista": g["pista"], "ini": ini - st, "dur": dur, "papel": papel, "intro": intro, "nombre": g["nombre"],
+                 "trozos": trozos}
+            if intro:
+                p["hueco"] = max(0, dur - (trozos[-1]["ini"] + trozos[-1]["dur"]))
+            out.append(p)
     return out
 
 

@@ -86,7 +86,12 @@ TEMBLOR_ESTABILIZAR_MAX = 2.5  # (16-nov) y solo si tiembla poco: con mas, el es
 #                               la toma («no apuntan a nada, tal vez el error es al estabilizarlo»); las que tiemblan mas
 #                               de TEMBLOR_MAX ya no entran y entre medio pierden mucho puntaje (PESO_TEMBLOR)
 PESO_TEMBLOR = 0.6            # cuanto baja el puntaje de un medio segundo que tiembla (las tomas firmes ganan)
-LENTOS = {"1min": 3, "3min": 6, "15min": 12, "30min": 18}    # planos en camara lenta por version
+LENTOS = {"1min": 3, "3min": 6, "15min": 24, "30min": 40}    # planos en camara lenta por version (1.8.7: 12/18 -> 24/40 en
+#                               los largos; la persona: «aplica técnicas de cámara lenta»)
+# (1.8.7) LENTO NATURAL en los videos largos: las tomas grabadas a 48 c/s o mas se ven al 40 % sin inventar cuadros (como
+# en las peliculas de boda: el B-roll va lento). Esta parte de los planos firmes de cada capitulo, los de mas emocion y
+# donde sale la persona festejada primero. No en el resumen del principio (va al ritmo), ni en quien habla con su voz.
+LENTO_NATURAL = {"15min": 0.30, "30min": 0.35}
 LENTO_MIN_S = 1.5             # s en pantalla que debe durar un plano para ir en camara lenta (si no, no se aprecia)
 LENTO_PARTE_ZONA = 0.45       # como mucho esta parte de las camaras lentas en un mismo momento (repartidas)
 LENTO_TEMBLOR_MAX = 1.5       # temblor medio maximo para ir lento si la toma es de 48 fps o mas (lento natural)
@@ -115,12 +120,14 @@ PESO_CLAVE_IA, PESO_PROTA_IA, PESO_GENTE_IA, PESO_INUTIL_IA = 1.35, 1.12, 1.05, 
 ACCIDENTAL_SIN_CARAS = 0.35   # un video sin ninguna cara es accidental si sirve menos de esta parte (con caras: 0,15)
 UMBRAL_PLANO = 0.20           # puntaje minimo de un tramo para entrar; por debajo se rellena (dron, fotos) o se
 #                               repite uno bueno, antes que meter una toma floja
-VOCES = {"1min": 1, "3min": 2, "15min": 6, "30min": 14}      # pasajes de voz original (pastor, brindis, discursos)
+VOCES = {"1min": 1, "3min": 2, "15min": 10, "30min": 22}     # pasajes de voz original (pastor, brindis, discursos)
+#                                                               (1.8.7: 6/14 -> 10/22, «la voz más presente, no poquito»)
 # Voz original por version. En el video largo (30 min) va SIEMPRE; en el de 15 viene activada y en los cortos no
 # (la persona lo cambia en Ajustes > Voz original: llega aqui como VOZ = {"1min": True, ...}).
 VOZ_DEFECTO = {"1min": False, "3min": False, "15min": True, "30min": True}
 VOZ_SIEMPRE = ()             # (18-nov, la persona: «que pueda desactivar el sonido de 30 min») ya ninguna es obligada
-VOZ_LARGO = {"1min": (3.0, 7.0), "3min": (4.0, 9.0), "15min": (6.0, 16.0), "30min": (8.0, 24.0)}   # s de cada pasaje
+VOZ_LARGO = {"1min": (3.0, 7.0), "3min": (4.0, 9.0), "15min": (8.0, 22.0), "30min": (10.0, 30.0)}  # s de cada pasaje
+#             (1.8.7: 15 min 6-16 -> 8-22 s; 30 min 8-24 -> 10-30 s: que se entienda la idea completa)
 # ---- Tomas malas: medidas ABSOLUTAS del analizador ("vista" de cada medio segundo). No se comparan con el propio
 # video: un video entero grabado por accidente (camara colgando, apuntando al piso) ya no puntua como uno bueno.
 FOCO_MIN = 0.20               # enfoque respecto al tipico de ESA camara: por debajo esta desenfocada o movida
@@ -150,8 +157,39 @@ VIDEO_ACCIDENTAL = 0.15       # si sirve menos de esta parte del video, el video
 PARECIDAS = 10                # bits de diferencia (de 64) con los que dos imagenes son el mismo encuadre
 TOPE_MISMO_ENCUADRE = 0.15    # parte de los planos de una zona que puede venir del mismo video o encuadre (antes 0,22)
 TOPE_DRON = 0.15              # parte de los planos de una zona que puede ser de dron
+# (1.8.7, la persona: «hay tomas aéreas que no apuntan a nada... debería agarrar tomas en paneo o cosas importantes, no
+# cuando está despegando, y centra al objeto que se está grabando») del dron fuera el despegue y el aterrizaje, se
+# prefieren los tramos con un paneo parejo (ni quieto ni brusco) y el plano se centra en lo importante (encuadre.py)
+DRON_DESPEGUE_S, DRON_ATERRIZA_S = 10.0, 3.0
+DRON_PANEO = (0.35, 2.6)      # px por cuadro de un paneo parejo (192 de ancho): sube el puntaje; quieto, baja
+# (1.8.7, «la persona que habla, un par de tomas que la enfoque») quien habla se ve DOS veces: al empezar (algo
+# acercado, se ve donde esta) y hacia el final de la voz (mas cerca); las aereas se centran en lo importante
+ZOOM_HABLA = (1.12, 1.38)     # primera vez (contexto) / segunda (cerca)
+ZOOM_HABLA_MAX = 2.0          # (1.8.7) hasta aqui se acerca a quien habla si la toma lo da nitido (4K -> 1080: 2x)
+CARA_HABLA = (0.11, 0.20)     # alto de su cara (del cuadro): plano medio la 1.a vez, medio corto la 2.a
+CARA_HABLA_SEGURA = 0.07      # (1.8.7) con la cara mas chica (de lejos) es menos seguro quien es: hasta 1,5x
+ZOOM_AEREO = 1.16
+HABLA_OTRA_VEZ_S = 2.5        # s minimos entre una vez y la otra (y de la segunda en pantalla)
+HABLA_MAX_TOMA = 2           # (1.8.7) veces que se ve a quien habla por toma y por version (sus otras frases, sobre otras tomas)
 # ---- Relleno cuando no alcanzan las tomas buenas (mejor que repetir o meter una toma fea)
-RELLENO_FOTOS = ("30min",)    # versiones que se rellenan con fotos del mismo momento
+RELLENO_FOTOS = ("15min", "30min")   # versiones que se rellenan con fotos del mismo momento (1.8.7: tambien el de 15;
+#                                      la persona: «si no hay material suficiente lo armas con fotos»)
+# (1.8.7, la persona: «no repitas más de 2 veces una toma ni de la misma escena») Cada toma (archivo) sale como mucho
+# MAX_USOS_TOMA veces en una version, en partes distintas; y la misma ESCENA (casi la misma imagen desde la misma
+# camara: la camara fija de la ceremonia, la misma mesa) tambien como mucho MAX_USOS_ESCENA. Si asi no alcanza: dron,
+# fotos del momento, fotos de todo el evento y solo al final se repite (avisando).
+MAX_USOS_TOMA = 2
+MAX_USOS_ESCENA = 2
+# (1.8.7) con poco material bueno (NUESTRA BODA: de 101 videos, 55 con tramos buenos de 5 s o mas, 31 min) un video de
+# 30 min salia con 415 fotos de 532 planos. Antes que fotos, los planos buenos que ya entraron DURAN MAS (como en un
+# documental de boda: la ceremonia, los discursos y el baile respiran): hasta LARGO_X veces el corte mas largo de la
+# version, con mas de su misma toma si es buena y no se uso. Solo en las versiones de planos largos (corte desde 3 s).
+LARGO_X = 2.0
+LARGO_DESDE_S = 3.0
+# (1.8.7, la persona: «ni de la misma escena») una ESCENA continua (tomas grabadas sin pausa de mas de ESCENA_PAUSA_S
+# entre ellas: la bendicion en casa, el baile) no llena mas de ESCENA_MAX_PARTE de un capitulo de los videos largos
+ESCENA_PAUSA_S = 180.0
+ESCENA_MAX_PARTE = 0.40
 FOTO_RELLENO_S = (3.0, 4.5)   # s que dura cada foto de relleno
 # 30 c/s en una linea de 24: Resolve tira 1 de cada 5 cuadros y el movimiento salta. Al 80 % se ven TODOS los
 # cuadros (lento suave, sin saltos). Solo en los planos sin voz sincronizada.
@@ -448,6 +486,15 @@ def decisiones(items):
     return out
 
 
+PREPARATIVOS_VISTOS = r"maquill|peina|peinad|arregl|ajust|vistiendo|se viste|revisa su vestido|se pone el vestido"
+
+
+def _sin_acentos(t):
+    import unicodedata
+    t = unicodedata.normalize("NFD", str(t or "").lower())
+    return "".join(c for c in t if unicodedata.category(c) != "Mn")
+
+
 class Planificador:
     def __init__(self, items, fps):
         self.fps = fps
@@ -482,8 +529,29 @@ class Planificador:
                 fotos = fotos_h
             else:                                        # casi todas las fotos son verticales: sin ellas no hay intro
                 print("Hay %d fotos horizontales: la intro se completa con fotos verticales recortadas." % len(fotos_h))
+        # (1.8.7, NUESTRA BODA: la camara C puesta en hora por el sonido dejo «una joven con corona se maquilla» en
+        # medio de la iglesia) el orden del dia gana a la IA por la hora; pero si la IA VIO preparativos claros (se
+        # maquilla, la peinan, le ajustan o revisa el vestido) la toma es de los preparativos
+        for i in validos + fotos:
+            ia = i.get("ia") or {}
+            if ia.get("momento") == "MAQUILLAJE" and i.get("momento") != "MAQUILLAJE" and not i.get("tramos") and \
+                    re.search(PREPARATIVOS_VISTOS, _sin_acentos(ia.get("escena") or "")):
+                i["momento"], i["por"] = "MAQUILLAJE", "ia (preparativos que se ven)"
+        # (1.8.7, NUESTRA BODA: la recepcion en casa, el pastel y el primer baile —la IA vio «fiesta» en 25 tomas—
+        # quedaron como IGLESIA por el orden del dia y el capitulo de la ceremonia tenia 8 min del mismo cuarto)
+        # Cuando TERMINA la ceremonia (la ultima toma de video que la IA vio como iglesia, con 10 min de margen), lo que
+        # quedo como IGLESIA y la IA no vio como iglesia es la celebracion
+        igl = [i for i in validos if i.get("momento") == "IGLESIA" and (i.get("ia") or {}).get("momento") == "IGLESIA"]
+        if igl:
+            fin_igl = max(_hora(i, i.get("dur", 0)) for i in igl) + datetime.timedelta(minutes=10)
+            for i in validos + fotos:
+                if i.get("momento") == "IGLESIA" and (i.get("ia") or {}).get("momento") != "IGLESIA" and \
+                        not i.get("tramos") and _hora(i) > fin_igl:
+                    i["momento"], i["por"] = "FIESTA", "ia (despues de la ceremonia)"
         self.fotos = self._sin_repetidas(fotos)
         self.usados = {}
+        self.usos = {}                # (1.8.7) ruta -> planos de esa toma en la version (tope MAX_USOS_TOMA)
+        self.escenas = []             # (1.8.7) [(toma, huella)] de cada plano puesto (tope MAX_USOS_ESCENA por escena)
         self.fotos_usadas = set()
         self._pref = {}
         self._emo = {}
@@ -669,6 +737,8 @@ class Planificador:
 
     def utiles(self, v, momentos=None, estricto=True):
         u = restar([(MARGEN, v["dur"] - MARGEN)], v.get("oscuros") or [])
+        if v["tipo"] == "dron" and v.get("dur", 0) > DRON_DESPEGUE_S + DRON_ATERRIZA_S + 4.0:
+            u = restar(u, [(0.0, DRON_DESPEGUE_S), (v["dur"] - DRON_ATERRIZA_S, v["dur"])])     # (1.8.7)
         if estricto:                                # fuera lo que se ve mal (desenfocado, quemado, al piso...)
             u = restar(u, self.vista(v)[0])
         if momentos and v.get("tramos"):            # solo los tramos de ese momento
@@ -687,7 +757,13 @@ class Planificador:
         gente = self.gente(v) * self.lo_que_ve(v) * (PESO_VERTICAL if not VERTICAL and not v.get("horizontal", True)
                                                      else 1.0)
         tramo_ia = self.ia_tramos(v, len(cal))
-        return [c * gente * tramo_ia[i] * (factor[i] if i < len(factor) else 1.0) *
+        mov = [1.0] * len(cal)
+        if v["tipo"] == "dron":                  # (1.8.7) un paneo parejo vale mas que el dron quieto o colgado
+            pan = [math.hypot(q[0], q[1]) for q in (v.get("vista") or {}).get("pan") or []]
+            for i in range(len(cal)):
+                x = pan[i] if i < len(pan) else 0.0
+                mov[i] = 1.15 if DRON_PANEO[0] <= x <= DRON_PANEO[1] else (0.8 if x < DRON_PANEO[0] * 0.5 else 1.0)
+        return [c * gente * tramo_ia[i] * mov[i] * (factor[i] if i < len(factor) else 1.0) *
                 (0.85 + 0.35 * (emo[i] if i < len(emo) else 0.0)) for i, c in enumerate(cal)]
 
     @staticmethod
@@ -799,9 +875,10 @@ class Planificador:
         i1 = min(len(serie), max(i0 + 1, int(math.ceil((a + l) / PASO_CALIDAD))))
         return sum(serie[i0:i1]) / float(i1 - i0)
 
-    def marcar_efectos(self, zonas, fps, max_lentos):
+    def marcar_efectos(self, zonas, fps, max_lentos, natural=0.0):
         """Despues de cortar al ritmo: camara lenta (Speed Warp de Resolve) en los planos mas emotivos y estabilizador
-        en los que tiemblan. Pone p['vel'] (0,4-0,5) y p['estabilizar']."""
+        en los que tiemblan. Pone p['vel'] (0,4-0,5) y p['estabilizar']. natural (1.8.7): parte de los planos de cada
+        capitulo que van en LENTO NATURAL (grabados a 48 c/s o mas: se ven lentos sin inventar cuadros)."""
         cand, con_ella = [], []
         for nombre, _, _, piezas in zonas:
             for p in piezas:
@@ -845,11 +922,46 @@ class Planificador:
             p["vel"] = 0.4 if (p["item"].get("fps") or 30) >= 48 else 0.5
             por_zona[nombre] = por_zona.get(nombre, 0) + 1
             lentos += 1
+        # (1.8.7, la persona: «aplica técnicas de cámara lenta») LENTO NATURAL en los videos largos: como en las
+        # peliculas de boda, lo grabado a 48 c/s o mas va lento (al 40 % con 60 c/s) sin que Resolve invente cuadros.
+        # Los firmes primero por emocion, la persona festejada y lo bonito que vio la IA. Nunca quien habla con su
+        # voz, ni el resumen del principio (va al ritmo), ni el plano final (ya va lento).
+        if natural > 0:
+            for nombre, _, _, piezas in zonas:
+                if nombre not in ZONAS:
+                    continue
+                videos = [p for p in piezas if p["tipo"] != "foto"]
+                ya = sum(1 for p in videos if p.get("vel"))
+                tope = int(round(len(videos) * natural))
+                cand_n = []
+                for p in videos:
+                    v = p["item"]
+                    vf = float(v.get("fps") or 30)
+                    l = p["dur_f"] / float(fps)
+                    if p.get("vel") or p.get("sincro") or p.get("heroe") or p.get("final") or vf < 48 or l < LENTO_MIN_S:
+                        continue
+                    pan = [math.hypot(q[0], q[1]) for q in (v.get("vista") or {}).get("pan") or []]
+                    if self.media(v.get("temblor") or [], p["ini"], l) > LENTO_TEMBLOR_MAX or \
+                            self.media(pan, p["ini"], l) > BARRIDO_MAX / 2.0:
+                        continue
+                    belleza = float(((v.get("ia") or {}).get("belleza")) or 5) / 10.0
+                    sc = self.media(self.emocion(v), p["ini"], l) + (0.35 if v.get("prota") else 0.0) + 0.3 * belleza
+                    cand_n.append((sc, p))
+                for _, p in sorted(cand_n, key=lambda t: -t[0]):
+                    if ya >= tope:
+                        break
+                    vf = float(p["item"].get("fps") or 60)
+                    p["vel"] = round(max(0.25, min(0.5, fps / vf)), 3)
+                    p["lento_natural"] = True
+                    lentos += 1
+                    ya += 1
         for _, _, _, piezas in zonas:
             for p in piezas:
                 if p["tipo"] == "foto" or p["tipo"] == "dron":
                     continue
                 l = p["dur_f"] / float(fps) * p.get("vel", 1.0)
+                if de_cabeza(p["item"]):          # (1.8.7) medida derecha y aplicada de cabeza: empeoraria
+                    continue
                 if UMBRAL_TEMBLOR <= self.media(p["item"].get("temblor") or [], p["ini"], l) <= TEMBLOR_ESTABILIZAR_MAX:
                     p["estabilizar"] = True
         return lentos, sum(1 for _, _, _, ps in zonas for p in ps if p.get("estabilizar"))
@@ -902,7 +1014,8 @@ class Planificador:
         l = dur_f / float(self.fps) * vel               # en lento se gasta menos toma de la que se ve
         mejor = None
         hay_prota = any(v.get("prota") for v in self.vids)
-        for v in self.vids:
+        libres_h = [v for v in self.vids if self.puede_usar(v)]      # (1.8.7) mejor una toma que no salio 2 veces
+        for v in (libres_h if any(x["tipo"] == "video" for x in libres_h) else self.vids):
             if v["tipo"] != "video" or not (v.get("vista") or {}).get("nit") or (hay_prota and not v.get("prota")):
                 continue
             tem, pan = v.get("temblor") or [], (v.get("vista") or {}).get("pan") or []
@@ -975,15 +1088,18 @@ class Planificador:
         # (17-nov, XV 8-nov: la «iglesia» eran 3 videos y en el de 1 min uno salia 4 veces) en las versiones cortas una
         # misma toma no cuenta mas de 2 planos (1 min) o 3 (3 min): el momento con poco material se acorta y su tiempo
         # pasa a los que tienen de sobra (repartir_zonas), en vez de repetir la toma
-        tope = 2 if lo <= 1.2 else 3 if lo <= 2.0 else None
-        n = 0
+        tope = MAX_USOS_TOMA                     # (1.8.7) en todas las versiones (antes 3 en el de 3 min y sin tope en
+        #                                          los largos: una toma larga salia muchas veces)
+        # (1.8.7) cada plano puede durar hasta hi x LARGO_X en las versiones de planos largos (_alargar)
+        pieza = hi * LARGO_X if lo >= LARGO_DESDE_S else (lo + hi) / 2.0
+        total = 0.0
         for v in self.vids:
             if v.get("momento") != momento and not any(m == momento for _, _, m in v.get("tramos") or []):
                 continue
-            largo = sum(b - a for a, b in self.utiles(v, [momento]) if b - a >= lo)
-            k = int(largo // (lo + SEPARACION))
-            n += k if tope is None else min(k, tope)
-        return int(n * (lo + hi) / 2.0 * self.fps)
+            # cada plano sale de UN tramo bueno: con 2 planos por toma, lo que dan sus 2 tramos mas largos
+            tramos = sorted((b - a for a, b in self.utiles(v, [momento]) if b - a >= lo), reverse=True)
+            total += sum(min(t, pieza) for t in tramos[:tope])
+        return int(total * self.fps)
 
     def zona(self, momentos, dur_f, corte, rng, dron_primero, con_fotos=False):
         """Planos de video (las mejores tomas libres) para llenar dur_f frames, en orden cronologico. Si las tomas
@@ -1004,6 +1120,14 @@ class Planificador:
             c = min(c, rest)
             cortes.append(c)
             rest -= c
+        # (1.8.7, la persona: «usa las tomas aéreas en momentos claves») el capitulo ABRE desde el aire: la mejor toma
+        # de dron de ese momento, en el plano mas largo (las aereas necesitan tiempo); si no hay, como siempre
+        clave_dron = None
+        if dron_primero and len(cortes) >= 3:
+            largo_d = max(cortes)
+            clave_dron = self.dron_clave(filtro, largo_d)
+            if clave_dron is not None:
+                cortes.remove(largo_d)
         cand = [(v, [x for x in self.libres(v, filtro) if x[1] - x[0] >= lo]) for v in vz]
         cand = [(v, ls) for v, ls in cand if ls]
         pesos, topes = [], []
@@ -1012,8 +1136,12 @@ class Planificador:
             peso = largo * (0.2 + self.puntaje(v, 0, v["dur"]))
             if not VERTICAL and not v.get("horizontal", True):
                 peso *= PESO_VERTICAL            # (18-nov) lo vertical dentro del horizontal, solo si falta material
+            if v["ruta"] in (getattr(self, "otras_plantillas", None) or ()):
+                peso *= 0.2                      # (1.8.7) ya salio en otra plantilla: solo si no hay otra cosa
             pesos.append(peso)
-            topes.append(int(largo // (lo + SEPARACION)))
+            # (1.8.7) como mucho MAX_USOS_TOMA planos de cada toma en toda la version (cuenta lo que ya salio antes)
+            topes.append(max(0, min(int(largo // (lo + SEPARACION)),
+                                    (getattr(self, "tope_toma", None) or MAX_USOS_TOMA) - self.usos.get(v["ruta"], 0))))
         # variedad: los videos del mismo encuadre (la camara en el tripode, varios archivos seguidos) cuentan como uno
         # y todo el dron junto tiene su propio tope (es bonito, pero no es el evento)
         grupo = list(range(len(cand)))
@@ -1025,6 +1153,20 @@ class Planificador:
                 if grupo[j] != "dron" and self.mismo_encuadre(cand[i][0], cand[j][0]):
                     grupo[i] = grupo[j]
                     break
+        # (1.8.7) escena continua de cada toma (por la hora real): ninguna llena mas de ESCENA_MAX_PARTE del capitulo
+        escena = [0] * len(cand)
+        if lo >= LARGO_DESDE_S and len(cand) >= 2:
+            orden_h = sorted(range(len(cand)), key=lambda i: _hora(cand[i][0]))
+            n_esc, fin_esc = 0, None
+            for i in orden_h:
+                v = cand[i][0]
+                ini_v = _hora(v)
+                if fin_esc is not None and (ini_v - fin_esc).total_seconds() > ESCENA_PAUSA_S:
+                    n_esc += 1
+                escena[i] = n_esc
+                fin_v = _hora(v, v.get("dur", 0))
+                fin_esc = fin_v if fin_esc is None or fin_v > fin_esc else fin_esc
+        tope_escena = int(math.ceil(len(cortes) * ESCENA_MAX_PARTE)) if len(set(escena)) >= 2 else len(cortes)
         varios = len(set(grupo)) >= 3
         tope_de = {g: (max(1, int(math.ceil(len(cortes) * TOPE_DRON))) if g == "dron" and varios else
                        max(2, int(math.ceil(len(cortes) * TOPE_MISMO_ENCUADRE))) if varios else len(cortes))
@@ -1032,25 +1174,29 @@ class Planificador:
         total = sum(pesos)
 
         def repartir(topes):
-            cuenta, en_grupo = [0] * len(cand), {}
+            cuenta, en_grupo, en_esc = [0] * len(cand), {}, {}
             if total <= 0:
                 return cuenta
             ideal = [len(cortes) * p / total for p in pesos]
             orden = sorted(range(len(cand)), key=lambda i: -ideal[i])
             for i in orden:                         # primero la parte entera, sin pasar el tope de su encuadre
-                n = min(int(ideal[i]), topes[i], tope_de[grupo[i]] - en_grupo.get(grupo[i], 0))
+                n = min(int(ideal[i]), topes[i], tope_de[grupo[i]] - en_grupo.get(grupo[i], 0),
+                        tope_escena - en_esc.get(escena[i], 0))
                 if n > 0:
                     cuenta[i] = n
                     en_grupo[grupo[i]] = en_grupo.get(grupo[i], 0) + n
+                    en_esc[escena[i]] = en_esc.get(escena[i], 0) + n
             # lo que falta, a las de mas peso primero (antes: por la parte decimal, que con tope por toma dejaba fuera
             # a las mejores)
             falta = len(cortes) - sum(cuenta)
             while falta > 0:
                 hubo = False
                 for i in orden:
-                    if falta > 0 and cuenta[i] < topes[i] and en_grupo.get(grupo[i], 0) < tope_de[grupo[i]]:
+                    if falta > 0 and cuenta[i] < topes[i] and en_grupo.get(grupo[i], 0) < tope_de[grupo[i]] and \
+                            en_esc.get(escena[i], 0) < tope_escena:
                         cuenta[i] += 1
                         en_grupo[grupo[i]] = en_grupo.get(grupo[i], 0) + 1
+                        en_esc[escena[i]] = en_esc.get(escena[i], 0) + 1
                         falta -= 1
                         hubo = True
                 if not hubo:
@@ -1097,24 +1243,105 @@ class Planificador:
         if pendientes:                          # no alcanzan las tomas buenas: dron, fotos y, al final, repetir
             hay = sum(1 for p in piezas if p["tipo"] == "dron")
             pendientes = self._rellenar_dron(pendientes, piezas, max(0, int(len(cortes) * TOPE_DRON) - hay), filtro)
-        if pendientes and con_fotos:            # primero las fotos de ese momento; si se acaban, las de los demas
-            pendientes = self._rellenar_fotos(pendientes, piezas, filtro or momentos)
-            if pendientes:
-                pendientes = self._rellenar_fotos(pendientes, piezas, None)
-        reusos = 0
-        for d in pendientes:                    # ya no queda nada sin usar: se repite la mejor toma posible
-            p = self._reusar(vz, d, rng, filtro)
+        # (1.8.7) cupo de tiempo de cada escena continua (lo que ya entro cuenta); _reusar y _alargar lo respetan
+        esc_de = {cand[i][0]["ruta"]: escena[i] for i in range(len(cand))}
+        tiempo_esc = {}
+        for p in piezas:
+            e = esc_de.get(p["item"]["ruta"]) if p["tipo"] != "foto" else None
+            if e is not None:
+                tiempo_esc[e] = tiempo_esc.get(e, 0) + p["dur_f"]
+        tope_f = int(dur_f * ESCENA_MAX_PARTE) if len(set(escena)) >= 2 else None
+        self._cupo_escena = (esc_de, tope_f, tiempo_esc)
+        reusos, sobran = 0, []
+        for d in pendientes:                    # otra parte de una toma que aun no sale 2 veces
+            p = self._reusar([v for v in vz if self.cabe_escena(v, d)], d, rng, filtro)
+            if p:
+                self.cabe_escena(p["item"], p["dur_f"], sumar=True)
             if p:
                 piezas.append(p)
                 reusos += 1
+            else:
+                sobran.append(d)
+        if sobran and lo >= LARGO_DESDE_S:      # (1.8.7) antes que fotos: los planos buenos duran mas
+            sobran = self._alargar(piezas, sobran, filtro, hi * LARGO_X, (lo + hi) / 2.0)
+        if sobran:                              # (1.8.7) antes que pasar de 2 veces una toma: fotos (en todas las
+            sobran = self._rellenar_fotos(sobran, piezas, filtro or momentos)          # versiones), las de ese
+            if sobran:                                                                  # momento y luego las demas
+                sobran = self._rellenar_fotos(sobran, piezas, None)
+        for d in sobran:                        # ultimo recurso: ni fotos quedan, se repite la mejor toma posible
+            p = self._reusar(vz, d, rng, filtro, tope=False)
+            if p:
+                piezas.append(p)
+                reusos += 1
+                self.repetidos = getattr(self, "repetidos", 0) + 1
         piezas.sort(key=lambda p: p["orden"])
-        if dron_primero:
+        if clave_dron is not None:
+            piezas.insert(0, clave_dron)
+        elif dron_primero:
             dron = next((p for p in piezas if p["tipo"] == "dron"), None)
             if dron is not None:
                 piezas.remove(dron)
                 piezas.insert(0, dron)
         self.separar(piezas)
         return piezas, reusos
+
+    def cabe_escena(self, v, f, sumar=False):
+        """(1.8.7) La escena continua de la toma v aun tiene sitio para f cuadros (ESCENA_MAX_PARTE del capitulo)."""
+        esc_de, tope_f, tiempo = getattr(self, "_cupo_escena", None) or ({}, None, {})
+        e = esc_de.get(v.get("ruta"))
+        if tope_f is None or e is None:
+            return True
+        if tiempo.get(e, 0) + f > tope_f:
+            return False
+        if sumar:
+            tiempo[e] = tiempo.get(e, 0) + f
+        return True
+
+    def _alargar(self, piezas, largos, momentos, hasta_s, medio_s):
+        """(1.8.7) Material corto: antes que fotos, los planos de video que ya entraron duran mas (hasta `hasta_s`), con
+        lo que sigue o lo que viene antes en su misma toma (si es bueno, de ese momento y no se uso). Los mejores
+        primero. Devuelve los largos que aun faltan (en planos de ~medio_s)."""
+        fps = self.fps
+        falta = sum(largos)
+        tope_f = int(hasta_s * fps)
+        orden = sorted((p for p in piezas if p["tipo"] != "foto" and not p.get("dron_clave")),
+                       key=lambda p: -self.puntaje(p["item"], p["ini"], p["dur_f"] / float(fps)))
+        for p in orden:
+            if falta <= 0:
+                break
+            v = p["item"]
+            sitio = tope_f - p["dur_f"]
+            if sitio < int(1.0 * fps):
+                continue
+            a0, a1 = p["ini"], p["ini"] + p["dur_f"] / float(fps)
+            propias = self.usados.get(v["ruta"], [])
+            otros = [w for w in propias if not (abs(w[0] - a0) < 1e-6 and abs(w[1] - a1) < 1e-6)]
+            libres = restar(self.utiles(v, momentos), [(x - SEPARACION, y + SEPARACION) for x, y in otros])
+            tramo = next(((x, y) for x, y in libres if x <= a0 + 1e-6 and a1 <= y + 1e-6), None)
+            if tramo is None:
+                continue
+            mas_fin = max(0, min(sitio, int((tramo[1] - a1) * fps), falta))
+            if mas_fin and self.puntaje(v, a1, mas_fin / float(fps)) < UMBRAL_PLANO:
+                mas_fin = 0
+            mas_ini = max(0, min(sitio - mas_fin, int((a0 - tramo[0]) * fps), falta - mas_fin))
+            if mas_ini and self.puntaje(v, a0 - mas_ini / float(fps), mas_ini / float(fps)) < UMBRAL_PLANO:
+                mas_ini = 0
+            if mas_fin + mas_ini <= 0 or not self.cabe_escena(v, mas_fin + mas_ini, sumar=True):
+                continue
+            p["ini"] = a0 - mas_ini / float(fps)
+            p["dur_f"] += mas_fin + mas_ini
+            p["orden"] = _hora(v, p["ini"])
+            p["alargado"] = True
+            for k, w in enumerate(propias):
+                if abs(w[0] - a0) < 1e-6 and abs(w[1] - a1) < 1e-6:
+                    propias[k] = (p["ini"], p["ini"] + p["dur_f"] / float(fps))
+                    break
+            falta -= mas_fin + mas_ini
+        if falta <= 0:
+            return []
+        n = max(1, int(round(falta / (medio_s * fps))))
+        base = falta // n
+        return [base + (1 if i < falta - base * n else 0) for i in range(n)]
 
     def _rellenar_dron(self, largos, piezas, cupo, momentos=None):
         """Planos de dron que aun no se usaron para lo que falta, hasta `cupo`. Devuelve los largos que siguen sin
@@ -1125,7 +1352,8 @@ class Planificador:
             l = lf / float(self.fps)
             puesto = None
             if cupo > 0:
-                for v in sorted((d for d in self.vids if d["tipo"] == "dron" and (not momentos or d.get("momento") in momentos)),
+                for v in sorted((d for d in self.vids if d["tipo"] == "dron" and self.puede_usar(d)
+                                 and (not momentos or d.get("momento") in momentos)),
                                 key=lambda d: -self.puntaje(d, 0, d["dur"])):
                     ls = [x for x in self.libres(v) if x[1] - x[0] >= l]
                     if ls:
@@ -1206,9 +1434,13 @@ class Planificador:
         for lf in sorted(largos, reverse=True):
             l = lf / float(fps)
             mejor = None
+            ya_vistas = self.escenas_de(v)                   # (1.8.7) la misma escena, como mucho 2 veces
             for a, b in libres:
                 x = a
                 while x + l <= b + 1e-6:
+                    if ya_vistas and self.escena_llena(self.huella(v, x + l / 2.0), ya_vistas):
+                        x += 0.25
+                        continue
                     sc = self.puntaje(v, x, l)
                     if elegidos:
                         dist = min(abs(x - e) for e in elegidos)
@@ -1230,22 +1462,38 @@ class Planificador:
             libres = [x for x in restar(libres, [(s - SEPARACION, s + l + SEPARACION)]) if x[1] - x[0] >= l * 0.5]
         return res, falta
 
-    def _reusar(self, vids, lf, rng, momentos=None):
+    def _reusar(self, vids, lf, rng, momentos=None, tope=True):
+        """Lo que falta cuando ya no quedan tomas buenas libres. (1.8.7) Con tope: otra parte (sin usar) de una toma
+        que aun no sale MAX_USOS_TOMA veces y que no sea una escena ya vista 2 veces; None si no hay (entonces van
+        fotos). Sin tope (ultimo recurso, ni fotos quedan): como antes, la mejor parte posible aunque se repita."""
         l = lf / float(self.fps)
-        sin_dron = [v for v in vids if v["tipo"] != "dron"]       # el dron ya tiene su tope: no se repite de relleno
-        cand = [(v, u) for v in sin_dron for u in self.utiles(v, momentos) if u[1] - u[0] >= l] or \
-               [(v, u) for v in vids for u in self.utiles(v, momentos) if u[1] - u[0] >= l] or \
-               [(v, u) for v in self.vids for u in self.utiles(v) if u[1] - u[0] >= l] or \
-               [(v, u) for v in self.vids for u in self.utiles(v, None, False) if u[1] - u[0] >= l]
+        if tope:
+            ok = [v for v in vids if self.puede_usar(v)]
+            sin_dron = [v for v in ok if v["tipo"] != "dron"]
+            cand = [(v, u) for v in sin_dron for u in self.libres(v, momentos) if u[1] - u[0] >= l] or \
+                   [(v, u) for v in ok for u in self.libres(v, momentos) if u[1] - u[0] >= l]
+        else:
+            sin_dron = [v for v in vids if v["tipo"] != "dron"]   # el dron ya tiene su tope: no se repite de relleno
+            cand = [(v, u) for v in sin_dron for u in self.utiles(v, momentos) if u[1] - u[0] >= l] or \
+                   [(v, u) for v in vids for u in self.utiles(v, momentos) if u[1] - u[0] >= l] or \
+                   [(v, u) for v in self.vids for u in self.utiles(v) if u[1] - u[0] >= l] or \
+                   [(v, u) for v in self.vids for u in self.utiles(v, None, False) if u[1] - u[0] >= l]
         if not cand:
             return None
-        pruebas = []
-        for _ in range(24):
+        pruebas, vistas = [], {}
+        for _ in range(48 if tope else 24):
             v, (a, b) = rng.choice(cand)
             x = rng.uniform(a, b - l)
+            if tope:
+                if v["ruta"] not in vistas:
+                    vistas[v["ruta"]] = self.escenas_de(v)
+                if self.escena_llena(self.huella(v, x + l / 2.0), vistas[v["ruta"]]):
+                    continue
             pruebas.append((self.puntaje(v, x, l), v, x))
+        if not pruebas:
+            return None
         _, v, x = max(pruebas, key=lambda t: t[0])
-        return self._pieza(v, x, lf, marcar=False)
+        return self._pieza(v, x, lf, marcar=tope)
 
     def multicamara(self, piezas, maximo=MULTICAM_MAX):
         """(1.5.7) Angulos alternos en los momentos clave: si un plano emotivo (el beso, los votos, el pastel...) tiene
@@ -1267,6 +1515,8 @@ class Planificador:
             hecho = False
             for s in otras:
                 b = por_ruta[s["ruta"]]
+                if not self.puede_usar(b):                                # (1.8.7) como mucho 2 veces cada toma
+                    continue
                 ini_b = t_corte - s["desde"]                              # el mismo instante en la otra camara
                 fin_b = ini_b + (p["dur_f"] - mitad_f) / float(self.fps)
                 if not any(a <= ini_b and fin_b <= c for a, c in self.utiles(b)):
@@ -1284,11 +1534,47 @@ class Planificador:
         return n
 
     def _pieza(self, v, ini, dur_f, marcar=True):
+        medio = ini + dur_f / (2.0 * self.fps)
+        h = self.huella(v, medio)
         if marcar:
             self.usados.setdefault(v["ruta"], []).append((ini, ini + dur_f / float(self.fps)))
-        medio = ini + dur_f / (2.0 * self.fps)
+            self.usos[v["ruta"]] = self.usos.get(v["ruta"], 0) + 1
+            if h is not None:
+                self.escenas.append((v, h))
         return {"tipo": v["tipo"], "item": v, "ini": ini, "dur_f": dur_f, "orden": _hora(v, ini),
-                "momento": self.momento_en(v, medio), "hash": self.huella(v, medio)}
+                "momento": self.momento_en(v, medio), "hash": h}
+
+    def puede_usar(self, v):
+        """(1.8.7) La toma aun no salio MAX_USOS_TOMA veces en esta version (tope_toma: otro tope, el del resumen)."""
+        return self.usos.get(v["ruta"], 0) < (getattr(self, "tope_toma", None) or MAX_USOS_TOMA)
+
+    def escenas_de(self, v):
+        """(1.8.7) Huellas de lo ya puesto que es la MISMA escena que la toma v (la misma toma o el mismo encuadre: la
+        camara fija). Se calcula una vez por toma y se compara con cada ventana (escena_llena)."""
+        return [h for item, h in self.escenas if item is v or self.mismo_encuadre(item, v)]
+
+    @staticmethod
+    def escena_llena(h, vistas):
+        """(1.8.7) La imagen h ya salio MAX_USOS_ESCENA veces entre las huellas `vistas` (escenas_de)."""
+        if h is None or not vistas:
+            return False
+        return sum(1 for o in vistas if bin(h ^ o).count("1") <= PARECIDAS) >= MAX_USOS_ESCENA
+
+    def dron_clave(self, momentos, lf):
+        """(1.8.7, la persona: «usa las tomas aéreas en momentos claves») La mejor toma de dron de ESOS momentos que aun
+        se puede usar, para abrir un capitulo o despedir el video. Devuelve la pieza (ya contada) o None."""
+        l = lf / float(self.fps)
+        drones = [d for d in self.vids if d["tipo"] == "dron" and self.puede_usar(d)
+                  and (not momentos or d.get("momento") in momentos
+                       or any(m in momentos for _, _, m in d.get("tramos") or []))]
+        for d in sorted(drones, key=lambda d: -self.puntaje(d, 0, d["dur"])):
+            ls = [x for x in self.libres(d, momentos) if x[1] - x[0] >= l]
+            if ls:
+                puesto, _ = self._colocar(d, ls, [lf])
+                if puesto:
+                    puesto[0]["dron_clave"] = True
+                    return puesto[0]
+        return None
 
 
 def al_ritmo(piezas, z0, z1, golpes, fps, lo):
@@ -1468,30 +1754,45 @@ def repartir_zonas(zonas, capacidad, fps):
     plantilla; si un momento no tiene material para su zona (la boda del 7-nov: 5,6 min de iglesia para una zona de
     ~8 min en la version de 30, y nada de preparativos), su zona se achica a lo que alcanza sin repetir tomas y lo que
     sobra pasa a las zonas con material de sobra (la fiesta), segun su holgura. El largo total no cambia; un momento sin
-    nada desaparece (ni su capitulo). La apertura no se toca."""
+    nada desaparece (ni su capitulo). La apertura no se toca.
+    (1.8.7, NUESTRA BODA: en el de 30 min la ceremonia pasaba a 20 min y la fiesta a 3) Cada momento queda entre la
+    MITAD y 1,5 VECES lo que marca la plantilla: la historia sigue equilibrada aunque a todos les falte material (lo que
+    falta lo llenan planos mas largos y fotos de ese momento)."""
     mov = [(n, a, b) for n, a, b in zonas if n in capacidad]
     if len(mov) < 2:
         return zonas
     largo = {n: b - a for n, a, b in mov}
-    nuevo = {n: min(largo[n], max(0, capacidad[n])) for n in largo}
-    sobra = sum(largo.values()) - sum(nuevo.values())
-    holgura = {n: capacidad[n] - nuevo[n] for n in largo if capacidad[n] > nuevo[n]}
-    if sobra <= int(2 * fps):
-        return zonas                                   # casi nada que mover
-    if not holgura:
-        # (16-nov) a nadie le sobra material (con la revision cuadro por cuadro hay menos tomas buenas): igual, el
-        # momento SIN NADA desaparece y su tiempo va a los que tienen algo, segun su material (repetiran alguna toma,
-        # mejor que un capitulo de «preparativos» relleno con la fiesta, como salio en el de 30 min)
-        vacios = [n for n in largo if capacidad[n] <= 0]
-        if not vacios or len(vacios) == len(largo):
-            return zonas
-        nuevo = {n: (0 if n in vacios else largo[n]) for n in largo}
-        sobra = sum(largo[n] for n in vacios)
-        holgura = {n: max(1, capacidad[n]) for n in largo if n not in vacios}
-    total_h = float(sum(holgura.values()))
-    for n, h in holgura.items():
-        nuevo[n] += int(sobra * h / total_h)
-    nuevo[mov[-1][0]] += sum(largo.values()) - sum(nuevo.values())          # lo que quedo por redondeo
+    total = sum(largo.values())
+    vacios = {n for n in largo if capacidad[n] <= 0}
+    if len(vacios) == len(largo):
+        return zonas
+    piso = {n: 0 if n in vacios else largo[n] // 2 for n in largo}
+    techo = {n: 0 if n in vacios else int(largo[n] * 1.5) for n in largo}
+    nuevo = {n: min(techo[n], max(piso[n], capacidad[n])) for n in largo}
+    for _ in range(4):
+        dif = total - sum(nuevo.values())
+        if abs(dif) < fps:
+            break
+        if dif > 0:                  # sobra tiempo: a los que aun pueden crecer (mas al que mas material le sobra)
+            crecen = [n for n in largo if n not in vacios and nuevo[n] < techo[n]]
+            sin_techo = not crecen
+            if sin_techo:
+                crecen = [n for n in largo if n not in vacios]
+            peso = {n: max(1, capacidad[n] - nuevo[n], largo[n] // 4) for n in crecen}
+            pt = float(sum(peso.values()))
+            for n in crecen:
+                x = int(dif * peso[n] / pt)
+                nuevo[n] += x if sin_techo else min(x, techo[n] - nuevo[n])
+        else:                        # el material da para mas: los que pasan su largo vuelven hacia el
+            exceso = {n: nuevo[n] - largo[n] for n in largo if nuevo[n] > largo[n]}
+            if not exceso:
+                exceso = {n: nuevo[n] - piso[n] for n in largo if nuevo[n] > piso[n]}
+            et = float(sum(exceso.values())) or 1.0
+            for n, e in exceso.items():
+                nuevo[n] -= min(e, int(-dif * e / et))
+    nuevo[mov[-1][0]] += total - sum(nuevo.values())          # lo que quedo por redondeo
+    if all(abs(nuevo[n] - largo[n]) < fps for n in largo):
+        return zonas
     fijas = [z for z in zonas if z[0] not in capacidad]
     pos, out = mov[0][1], []
     for n, _, _ in mov:
@@ -1508,7 +1809,14 @@ def repartir_zonas(zonas, capacidad, fps):
     return sorted(fijas + out, key=lambda z: z[1])
 
 
-# ------------------------------------------------------------------ Resolve: colocar y acabar
+def de_cabeza(it):
+    """(1.8.7) La toma trae rotacion de 180 (celular de cabeza): DaVinci la muestra al reves si no se gira."""
+    try:
+        return abs(int(float((it or {}).get("rotacion") or 0))) % 360 == 180
+    except (TypeError, ValueError):
+        return False
+
+
 def colocar(mp, secuencia, pool, fps):
     """Coloca [(pista, frame, pieza)] en orden. Devuelve [(pieza, timeline_item)].
     Las fotos se ponen de una en una y se recortan (Resolve les da duracion fija). Los videos van en
@@ -1526,6 +1834,13 @@ def colocar(mp, secuencia, pool, fps):
                 if p.get("vel", 1.0) < 1.0:
                     p["lento_ok"] = poner_lento(x, p)
                 ajustar(x, p["dur_f"])
+                if de_cabeza(p.get("item")):
+                    # (1.8.7, NUESTRA BODA: 4 planos salian al reves) el celular grabado de cabeza trae «rotacion
+                    # -180» y DaVinci no la aplica (la de 90 si): se gira aqui
+                    try:
+                        x.SetProperty("RotationAngle", 180.0)
+                    except Exception:
+                        pass
                 puestos.append((p, x))
             del lote[:]
 
@@ -1607,6 +1922,16 @@ def acercar(puestos):
     """Aplica el acercamiento marcado (despues de estabilizar, que puede tocar el encuadre)."""
     n = 0
     for p, x in puestos:
+        e = p.get("encuadre")                    # (1.8.7) quien habla enfocado / la aerea centrada
+        if e:
+            try:
+                z, pan, tilt = e
+                n += bool(x.SetProperty("ZoomX", z) and x.SetProperty("ZoomY", z))
+                x.SetProperty("Pan", float(pan))
+                x.SetProperty("Tilt", float(tilt))
+            except Exception:
+                pass
+            continue
         z = p.get("zoom")
         if not z:
             continue
@@ -2014,11 +2339,24 @@ def estabilizar(puestos, fps=24, limite_s=None):
 
 
 TIPOS_VOZ = ("VOTOS", "DECLARACION")    # frases sueltas que tambien valen como voz (el "si, acepto" de una boda)
-VOZ_PARTE_ZONA = 0.35         # como mucho esta parte de una zona lleva voz encima
-VOZ_AISLAR = 70               # aislamiento de voz de Resolve Studio (0-100): quita musica y murmullo de fondo
+VOZ_PARTE_ZONA = 0.55         # como mucho esta parte de una zona lleva voz encima (1.8.7: 0,35 -> 0,55)
+VOZ_ESCENA_PARTE = 0.25       # (1.8.7) y la voz de UNA escena continua (la bendicion en casa), esta parte
+VOZ_AISLAR = 60               # aislamiento de voz de Resolve Studio (0-100): quita musica y murmullo de fondo (1.8.7:
+#                               70 -> 60, queda un poco del lugar y la voz no suena «de estudio»)
 VOZ_FUNDIDOS = (6, 12)        # cuadros de entrada y salida de cada voz
+# (1.8.7, la persona: «con la voz del audio original pasando tomas encima de la voz, algo bonito») como en una pelicula
+# de bodas: la voz entra un poco ANTES de ver a quien habla (corte J), se le ve decir la frase, luego tomas de ese mismo
+# momento (otra camara en el mismo instante, reacciones) y la voz termina sobre otra toma (corte L); los cortes bajo la
+# voz caen en las pausas entre oraciones (no a media palabra).
+VOZ_ADELANTO_S = 1.2          # s que la voz se oye antes de ver a quien habla
+VOZ_SALE_ANTES_S = 0.9        # s antes del final de la voz en que ya no se ve a quien habla (no mueve los labios sin voz)
+VOZ_PAUSA_TOL_S = 1.0         # un corte bajo la voz se mueve hasta esto para caer en una pausa
+VOZ_HABLA_MAX_S = 6.5         # (1.8.7) si se ve a quien habla mas que esto, a la mitad se pasa a otra camara en el mismo
+#                               instante o a una foto de ese momento (reacciones), y la voz sigue
+VOZ_CIERRE_TRAS_S = 1.2       # la frase de cierre termina este tiempo despues de que entra la imagen final
+RAMPA_VOZ_SUBE = 30           # cuadros en que la musica vuelve a subir tras una voz en los videos largos (sin golpe)
 VOZ_GANANCIA = 4.0            # dB de salida del nivelador de dialogo (0-6)
-MUSICA_BAJO_VOZ = -11.0       # dB que baja la musica debajo de la voz
+MUSICA_BAJO_VOZ = -16.0       # dB que baja la musica debajo de la voz (1.8.7: -11 -> -16, la voz por delante)
 RAMPA_VOZ = 14                # cuadros que tarda la musica en bajar y en volver a subir (sin escalon)
 PISTA_MUSICA_BAJA = "MUSICA BAJA (voz)"
 CRUCE_CANCIONES_S = 2.5       # s que se alarga la cancion que sale para cruzarse con la que entra
@@ -2066,7 +2404,12 @@ def _trozos(pasaje, lo, hi):
 def elegir_voces(items, sufijo, zonas, fps, excluir=()):
     """La voz original que va sobre la musica: SOLO lo importante. Pasajes donde alguien habla de corrido (la palabra
     del pastor, un brindis, un discurso) en la ceremonia o en la fiesta, mas los votos de una boda. Nada de ruidos ni
-    voces sueltas del publico. Devuelve [{item, ini, fin, zona, tipo, texto}] en orden."""
+    voces sueltas del publico.
+    (1.8.7, la persona: «arma una historia bonita») En los videos largos la IA local (guion_voz) lee los trozos como
+    una editora y elige la frase de APERTURA (al empezar el primer capitulo, como adelanto, sobre los preparativos), las
+    de la HISTORIA (en el momento en que se dijeron) y la de CIERRE (sobre la ultima aerea y la imagen final). Sin IA:
+    la mas emotiva y corta abre y la mejor de la fiesta cierra.
+    Devuelve [{item, ini, fin, zona, tipo, texto, oraciones, papel}] en orden."""
     n = VOCES.get(sufijo, 1)
     if n <= 0 or not voz_activa(sufijo):
         return []
@@ -2094,64 +2437,493 @@ def elegir_voces(items, sufijo, zonas, fps, excluir=()):
             voz = 0.7 + 0.3 * (habla.get(pa.get("hablante"), 0.0) / mas_habla if mas_habla > 0 else 1.0)
             for k, (a, b, pal) in enumerate(trozos):
                 ritmo = min(1.0, pal / max(0.1, b - a) / 2.5)          # habla clara y seguida
-                cand.append((pa["puntaje"] * voz * (0.6 + 0.4 * ritmo) * (0.85 ** k), it, pa, a, b, mom))
+                ors = [o for o in pa.get("oraciones") or [] if o[0] >= a - 0.05 and o[1] <= b + 0.05]
+                texto = " ".join(str(o[3]) for o in ors if len(o) > 3).strip() or pa.get("texto") or ""
+                cand.append((pa["puntaje"] * voz * (0.6 + 0.4 * ritmo) * (0.85 ** k), it, pa["tipo"], a, b, mom,
+                             ors, texto))
         if TIPO_EVENTO == "boda" and not it.get("pasajes") and it.get("momento") == "IGLESIA" and "IGLESIA" in de_zona:
             for fr in it.get("frases") or []:    # boda sin pasajes: los votos y "los declaro" (frases cortas)
                 if fr["tipo"] in TIPOS_VOZ and 1.2 <= fr["fin"] - fr["ini"] <= 9.0:
-                    cand.append((fr["puntaje"] * 0.9, it, fr, fr["ini"], fr["fin"], "IGLESIA"))
+                    cand.append((fr["puntaje"] * 0.9, it, fr["tipo"], fr["ini"], fr["fin"], "IGLESIA", [],
+                                 fr.get("texto") or ""))
     cand.sort(key=lambda t: -t[0])
-    elegidas, tiempo = [], {}
-    for _, it, pa, a, b, mom in cand:
+    largo_v = n >= 4                             # los videos largos (15 y 30 min) cuentan una historia con la voz
+    pool = []                                    # sin dos trozos pegados del mismo momento
+    for c in cand:
+        if any(e[1] is c[1] and c[3] < e[4] + 6.0 and c[4] > e[3] - 6.0 for e in pool):
+            continue
+        pool.append(c)
+        if len(pool) >= (max(12, 3 * n + 6) if largo_v else 4 * n):
+            break
+    primera = next((z for z in ZONAS if z in de_zona), None)
+    ultima = next((z for z in reversed(ZONAS) if z in de_zona), None)
+    papeles, orden = {}, list(range(len(pool)))
+    if largo_v and len(pool) >= 3:
+        g = None
+        try:
+            mins = int(re.sub(r"\D", "", str(sufijo)) or 15)
+            g = _modulo("guion_voz").elegir([{"momento": c[5], "tipo": c[2], "dur": c[4] - c[3], "texto": c[7]}
+                                             for c in pool], n, TIPO_EVENTO, mins, print)
+        except Exception as ex:
+            aviso("La IA editora de la voz no pudo elegir (%s); se elige como siempre." % ex)
+        if g:
+            # (1.8.7) apertura y cierre primero: con la historia antes, el tope de voces se llenaba y el cierre (la
+            # frase sobre la imagen final) no entraba nunca (NUESTRA BODA: 6 voces sin cierre en el de 15)
+            orden = [i for i in [g["apertura"], g["cierre"]] + list(g["historia"]) if i is not None]
+            if g["apertura"] is not None:
+                papeles[g["apertura"]] = "apertura"
+            if g["cierre"] is not None:
+                papeles[g["cierre"]] = "cierre"
+            minimo = max(2, n // 2)              # si eligio muy pocas, se completa con las de mas puntaje que la IA
+            notas = g.get("notas") or []         # no descarto (nota NOTA_RELLENO o mas: se entienden)
+            if len(orden) < minimo:
+                orden += [i for i in range(len(pool)) if i not in orden and i < len(notas)
+                          and notas[i] >= 4][:minimo - len(orden)]
+        else:                                    # sin IA: abre la mas emotiva y corta, cierra la mejor de la fiesta
+            ap = next((i for i, c in enumerate(pool) if c[4] - c[3] <= 15.0 and c[2] in ("VOTOS", "DECLARACION", "AMOR")),
+                      None)
+            if ap is None:
+                ap = next((i for i, c in enumerate(pool) if c[4] - c[3] <= 15.0), None)
+            ci = next((i for i, c in enumerate(pool) if i != ap and c[5] == "FIESTA" and c[2] in ("BRINDIS", "DISCURSO")),
+                      None)
+            for i, papel in ((ap, "apertura"), (ci, "cierre")):
+                if i is not None:
+                    papeles[i] = papel
+            orden = [i for i in (ap, ci) if i is not None] + [i for i in range(len(pool)) if i not in (ap, ci)]
+    # (1.8.7, MEDIDO en NUESTRA BODA 30 min: 13 bendiciones seguidas, 5,5 min de voz de la MISMA escena en la casa, y
+    # casi no quedaba fiesta) la voz de una escena continua (tomas sin pausa de mas de ESCENA_PAUSA_S) no pasa de
+    # VOZ_ESCENA_PARTE del capitulo: quedan las mejores, que la IA editora ya puso primero
+    escena_de = {}
+    try:
+        n_esc, fin_esc = 0, None
+        for v_ in sorted((x for x in items if x.get("tipo") in ("video", "dron") and x.get("ruta")),
+                         key=lambda x: _hora(x)):
+            ini_v = _hora(v_)
+            if fin_esc is not None and (ini_v - fin_esc).total_seconds() > ESCENA_PAUSA_S:
+                n_esc += 1
+            escena_de[v_["ruta"]] = n_esc
+            fin_v = _hora(v_, v_.get("dur", 0))
+            fin_esc = fin_v if fin_esc is None or fin_v > fin_esc else fin_esc
+    except Exception:
+        escena_de = {}
+    elegidas, tiempo, tiempo_esc = [], {}, {}
+    for i in orden:
         if len(elegidas) >= n:
             break
-        z = de_zona[mom]
-        if tiempo.get(mom, 0.0) + (b - a) > VOZ_PARTE_ZONA * (z[2] - z[1]) / float(fps):
+        _, it, tipo, a, b, mom, ors, texto = pool[i]
+        papel = papeles.get(i, "historia")
+        zona = primera if papel == "apertura" else ultima if papel == "cierre" else mom
+        if zona not in de_zona:
+            continue
+        z = de_zona[zona]
+        if tiempo.get(zona, 0.0) + (b - a) > VOZ_PARTE_ZONA * (z[2] - z[1]) / float(fps):
+            continue
+        esc = (zona, escena_de.get(it.get("ruta")))
+        if papel == "historia" and esc[1] is not None and \
+                tiempo_esc.get(esc, 0.0) + (b - a) > VOZ_ESCENA_PARTE * (z[2] - z[1]) / float(fps):
             continue
         if any(e["item"] is it and a < e["fin"] + 6.0 and b > e["ini"] - 6.0 for e in elegidas):
             continue                             # no dos trozos pegados del mismo momento
-        elegidas.append({"item": it, "ini": a, "fin": b, "zona": mom, "tipo": pa["tipo"], "texto": pa["texto"]})
-        tiempo[mom] = tiempo.get(mom, 0.0) + (b - a)
-    elegidas.sort(key=lambda e: (ZONAS.index(e["zona"]), _hora(e["item"], e["ini"])))
+        elegidas.append({"item": it, "ini": a, "fin": b, "zona": zona, "tipo": tipo, "texto": texto,
+                         "oraciones": ors, "papel": papel, "momento_voz": mom})
+        tiempo[zona] = tiempo.get(zona, 0.0) + (b - a)
+        tiempo_esc[esc] = tiempo_esc.get(esc, 0.0) + (b - a)
+    pesos_papel = {"apertura": 0, "historia": 1, "cierre": 2}
+    elegidas.sort(key=lambda e: (ZONAS.index(e["zona"]), pesos_papel[e["papel"]], _hora(e["item"], e["ini"])))
     return elegidas
 
 
+def _inicios(piezas, z0):
+    out, pos = [], z0
+    for p in piezas:
+        out.append(pos)
+        pos += p["dur_f"]
+    return out
+
+
+def _mover_corte(piezas, k, delta, fps, minimo_s=0.8):
+    """(1.8.7) Corre el corte entre el plano k y el k+1 `delta` cuadros (positivo: el k dura mas y el k+1 empieza
+    despues). El largo de la zona no cambia. El plano k+1 corre su toma lo mismo (si estaba en sincronia, sigue).
+    False si alguno quedaria muy corto o su toma no da para eso."""
+    if not delta:
+        return True
+    if k + 1 >= len(piezas):
+        return False
+    a, b = piezas[k], piezas[k + 1]
+    if any(x.get("final") or x.get("heroe") for x in (a, b)):
+        return False
+    if a["dur_f"] + delta < minimo_s * fps or b["dur_f"] - delta < minimo_s * fps:
+        return False
+    if delta > 0 and a["tipo"] != "foto" and a["ini"] + (a["dur_f"] + delta) / float(fps) > a["item"]["dur"] - 0.2:
+        return False
+    if b["tipo"] != "foto":
+        nuevo = b["ini"] + delta / float(fps)
+        if nuevo < 0.2 or nuevo + (b["dur_f"] - delta) / float(fps) > b["item"]["dur"] - 0.2:
+            return False
+        b["ini"] = nuevo
+    a["dur_f"] += delta
+    b["dur_f"] -= delta
+    return True
+
+
+def _sincronizar(v, piezas, z0, j, lead, largo, plan, fps):
+    """(1.8.7) El plano j pasa a ser el de quien habla, sincronizado con su voz (entra `lead` cuadros despues de que
+    empieza la voz: corte J). Deja de verse antes de que la voz termine (corte L): si el plano dura mas, el corte se
+    adelanta y el siguiente plano se alarga. True si quedo en sincronia."""
+    p, c = piezas[j], v["item"]
+    a = v["ini"] + lead / float(fps)                     # lo que se oye cuando entra el plano
+    resto = (largo - lead) / float(fps) - VOZ_SALE_ANTES_S
+    if resto < 1.5:
+        return False
+    if p["dur_f"] / float(fps) > resto:
+        quiero = int(round(resto * fps))
+        if not _mover_corte(piezas, j, quiero - p["dur_f"], fps):
+            # se le veria hablar sin voz: no, salvo que el plano se pueda partir (la segunda mitad son reacciones)
+            if p["dur_f"] / float(fps) > resto + VOZ_SALE_ANTES_S and p["dur_f"] / float(fps) <= VOZ_HABLA_MAX_S:
+                return False
+    d = p["dur_f"] / float(fps)
+    malos = plan.vista(c)[0] if plan is not None else []
+    if a + d > c["dur"] - 0.15 or any(x < a + d and y > a for x, y in malos):
+        return False
+    p.update({"tipo": c["tipo"], "item": c, "ini": a, "sincro": True, "habla": 1, "voz_tipo": v.get("tipo"),
+              "voz_momento": v.get("momento_voz"),
+              "momento": Planificador.momento_en(c, a + d / 2.0),
+              "hash": plan.huella(c, a + d / 2.0) if plan is not None else None})
+    for clave in ("vel", "relleno", "lento_natural", "conformado"):
+        p.pop(clave, None)
+    v["sincro"] = True
+    return True
+
+
+def _otra_vez_quien_habla(v, piezas, z0, largo, plan, fps):
+    """(1.8.7, la persona: «la persona que habla, un par de tomas que la enfoque para dar contexto») Hacia el final de
+    la voz se vuelve a ver a quien habla, mas cerca y en sincronia (corte L: deja de verse antes de que termine). True
+    si quedo."""
+    if plan is None:
+        return False
+    c = v["item"]
+    ini = _inicios(piezas, z0)
+    fin_v = v["pos"] + largo
+    ya = [ini[k] + p["dur_f"] for k, p in enumerate(piezas) if p.get("sincro") and p.get("item") is c
+          and ini[k] < fin_v and ini[k] + p["dur_f"] > v["pos"]]
+    desde = (max(ya) if ya else v["pos"]) + int(HABLA_OTRA_VEZ_S * fps)
+    hasta = fin_v - int(VOZ_SALE_ANTES_S * fps)
+    malos = plan.vista(c)[0]
+    for k in sorted(range(len(piezas)), key=lambda k: -ini[k]):           # la mas cercana al final primero
+        p = piezas[k]
+        if ini[k] < desde or ini[k] + p["dur_f"] > hasta or p["dur_f"] < int(HABLA_OTRA_VEZ_S * fps) or \
+                p.get("final") or p.get("heroe") or p.get("sincro") or p.get("dron_clave"):
+            continue
+        t = v["ini"] + (ini[k] - v["pos"]) / float(fps)
+        d = p["dur_f"] / float(fps)
+        if t < 0.2 or t + d > c["dur"] - 0.15 or any(x < t + d and y > t for x, y in malos):
+            continue
+        p.update({"tipo": c["tipo"], "item": c, "ini": t, "sincro": True, "habla": 2, "voz_tipo": v.get("tipo"),
+                  "voz_momento": v.get("momento_voz"),
+                  "momento": Planificador.momento_en(c, t + d / 2.0), "hash": plan.huella(c, t + d / 2.0)})
+        for clave in ("vel", "relleno", "lento_natural", "conformado", "zoom"):
+            p.pop(clave, None)
+        return True
+    return False
+
+
+def enfocar(zonas, fps):
+    """(1.8.7) El encuadre de quien habla (su cara, con la IA de caras: algo acercado la primera vez, mas cerca la
+    segunda) y de las aereas (lo importante al centro, con la IA de vista). Pone p['encuadre'] = (zoom, pan, tilt);
+    acercar() lo aplica en DaVinci. Devuelve (caras, aereas)."""
+    try:
+        enc = _modulo("encuadre")
+    except Exception as ex:
+        aviso("Sin encuadre automatico (%s)" % ex)
+        return 0, 0
+    n_c = n_a = 0
+    for _nombre, _z0, _z1, piezas in zonas:
+        for p in piezas:
+            it = p.get("item") or {}
+            if p["tipo"] == "foto" or not it.get("horizontal", True) or p.get("final") or p.get("heroe"):
+                continue
+            medio = float(p.get("ini") or 0.0) + p["dur_f"] / (2.0 * fps)      # el centro de la ventana (tambien en lento)
+            try:
+                if p.get("habla"):
+                    # (1.8.7, MEDIDO) la cara mas grande era a veces el padrino, no el sacerdote que hablaba: se
+                    # centra la cara de QUIEN HABLA (la boca que se mueve; si no, la IA de vista); si no se sabe quien
+                    # es, el plano queda abierto (da mas contexto que acercarse a una cara cualquiera)
+                    c = None
+                    if p.get("voz_momento") == "IGLESIA" and p.get("voz_tipo") in ("PASTOR", "DISCURSO"):
+                        c = enc.el_sacerdote(it["ruta"], medio)      # (1.8.7) el sermon es del sacerdote, no del novio
+                    if c is None:
+                        c = enc.quien_habla(it["ruta"], medio)
+                    if c:
+                        z = ZOOM_HABLA[1] if p["habla"] == 2 else ZOOM_HABLA[0]
+                        if c[2] > 0.30:                  # la cara ya ocupa mucho: no tanto
+                            z = 1.0 + (z - 1.0) * 0.5
+                        else:
+                            # (1.8.7, visto en NUESTRA BODA: con 1,12x quien hablaba al borde se quedaba al borde y en la
+                            # casa las caras eran de 5 % del alto) que su cara quede de plano medio la 1.a vez y medio
+                            # corto la 2.a, y lo bastante para traerla al centro, sin pasar de lo que la toma da nitido
+                            # (4K en una linea de 1080: hasta 2x)
+                            z_max = max(ZOOM_HABLA[1], min(ZOOM_HABLA_MAX if c[2] >= CARA_HABLA_SEGURA else 1.5,
+                                                           float(it.get("ancho") or 1920) / 1920.0))
+                            z = max(z, CARA_HABLA[1 if p["habla"] == 2 else 0] / max(c[2], 0.01))
+                            lejos = abs(c[0] - 0.5) * 2.0
+                            if lejos < 0.95:
+                                z = max(z, 1.0 / (1.0 - lejos))
+                            z = round(min(z, z_max), 3)
+                        pan, tilt = enc.acercar(c[0], c[1], z, (0.5, 0.42))
+                        p["encuadre"] = (z, pan, tilt)
+                        n_c += 1
+                elif p["tipo"] == "dron":
+                    s = enc.sujeto_aereo(it["ruta"], medio)
+                    if s and (abs(s[0] - 0.5) > 0.12 or abs(s[1] - 0.5) > 0.12):
+                        pan, tilt = enc.acercar(s[0], s[1], ZOOM_AEREO)
+                        p["encuadre"] = (ZOOM_AEREO, pan, tilt)
+                        n_a += 1
+            except Exception:
+                continue
+    return n_c, n_a
+
+
+def _partir_habla(v, piezas, z0, j, plan, fps):
+    """(1.8.7) Si se ve a quien habla mas de VOZ_HABLA_MAX_S, el plano se parte en una pausa cerca de la mitad: la
+    segunda parte es otra camara en el mismo instante (sincronia) o, si no hay, una foto de ese momento (la novia, los
+    invitados: reacciones), y la voz sigue sonando encima. True si lo partio."""
+    if plan is None:
+        return False
+    p, c = piezas[j], v["item"]
+    if p["dur_f"] / float(fps) <= VOZ_HABLA_MAX_S:
+        return False
+    ini = _inicios(piezas, z0)
+    medio = ini[j] + p["dur_f"] // 2
+    pausas = []
+    ors = v.get("oraciones") or []
+    for o1, o2 in zip(ors, ors[1:]):
+        if o2[0] - o1[1] >= 0.12:
+            pausas.append(v["pos"] + int(round(((o1[1] + o2[0]) / 2.0 - v["ini"]) * fps)))
+    cerca = [x for x in pausas if ini[j] + int(2.5 * fps) <= x <= ini[j] + p["dur_f"] - int(2.0 * fps)]
+    corte = min(cerca, key=lambda x: abs(x - medio)) if cerca else medio
+    d1 = corte - ini[j]
+    d2 = p["dur_f"] - d1
+    t_c = v["ini"] + (corte - v["pos"]) / float(fps)      # el instante de la voz en el corte
+    nueva = None
+    por_ruta = {x["ruta"]: x for x in plan.vids}
+    for s_ in c.get("simultaneas") or []:
+        b = por_ruta.get(s_.get("ruta"))
+        if b is None or b is c or not s_.get("audio") or not plan.puede_usar(b):
+            continue
+        tb = t_c - s_["desde"]
+        if any(a0 <= tb and tb + d2 / float(fps) <= a1 for a0, a1 in plan.utiles(b)):
+            nueva = plan._pieza(b, tb, d2)
+            nueva.update({"sincro": True, "multicam": True, "reaccion": True})
+            break
+    if nueva is None:                                     # una foto de ese momento, la mas cercana en el tiempo
+        try:
+            hora = _hora(c, t_c)
+            fotos = [f for f in plan.fotos if f["ruta"] not in plan.fotos_usadas
+                     and f.get("momento") == Planificador.momento_en(c, t_c) and (f.get("ia") or {}).get("util") is not False
+                     and f.get("caras")]
+            f = min(fotos, key=lambda f: abs((_hora(f) - hora).total_seconds())) if fotos else None
+        except Exception:
+            f = None
+        if f is None or abs((_hora(f) - hora).total_seconds()) > 900:
+            return False
+        plan.fotos_usadas.add(f["ruta"])
+        nueva = {"tipo": "foto", "item": f, "dur_f": d2, "orden": _hora(f), "momento": f.get("momento"),
+                 "relleno": True, "reaccion": True, "hash": int(f["dhash"], 16) if f.get("dhash") else None}
+    p["dur_f"] = d1
+    piezas.insert(j + 1, nueva)
+    return True
+
+
+def _reaccion(v, piezas, z0, j, largo, plan, fps):
+    """(1.8.7) Despues de ver a quien habla, OTRA camara en el MISMO instante (las «simultaneas» que confirmo el
+    sonido): la novia escuchando, los invitados... reacciones de verdad, en sincronia. True si puso una."""
+    if plan is None or j + 1 >= len(piezas):
+        return False
+    if _partir_habla(v, piezas, z0, j, plan, fps):
+        return True
+    c = v["item"]
+    ini = _inicios(piezas, z0)
+    k = j + 1
+    if ini[k] >= v["pos"] + largo - int(1.0 * fps) or piezas[k].get("final") or piezas[k].get("heroe"):
+        return False
+    t_c = v["ini"] + (ini[k] - v["pos"]) / float(fps)     # el instante de la voz cuando entra el plano k
+    d = piezas[k]["dur_f"] / float(fps)
+    por_ruta = {x["ruta"]: x for x in plan.vids}
+    for s_ in c.get("simultaneas") or []:
+        b = por_ruta.get(s_.get("ruta"))
+        if b is None or b is c or not s_.get("audio") or not plan.puede_usar(b):
+            continue
+        tb = t_c - s_["desde"]
+        if any(a0 <= tb and tb + d <= a1 for a0, a1 in plan.utiles(b)):
+            nueva = plan._pieza(b, tb, piezas[k]["dur_f"])
+            nueva.update({"sincro": True, "multicam": True, "reaccion": True})
+            piezas[k] = nueva
+            return True
+    return False
+
+
+def _misma_toma_en_sincro(v, piezas, z0, largo, fps):
+    """(1.8.7) Bajo la voz, otro plano de la MISMA toma (otra parte de quien habla) se le veria mover los labios con
+    otras palabras: se pone en el instante que suena (sincronia)."""
+    c, n = v["item"], 0
+    ini = _inicios(piezas, z0)
+    fin_v = v["pos"] + largo
+    for k, p in enumerate(piezas):
+        if p.get("sincro") or p["tipo"] == "foto" or p.get("item") is not c:
+            continue
+        if ini[k] + p["dur_f"] <= v["pos"] or ini[k] >= fin_v:
+            continue
+        t = v["ini"] + (ini[k] - v["pos"]) / float(fps)
+        if 0.2 <= t and t + p["dur_f"] / float(fps) <= c["dur"] - 0.2:
+            p["ini"] = t
+            p["sincro"] = True
+            for clave in ("vel", "lento_natural", "conformado"):
+                p.pop(clave, None)
+            n += 1
+    return n
+
+
+def _cortes_en_pausas(v, piezas, z0, largo, fps):
+    """(1.8.7) Bajo la voz los cortes caen en las PAUSAS entre oraciones (no a media palabra): cada corte se mueve a
+    la pausa mas cercana si esta a menos de VOZ_PAUSA_TOL_S. Devuelve cuantos movio."""
+    ors = v.get("oraciones") or []
+    pausas = []
+    for o1, o2 in zip(ors, ors[1:]):
+        if o2[0] - o1[1] >= 0.12:
+            pausas.append(v["pos"] + int(round(((o1[1] + o2[0]) / 2.0 - v["ini"]) * fps)))
+    if not pausas:
+        return 0
+    fin_v = v["pos"] + largo
+    tol = int(VOZ_PAUSA_TOL_S * fps)
+    movidos, pos = 0, z0
+    for k in range(len(piezas) - 1):
+        pos += piezas[k]["dur_f"]                        # el corte entre k y k+1
+        if pos <= v["pos"] + int(0.5 * fps) or pos >= fin_v - int(0.3 * fps):
+            continue
+        cerca = min(pausas, key=lambda x: abs(x - pos))
+        delta = cerca - pos
+        if 0 < abs(delta) <= tol and _mover_corte(piezas, k, delta, fps):
+            pos += delta
+            movidos += 1
+    return movidos
+
+
 def ubicar_voces(voces, zonas, plan, fps):
-    """A cada voz su lugar en la linea: repartidas a lo largo de su zona, en orden, entrando en un corte. Si se puede,
-    el plano que empieza ahi pasa a ser el de quien habla, sincronizado con su voz (se le ve decirlo); despues la voz
-    sigue sobre los demas planos. Pone v['pos'] (cuadros desde el inicio de la linea) y devuelve las que caben."""
+    """A cada voz su lugar en la linea. (1.8.7) Como en una pelicula de bodas:
+      - HISTORIA: donde el video cuenta ESE momento (la hora real de la voz: las tomas de alrededor son de ahi). La voz
+        entra VOZ_ADELANTO_S antes de ver a quien habla (corte J), se le ve decirlo en sincronia, luego otra camara en el
+        mismo instante (reacciones) y tomas de ese momento; deja de verse antes de que termine la voz (corte L).
+      - APERTURA: al empezar el primer capitulo, sobre los preparativos, sin ver a quien habla (adelanto).
+      - CIERRE: termina poco despues de que entra la imagen final (sobre la ultima aerea y la foto final).
+    Bajo cada voz los cortes caen en las pausas entre oraciones. Pone v['pos'] (cuadros desde el inicio de la linea)
+    y devuelve las que caben."""
     puestas = []
+    # (1.8.7, MEDIDO en NUESTRA BODA 30 min: la toma del sacerdote se vio 5 veces en 100 s, una por frase) quien habla se
+    # ve como mucho HABLA_MAX_TOMA veces por toma y por version; sus otras frases van sobre otras tomas (ya se sabe
+    # quien es: la persona, «no repitas más de 2 veces una toma ni de la misma escena»)
+    vistas = {}
     for nombre, z0, z1, piezas in zonas:
         vs = [v for v in voces if v["zona"] == nombre]
         if not vs:
             continue
-        inicios, pos = [], z0
-        for p in piezas:
-            inicios.append(pos)
-            pos += p["dur_f"]
-        libre = z0 + int(2.0 * fps)
-        for k, v in enumerate(vs):
+        tope = z1 - int(2.0 * fps)
+        for v in [v for v in vs if v.get("papel") == "cierre"]:
             largo = int(round((v["fin"] - v["ini"]) * fps))
-            quiero = max(libre, z0 + int((k + 0.5) / len(vs) * (z1 - z0)) - largo // 2)
-            cand = [(abs(x - quiero), j) for j, x in enumerate(inicios)
-                    if libre <= x and x + largo <= z1 - int(2.0 * fps)]
-            if not cand:
-                continue
-            j = min(cand)[1]
-            v["pos"] = inicios[j]
+            ini = _inicios(piezas, z0)
+            k_fin = next((k for k, p in enumerate(piezas) if p.get("final") or p.get("heroe")), None)
+            fin_v = min((ini[k_fin] if k_fin is not None else z1 - int(4.0 * fps)) + int(VOZ_CIERRE_TRAS_S * fps),
+                        z1 - int(0.5 * fps))
+            if fin_v - largo >= z0 + int(2.0 * fps):
+                v["pos"] = fin_v - largo
+                tope = min(tope, v["pos"] - int(3.0 * fps))
+        libre = z0 + int(2.0 * fps)
+        for v in vs:
+            largo = int(round((v["fin"] - v["ini"]) * fps))
+            papel = v.get("papel", "historia")
+            ini = _inicios(piezas, z0)
+            if papel == "cierre":
+                if v.get("pos") is None:
+                    continue
+            elif papel == "apertura":            # sobre la aerea que abre el capitulo (no hace falta un corte)
+                if z0 + int(2.0 * fps) + largo > tope:
+                    continue
+                v["pos"] = z0 + int(2.0 * fps)
+            else:
+                cand = [j for j, x in enumerate(ini) if libre <= x and x + largo <= tope
+                        and not piezas[j].get("final") and not piezas[j].get("heroe")]
+                if not cand:
+                    continue
+                try:
+                    hv = _hora(v["item"], v["ini"])
+                    j = min(cand, key=lambda j: abs((piezas[j]["orden"] - hv).total_seconds())
+                            if piezas[j].get("orden") else 1e9)
+                except Exception:
+                    quiero = z0 + int((len(puestas) % 3 + 0.5) / 3.0 * (z1 - z0)) - largo // 2
+                    j = min(cand, key=lambda j: abs(ini[j] - quiero))
+                lead = int(round(VOZ_ADELANTO_S * fps))
+                if j == 0 or ini[j] - lead < libre or piezas[j - 1].get("sincro") or \
+                        piezas[j - 1]["dur_f"] < lead + int(0.6 * fps):
+                    lead = 0
+                v["pos"] = ini[j] - lead
+                ruta_v = v["item"].get("ruta")
+                if vistas.get(ruta_v, 0) < HABLA_MAX_TOMA and _sincronizar(v, piezas, z0, j, lead, largo, plan, fps):
+                    vistas[ruta_v] = vistas.get(ruta_v, 0) + 1
+                    _reaccion(v, piezas, z0, j, largo, plan, fps)
+            _misma_toma_en_sincro(v, piezas, z0, largo, fps)
+            ruta_v = v["item"].get("ruta")
+            if papel == "historia" and v.get("sincro") and vistas.get(ruta_v, 0) < HABLA_MAX_TOMA and \
+                    _otra_vez_quien_habla(v, piezas, z0, largo, plan, fps):
+                vistas[ruta_v] = vistas.get(ruta_v, 0) + 1
+            # (1.8.7) quien habla no se ve mas de VOZ_HABLA_MAX_S seguidos: a la mitad, reacciones (otra camara o foto)
+            ini2 = _inicios(piezas, z0)
+            for k, q in enumerate(piezas):
+                if q.get("sincro") and q.get("item") is v["item"] and q["dur_f"] > VOZ_HABLA_MAX_S * fps and                         ini2[k] < v["pos"] + largo and ini2[k] + q["dur_f"] > v["pos"]:
+                    _partir_habla(v, piezas, z0, k, plan, fps)
+                    break
+            _cortes_en_pausas(v, piezas, z0, largo, fps)
             libre = v["pos"] + largo + int(3.0 * fps)
             puestas.append(v)
-            p, c = piezas[j], v["item"]
-            d = p["dur_f"] / float(fps)
-            a = v["ini"]
-            malos = plan.vista(c)[0] if plan is not None else []
-            if a + d <= c["dur"] - 0.15 and not any(x < a + d and y > a for x, y in malos):
-                p.update({"tipo": c["tipo"], "item": c, "ini": a, "sincro": True,
-                          "momento": Planificador.momento_en(c, a + d / 2.0),
-                          "hash": plan.huella(c, a + d / 2.0) if plan is not None else None})
-                p.pop("vel", None)
-                p.pop("relleno", None)
-                v["sincro"] = True
     return puestas
+
+
+REACCION_TRAS_S = 4.0         # (1.8.7) s despues de la frase en que se busca la reaccion del publico
+REACCION_MIN = 0.4            # cuanto tiene que oirse (0-1 del oido: aplausos, vitores, risas)
+
+
+def _reaccion_real(tl, mp, c, it, v, x, fps):
+    """(1.8.7) Si despues de la frase la gente aplaudio, grito o se rio (lo oyo el oido), ESE sonido entra justo al
+    terminar la voz (en la pista del ambiente, sin aislar), mientras la musica vuelve a subir."""
+    o = it.get("oido") or {}
+    paso, ven = float(o.get("paso") or 0.0), float(o.get("ventana") or 0.0)
+    if not paso:
+        return False
+    fin = v["fin"]
+    mejor = max([p for g in ("aplausos", "vitores", "risas") for k, p in enumerate(o.get(g) or [])
+                 if k * paso < fin + REACCION_TRAS_S and k * paso + ven > fin + 0.5] or [0.0])
+    dur = min(REACCION_TRAS_S, float(it.get("dur") or 0.0) - fin - 0.2)
+    if mejor < REACCION_MIN or dur < 1.5:
+        return False
+    pista = next((t for t in range(1, tl.GetTrackCount("audio") + 1)
+                  if (tl.GetTrackName("audio", t) or "").strip().upper() == "EXTRA AUDIO 1"), None)
+    if pista is None:
+        return False
+    vf = float(it.get("fps") or 30)
+    rec = x.GetEnd() - int(0.3 * fps)
+    largo = int(round((dur + 0.3) * fps))
+    if any(y.GetStart() < rec + largo and rec < y.GetEnd() for y in tl.GetItemListInTrack("audio", pista) or []):
+        return False
+    tl.SetTrackLock("audio", pista, False)
+    s0 = int(round((fin - 0.3) * vf))
+    r = mp.AppendToTimeline([{"mediaPoolItem": c, "startFrame": s0, "endFrame": s0 + int(round((dur + 0.3) * vf)),
+                              "mediaType": 2, "trackIndex": pista, "recordFrame": rec}]) or []
+    if not r:
+        return False
+    try:
+        r[0].SetProperty("AudioVolume", -4.0)
+        r[0].SetFades({"FadeIn": int(0.25 * fps), "FadeOut": int(1.2 * fps)})
+    except Exception:
+        pass
+    return True
 
 
 def pista_voz(tl):
@@ -2219,6 +2991,11 @@ def poner_voces(tl, mp, pool, voces, fps):
             pass
         aisladas += bool(pulir_voz(x))
         tramos.append((x.GetStart(), x.GetEnd(), v))
+        try:                                     # (1.8.7) los aplausos o risas de verdad que vinieron despues
+            if _reaccion_real(tl, mp, c, it, v, x, fps):
+                v["reaccion_real"] = True
+        except Exception:
+            pass
     if tramos and aisladas < len(tramos):        # sin aislamiento por clip: el de la pista entera
         try:
             tl.SetVoiceIsolationState(t, {"isEnabled": True, "amount": VOZ_AISLAR})
@@ -2425,6 +3202,15 @@ def bajar_musica(tl, mp, tramos, fps, db=MUSICA_BAJO_VOZ):
         baja = tl.GetTrackCount("audio")
         tl.SetTrackName("audio", baja, PISTA_MUSICA_BAJA)
     R = RAMPA_VOZ if baja else 2
+    # (1.8.7) en los videos largos la musica vuelve a subir mas despacio tras la voz (sin golpe de volumen): la subida
+    # empieza donde siempre y dura RAMPA_VOZ_SUBE cuadros
+    try:
+        largo_tl = (tl.GetEndFrame() - tl.GetStartFrame()) / float(fps)
+    except Exception:
+        largo_tl = 0.0
+    R2 = RAMPA_VOZ_SUBE if baja and largo_tl > 200 else R
+    if R2 != R:
+        zonas = [(a, b + (R2 - R)) for a, b in zonas]
     n = 0
     for t in _pistas_musica(tl):
         tl.SetTrackLock("audio", t, False)
@@ -2454,13 +3240,13 @@ def bajar_musica(tl, mp, tramos, fps, db=MUSICA_BAJO_VOZ):
             cortes, cur = [], r0
             for a, b in sorted(tocan):
                 if a > cur:                      # tramo a volumen normal: se apaga R cuadros dentro del tramo bajo
-                    cortes.append((t, cur if (cur == r0 or not baja) else cur - R, a + R if baja else a, vol,
-                                   int(fades.get("FadeIn", 0)) if cur == r0 else R, R))
+                    cortes.append((t, cur if (cur == r0 or not baja) else cur - R2, a + R if baja else a, vol,
+                                   int(fades.get("FadeIn", 0)) if cur == r0 else R2, R))
                 cortes.append((baja or t, a, b, vol + db, R if a > r0 else int(fades.get("FadeIn", 0)),
-                               R if b < r1 else int(fades.get("FadeOut", 0))))
+                               R2 if b < r1 else int(fades.get("FadeOut", 0))))
                 cur = b
             if cur < r1:
-                cortes.append((t, cur - R if baja else cur, r1, vol, R, int(fades.get("FadeOut", 0))))
+                cortes.append((t, cur - R2 if baja else cur, r1, vol, R2, int(fades.get("FadeOut", 0))))
             if not tl.DeleteClips([x], False):
                 continue
             for pista_n, a, b, v, fin_, fout in cortes:
@@ -2628,7 +3414,7 @@ def disenar_titulo(it, principal, secundario, frase=False, abajo=False):
         t1.SetInput("Font", FUENTE_TITULO)
         t1.SetInput("Style", "Regular")
         t1.SetInput("Center", {1: 0.5, 2: y, 3: 0.0})
-        escritura = max(8, min(22, int(d * 0.35)))          # frames en que el nombre se escribe
+        escritura = max(int(ESCRITURA_S[0] * 24), min(int(ESCRITURA_S[1] * 24), int(d * 0.25)))   # se escribe
         try:                                                  # empuje lento del nombre
             t1.AddModifier("Size", "BezierSpline")
             t1.SetInput("Size", tam, 0)
@@ -2808,9 +3594,13 @@ TEXTO_PNG = os.path.join(rutas.RECURSOS, "TEXTO_TRANSPARENTE.png")
 TEXTO_PNG_VERTICAL = os.path.join(rutas.RECURSOS, "TEXTO_VERTICAL.png")
 # (1.5.7, la persona: «los captions pasan muy rápido y no están bien distribuidos»): mas tiempo en pantalla, mas
 # separacion, menos frases y repartidas en lo que queda de cada momento despues de su capitulo
-DUR_CAPITULO, DUR_FRASE, DUR_GRACIAS = 5.0, 6.0, 6.5      # s en pantalla (antes 3,2 / 4 / 4,5)
-SEPARACION_TEXTOS = 4.0                                   # s minimos entre dos textos (antes 2)
-CADA_FRASE = [(60, 30.0), (180, 55.0), (900, 110.0), (1e9, 150.0)]   # (hasta s de version, s de momento por frase)
+DUR_CAPITULO, DUR_FRASE, DUR_GRACIAS = 6.0, 7.5, 7.5      # s en pantalla (antes 3,2 / 4 / 4,5; 1.8.6: 5 / 6 / 6,5)
+SEPARACION_TEXTOS = 12.0                                  # s minimos entre dos textos (antes 2; 1.8.6: 4)
+# (1.8.7, la persona: «que los captions no salgan muy rápido entre cada uno y animaciones más fluidas») menos frases en
+# los largos (una cada 150 / 200 s de momento), escritura de 1,5 s, fundidos de 1 s y nunca encima de la voz original
+CADA_FRASE = [(60, 30.0), (180, 55.0), (900, 150.0), (1e9, 200.0)]   # (hasta s de version, s de momento por frase)
+FUNDIDO_TEXTO = (1.0, 1.2)                                # s de entrada y salida de cada texto (antes 0,5 / 0,6)
+ESCRITURA_S = (0.9, 1.6)                                  # s en que el texto se escribe (antes 8-22 cuadros)
 TRAS_CORTE_S = 0.3                                        # el texto entra un poco despues del corte, no con el
 
 
@@ -2883,15 +3673,16 @@ def nuevo_texto(tl, mp, png, pt, ini, dur, nombre, p1, p2, frase, fps):
         t.SetAttrs({"TOOLS_Name": "Template"})
     ok = disenar_titulo(it, p1, p2, frase)
     try:
-        it.SetFades({"FadeIn": int(0.5 * fps), "FadeOut": int(0.6 * fps)})
+        it.SetFades({"FadeIn": int(FUNDIDO_TEXTO[0] * fps), "FadeOut": int(FUNDIDO_TEXTO[1] * fps)})
     except Exception:
         pass
     return ok
 
 
-def textos_extra(tl, mp, png, zonas, fps, perfil, ver, cortes):
+def textos_extra(tl, mp, png, zonas, fps, perfil, ver, cortes, evitar=()):
     """Capitulo al empezar cada momento, frases repartidas dentro de cada momento (mas en las versiones
-    largas) y 'gracias' antes de la tarjeta final (3 min o mas). Nunca encima de otro texto."""
+    largas) y 'gracias' antes de la tarjeta final (3 min o mas). Nunca encima de otro texto. evitar (1.8.7): los tramos
+    de la voz original [(ini, fin)] en cuadros desde el inicio: las frases no van mientras alguien habla."""
     if png is None:
         return 0
     st = tl.GetStartFrame()
@@ -2905,9 +3696,11 @@ def textos_extra(tl, mp, png, zonas, fps, perfil, ver, cortes):
             if t == pt or x.GetMediaPoolItem() is None:
                 ocupado.append((x.GetStart() - st, x.GetEnd() - st))
     m = int(SEPARACION_TEXTOS * fps)
+    voz = [(int(a), int(b)) for a, b in evitar or ()]
 
-    def libre(a, b):
-        return all(b + m <= x0 or a >= x1 + m for x0, x1 in ocupado)
+    def libre(a, b, sin_voz=False):
+        return all(b + m <= x0 or a >= x1 + m for x0, x1 in ocupado) and \
+            (not sin_voz or all(b <= x0 or a >= x1 for x0, x1 in voz))
 
     def al_corte(f, margen=1.5):
         cerca = [c for c in cortes if abs(c - f) <= margen * fps]
@@ -2944,7 +3737,7 @@ def textos_extra(tl, mp, png, zonas, fps, perfil, ver, cortes):
             for desv in sorted(range(-int((z1 - u0) / (2.0 * (cuantas + 1))), int((z1 - u0) / (2.0 * (cuantas + 1))) + 1,
                                      max(1, fps // 2)), key=abs):
                 a = al_corte(centro + desv - d / 2) + int(TRAS_CORTE_S * fps)
-                if u0 <= a and a + d <= z1 - fps and libre(a, a + d):
+                if u0 <= a and a + d <= z1 - fps and libre(a, a + d, sin_voz=True):
                     if nuevo_texto(tl, mp, png, pt, a, d, "TEXTO FRASE %s %d" % (nombre, k + 1), lista[k], "", True, fps):
                         ocupado.append((a, a + d))
                         n += 1
@@ -3326,6 +4119,7 @@ def main():
             plan.poner_estorbo_duro(ver["seg"] <= ESTORBO_DURO_HASTA_S)
             intro = plan.intro(k)
             plan.usados = {}                     # cada version elige de TODO el material: la larga no se queda con las sobras
+            plan.usos, plan.escenas, plan.repetidos = {}, [], 0      # (1.8.7) tope de 2 por toma y por escena
             zonas, info_z, al_golpe = [], {}, 0
             capacidad = {m: plan.capacidad_f(m, ver["corte"]) for m in ZONAS}
             for nombre, z0, z1 in repartir_zonas(zonas_de(tpl.GetMarkers() or {}, total_f, intro_f, fps), capacidad,
@@ -3334,6 +4128,9 @@ def main():
                     # el resumen inicial muestra los mejores momentos: en las versiones largas NO los reserva,
                     # porque luego se cuentan completos en su zona (en 1 y 3 min si, para no repetir planos)
                     reservados = {k: list(v) for k, v in plan.usados.items()}
+                    usos_antes = (dict(plan.usos), list(plan.escenas))
+                    if ver["seg"] > 180:                 # (1.8.7) en el adelanto de los largos, cada toma una vez
+                        plan.tope_toma = 1
                     # (18-nov, la persona: «mejora el armado para crear historias») el resumen tambien cuenta el dia
                     # EN ORDEN: una parte de preparativos, otra de ceremonia y otra de fiesta (segun lo que haya de
                     # cada una), no «lo mejor de todo» junto (abria con el pastel y luego volvia al maquillaje)
@@ -3354,25 +4151,35 @@ def main():
                         piezas, reusos = plan.zona(ZONAS, z1 - z0, ver["apertura"], rng, True)
                     if ver["seg"] > 180:
                         plan.usados = reservados
+                        # (1.8.7) el resumen es un ADELANTO de lo que luego se cuenta completo: sus planos no gastan
+                        # los 2 usos de cada toma (con ellos el de 30 min se quedaba sin video para los capitulos)
+                        plan.usos, plan.escenas = usos_antes
+                    plan.tope_toma = None
                     lo = ver["apertura"][0]
                 else:
                     antes_u = {k: list(v) for k, v in plan.usados.items()}
-                    piezas, reusos = plan.zona([nombre], z1 - z0, ver["corte"], rng, nombre != "MAQUILLAJE",
+                    antes_c = (dict(plan.usos), list(plan.escenas), plan.repetidos)
+                    # (1.8.7) en los videos largos TODOS los capitulos abren desde el aire (si hay dron de ese momento)
+                    abre_dron = nombre != "MAQUILLAJE" or ver["seg"] > 180
+                    piezas, reusos = plan.zona([nombre], z1 - z0, ver["corte"], rng, abre_dron,
                                                ver["sufijo"] in RELLENO_FOTOS)
                     if reusos and plan.estorbo_duro and not ESTRICTO:
                         # (17-nov) en 1 y 3 min el «estorbo» (alguien delante, pegado al lente) queda fuera, pero la
                         # vista lo marca de mas (328 de 1368 cuadros; de 12 mirados, la mitad eran tomas buenas): si
                         # sin esas tomas hay que REPETIR, entran (con su peso bajo) antes que repetir
                         con_u = plan.usados
+                        con_c = (plan.usos, plan.escenas, plan.repetidos)
                         plan.usados = antes_u
+                        plan.usos, plan.escenas, plan.repetidos = dict(antes_c[0]), list(antes_c[1]), antes_c[2]
                         plan.poner_estorbo_duro(False)
-                        p2, r2 = plan.zona([nombre], z1 - z0, ver["corte"], rng, nombre != "MAQUILLAJE",
+                        p2, r2 = plan.zona([nombre], z1 - z0, ver["corte"], rng, abre_dron,
                                            ver["sufijo"] in RELLENO_FOTOS)
                         plan.poner_estorbo_duro(True)
                         if r2 < reusos:
                             piezas, reusos = p2, r2
                         else:
                             plan.usados = con_u
+                            plan.usos, plan.escenas, plan.repetidos = con_c
                     lo = ver["corte"][0]
                 multicam = plan.multicamara(piezas)
                 al_golpe += al_ritmo(piezas, z0, z1, golpes, fps, lo)
@@ -3407,13 +4214,24 @@ def main():
                             pos += p["dur_f"]
                         if pos < c0 and quedan:
                             quedan[-1]["dur_f"] += c0 - pos
+                        # (1.8.7, «tomas aéreas en momentos claves») en los videos largos el video se despide desde el
+                        # aire: el ultimo plano antes de la imagen final es la mejor aerea de ese momento (si queda)
+                        if ver["seg"] > 180 and quedan and quedan[-1]["tipo"] != "dron" and \
+                                quedan[-1]["dur_f"] >= int(3.0 * fps):
+                            adios = plan.dron_clave([nombre_z], quedan[-1]["dur_f"])
+                            if adios is not None:
+                                quedan[-1] = adios
                         zonas[-1] = (nombre_z, z0, z1, quedan + [h])
             except Exception as ex:
                 aviso("%s: no se pudo preparar el plano final (%s)" % (ver["sufijo"], ex))
             movidos = aplicar_orden(zonas, ("V " if VERTICAL else "") + str(ver["sufijo"]), fps)
             if movidos:
                 print("%s: %d planos en el orden que pusiste a mano." % (ver["sufijo"], movidos))
-            lentos, estab = plan.marcar_efectos(zonas, fps, LENTOS.get(ver["sufijo"], 2))
+            lentos, estab = plan.marcar_efectos(zonas, fps, LENTOS.get(ver["sufijo"], 2),
+                                                LENTO_NATURAL.get(ver["sufijo"], 0.0))
+            if plan.repetidos:
+                aviso("%s: %d planos pasan de 2 veces la misma toma (no alcanzaron ni las fotos)."
+                      % (ver["sufijo"], plan.repetidos))
             planes.append((ver, tpl, intro, zonas))
             reporte["versiones"].append({"timeline": rutas.nombre_linea(evento, etiqueta(ver)), "zonas": info_z,
                                          "fotos_intro": len(intro), "cortes_al_ritmo": al_golpe,
@@ -3612,6 +4430,13 @@ def main():
         except Exception as ex:
             aviso("%s: no se pudo elegir la voz (%s)" % (nombre, ex))
         marcar_acercados(zonas)
+        try:                                     # (1.8.7) quien habla, enfocado; las aereas, centradas en lo importante
+            n_c, n_a = enfocar(zonas, fps)
+            if n_c or n_a:
+                print("%s: encuadre automatico: %d planos de quien habla enfocados, %d aereas centradas."
+                      % (nombre, n_c, n_a))
+        except Exception as ex:
+            aviso("%s: no se pudo calcular el encuadre (%s)" % (nombre, ex))
         secuencia, pos = [], st
         for p in intro:
             secuencia.append((pf, pos, p))
@@ -3726,7 +4551,9 @@ def main():
             aviso("%s: no se pudo dar contraste a los textos de la plantilla (%s)" % (nombre, ex))
         cortes = sorted(x.GetStart() - st for _, x in puestos)
         try:                                     # capitulos, frases y gracias
-            info["textos_nuevos"] = textos_extra(tl, mp, png, zonas, fps, perfil, ver, cortes)
+            info["textos_nuevos"] = textos_extra(tl, mp, png, zonas, fps, perfil, ver, cortes,
+                                                 [(v["pos"], v["pos"] + int(round((v["fin"] - v["ini"]) * fps)))
+                                                  for v in voces_plan or [] if v.get("pos") is not None])
         except Exception as ex:
             aviso("%s: no se pudieron poner los textos nuevos (%s)" % (nombre, ex))
         try:                                     # (1.6.0) los titulos de los capitulos para YouTube (capitulos.py)
@@ -3765,7 +4592,7 @@ def main():
         except Exception as ex:
             aviso("%s: no se pudieron poner los overlays de luz (%s)" % (nombre, ex))
         try:                                     # (17-nov) los gritos, aplausos y risas DE VERDAD de ese plano, bajo la musica
-            info["ambiente"] = _modulo("ambiente").poner(tl, mp, pool, puestos, fps, print)
+            info["ambiente"] = _modulo("ambiente").poner(tl, mp, pool, puestos, fps, print, evitar=tramos_voz)
         except Exception as ex:
             aviso("%s: no se pudo poner el ambiente real (%s)" % (nombre, ex))
         try:                                     # (18-nov) SFX de emocion donde la IA vio el beso, el pastel, los anillos...
@@ -3790,15 +4617,27 @@ def main():
         voces = []
         try:                                     # la palabra del pastor, brindis y discursos sobre la musica
             voces = poner_voces(tl, mp, pool, voces_plan, fps)
-            info["voces"] = ["%s %.0f s%s «%s»" % (v["tipo"], v["fin"] - v["ini"],
-                                                  " (se le ve hablar)" if v.get("sincro") else "", v["texto"][:60])
+            info["voces"] = ["%s%s %.0f s%s%s «%s»" % ("" if v.get("papel", "historia") == "historia"
+                                                      else v["papel"].upper() + " · ", v["tipo"], v["fin"] - v["ini"],
+                                                      " (se le ve hablar)" if v.get("sincro") else "",
+                                                      " + aplausos reales" if v.get("reaccion_real") else "",
+                                                      v["texto"][:60])
                              for _, _, v in voces]
+            try:                                 # (1.8.7) un destello suave al terminar las frases que abren y cierran
+                info["destellos_voz"] = _modulo("sfx").tras_voces(tl, mp, propios, voces, fps, print)
+            except Exception as ex:
+                aviso("%s: no se pudieron poner los destellos de la voz (%s)" % (nombre, ex))
         except Exception as ex:
             aviso("%s: no se pudo poner la voz (%s)" % (nombre, ex))
         try:                                     # cruce entre canciones sin hueco de volumen
             info["cruces_musica"] = cruces_de_musica(tl, mp, fps)
         except Exception as ex:
             aviso("%s: no se pudieron suavizar los cruces de musica (%s)" % (nombre, ex))
+        try:                                     # (1.8.7) cruces_de_musica puede atrasar la cancion que sigue al
+            if _modulo("sfx").brillo_titulo_sin_hueco(tl, mp, propios, fps):     # titulo: el destello, a su sitio
+                print("%s: el destello del titulo termina cuando entra la musica (sin silencio)." % nombre)
+        except Exception as ex:
+            aviso("%s: no se pudo acomodar el destello del titulo (%s)" % (nombre, ex))
         try:                                     # mezcla medida: canciones, SFX y voz a su nivel (LUFS)
             info["mezcla"] = _modulo("mezcla").nivelar(tl, fps, BASE, print)
         except Exception as ex:

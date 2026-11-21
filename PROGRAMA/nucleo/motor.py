@@ -1257,7 +1257,24 @@ def _conectar_resolve(log, quedarse=False):
             pm.OpenFolder(_PROYECTO_VIDEO["carpeta"])
             cargado = pm.LoadProject(_PROYECTO_VIDEO["nombre"])
         pm.GotoRootFolder()
-        if not cargado and not any(pm.LoadProject(n) for n in nombres):
+        if not cargado:
+            cargado = any(pm.LoadProject(n) for n in nombres)
+        if not cargado:
+            # (20-nov, MEDIDO) DaVinci recien abierto seguia cargando su ultimo proyecto (el de un video, 11 s): el
+            # LoadProject de EVENTOS CINEMA devolvio None aunque estaba en la raiz, y se intento instalar las plantillas
+            # otra vez (falla: ese nombre ya existe). Si el proyecto esta ahi, se espera y se pide otra vez.
+            hay = [n for n in nombres if n in (pm.GetProjectListInCurrentFolder() or [])]
+            for vuelta in range(8 if hay else 0):
+                log("DaVinci todavia esta cargando; pido el proyecto otra vez (%d)..." % (vuelta + 1))
+                time.sleep(6)
+                pm.GotoRootFolder()
+                if any(pm.LoadProject(n) for n in hay):
+                    cargado = True
+                    break
+            if hay and not cargado:
+                raise RuntimeError("DaVinci no quiso abrir el proyecto %s. Cierralo, abrelo otra vez y vuelve a "
+                                   "intentar." % hay[0])
+        if not cargado:
             if not os.path.exists(rutas.PLANTILLAS_DRP):
                 raise RuntimeError("No encontre el proyecto '%s' en DaVinci ni las plantillas en %s."
                                    % (PROYECTO, rutas.PLANTILLAS_DRP))
@@ -2328,6 +2345,10 @@ def armar_plantillas_ref(evento, tipo_evento, log=print):
         return []
     import plantilla_ref
     import armar_ref
+    try:                                     # (1.8.7) cada plantilla con tomas distintas a las otras
+        armar_ref.reiniciar_variedad()
+    except Exception:
+        pass
     infos = {p["nombre"]: p for p in plantilla_ref.lista()}
     # (19-nov, visto en la Plantilla 1: un plano de suelo y sillas) am.leer_ultimo() es el RESUMEN de la ventana: sin la
     # «vista» de cada medio segundo el planificador no aplicaba NINGUN filtro por tramo (enfoque, temblor, lo que vio

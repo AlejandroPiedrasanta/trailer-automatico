@@ -406,6 +406,26 @@ def en_gpu(minimo=0.8):
     return False
 
 
+def soltar_gpu(log=None):
+    """(1.8.7, NUESTRA BODA: el modelo de la IA local (7,9 GB) seguia en la tarjeta mientras DaVinci renderizaba; la
+    memoria de video se lleno, el de 15 min tardo el doble y el de 30 min se pego en 6 % dos veces) Descarga de la
+    memoria de video los modelos cargados en Ollama (el servidor propio y el de siempre) antes de renderizar."""
+    n = 0
+    for base in {URL, "http://127.0.0.1:%d" % PUERTO_PROPIO}:
+        try:
+            for m in _pedir_uno("/api/ps", timeout=3.0, base=base).get("models") or []:
+                nombre = m.get("name") or m.get("model")
+                if nombre:
+                    _pedir_uno("/api/generate", {"model": nombre, "prompt": "", "keep_alive": 0}, timeout=60.0,
+                               base=base)
+                    n += 1
+        except Exception:
+            pass
+    if n and log:
+        log("Memoria de video libre para el render: %d modelo(s) de la IA local descargados." % n)
+    return n
+
+
 def _hay_ollama():
     if shutil.which("ollama"):
         return True

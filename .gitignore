@@ -18,3 +18,7 @@ PROGRAMA/recursos/fuentes/FogtwoNo5.ttf
 # musica propia: la primera prueba y las pistas rehechas no van (ni en git ni en el instalador)
 PROGRAMA/recursos/musica/xv/
 PROGRAMA/recursos/musica/_descartadas/
+
+# (1.8.7) versiones de canciones con derechos que la persona agrega a los estilos (llevan « - » y el titulo):
+# van cifradas en PROGRAMA/recursos_protegidos (compilar/protegidos.py), nunca tal cual en el repositorio publico
+PROGRAMA/recursos/musica/**/* - *.mp3

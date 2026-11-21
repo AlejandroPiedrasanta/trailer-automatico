@@ -7,11 +7,13 @@ terminen, mostrando el avance.  Uso:  python renderizar.py ["XV 2026-11-07"]
 import os
 import sys
 import time
+import subprocess
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "nucleo"))   # PROGRAMA/nucleo: rutas pone las demas carpetas
 import motor  # noqa: E402
 
-RENDER_QUIETO_S = 600      # (1.8.0) 10 min sin que suba ni un 1 %: DaVinci pegado (lo normal es ~1 % cada 5-30 s)
+RENDER_QUIETO_S = 300      # 5 min sin que suba ni un 1 % NI crezca el archivo: DaVinci pegado (lo normal: ~1 % cada 5-30 s).
+#                            (1.8.7, NUESTRA BODA: el de 30 min se quedo en 6 % con la memoria de video llena) 5 min
 
 
 def _davinci_abierto():
@@ -41,9 +43,32 @@ def _reiniciar_davinci(resolve, project, log=print, espera_s=120):
     t0 = time.time()
     while _davinci_abierto() and time.time() - t0 < espera_s:
         time.sleep(3)
+        # (1.8.7, NUESTRA BODA) con un render pegado, al cerrar DaVinci pregunta «Continuar tareas / Cancelar tareas y
+        # salir» y se queda esperando: el proyecto YA se guardo arriba, asi que a los 45 s se cierra a la fuerza
+        if time.time() - t0 > 45 and _cerrar_a_la_fuerza(log):
+            break
     if _davinci_abierto():
         raise RuntimeError("DaVinci no se cerró")
     time.sleep(3)
+
+
+def _cerrar_a_la_fuerza(log=print):
+    """(1.8.7) DaVinci con su cuadro «Mensaje» (las tareas pendientes al salir) no se cierra solo: se termina el
+    proceso (el proyecto ya esta guardado). True si lo cerro."""
+    try:
+        import motor as _m
+        if "Mensaje" not in (_m.dialogos_resolve() or []):
+            return False
+        log("DaVinci se quedó preguntando por sus tareas al cerrar: lo cierro (el proyecto ya está guardado).")
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/IM", "Resolve.exe", "/F"], capture_output=True, timeout=30,
+                           creationflags=motor.rutas.SIN_VENTANA)
+        else:
+            subprocess.run(["pkill", "-9", "-x", "Resolve"], capture_output=True, timeout=30)
+        time.sleep(5)
+        return True
+    except Exception:
+        return False
 
 
 def renderizar(log=print, evento=None, progreso=None, solo=None):
@@ -137,28 +162,46 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
             # (1.8.0, auditoria) si el % no se mueve en RENDER_QUIETO_S, DaVinci se quedo pegado (NVENC, un clip roto):
             # se detiene y los trabajos sin terminar van por el reintento y, si siguen, por el reinicio de DaVinci
             visto, t_visto = -1.0, time.time()
+            pesos = {}
             while p.IsRenderingInProgress():
                 if motor.rutas.PARAR.is_set():       # (1.6.0) «Cancelar»: se detiene el render en DaVinci
                     p.StopRendering()
                     log("Render detenido: lo pidió la persona.")
                     raise motor.rutas.Detenido()
-                estado, total = [], 0.0
+                estado, total, crece = [], 0.0, False
                 for j in jobs:
                     s = p.GetRenderJobStatus(j["JobId"]) or {}
                     pct = float(s.get("CompletionPercentage", 0) or 0)
                     total += pct if s.get("JobStatus") != "Complete" else 100.0
                     estado.append("%s %s %d%%" % (motor.rutas.etiqueta_de(j["TimelineName"]), s.get("JobStatus", "?"), pct))
+                    # (20-nov, MEDIDO) 7 camaras lentas seguidas con Speed Warp en el de 30 min: ~1 cuadro por segundo,
+                    # mas de 5 min sin subir un 1 %, y se detenia un render que SI avanzaba. Ahora tambien cuenta que
+                    # crezca el archivo que DaVinci esta escribiendo (solo el del trabajo en curso: el masterizado de
+                    # uno ya terminado tambien reescribe su archivo).
+                    if s.get("JobStatus") == "Rendering":
+                        ruta_j = os.path.join(j.get("TargetDir", ""), j.get("OutputFilename", ""))
+                        try:
+                            tam_j = os.path.getsize(ruta_j)
+                        except OSError:
+                            tam_j = None
+                        if tam_j is not None:
+                            crece = crece or (ruta_j in pesos and tam_j != pesos[ruta_j])
+                            pesos[ruta_j] = tam_j
                 linea = " | ".join(estado)
                 if linea != ultimo:
                     log("%5.0f s  %s" % (time.time() - t0, linea))
                     ultimo = linea
                 if progreso:
                     progreso(int(total / len(jobs)), "Renderizando")
-                if total > visto + 0.01:
-                    visto, t_visto = total, time.time()
+                if total > visto + 0.01 or crece:
+                    visto, t_visto = max(visto, total), time.time()
                 elif time.time() - t_visto > RENDER_QUIETO_S:
                     log("El render lleva %.0f min sin avanzar: lo detengo y lo intento otra vez." % (RENDER_QUIETO_S / 60))
-                    p.StopRendering()
+                    for _ in range(4):               # (1.8.7) con la tarjeta llena la primera orden no siempre llega
+                        p.StopRendering()
+                        time.sleep(4)
+                        if not p.IsRenderingInProgress():
+                            break
                     break
                 recoger()
                 time.sleep(5)
@@ -167,6 +210,11 @@ def renderizar(log=print, evento=None, progreso=None, solo=None):
 
         def fallados():
             return [j for j in jobs if (p.GetRenderJobStatus(j["JobId"]) or {}).get("JobStatus") != "Complete"]
+        try:                                      # (1.8.7) la IA local fuera de la tarjeta mientras se renderiza
+            import vision_ia
+            vision_ia.soltar_gpu(log)
+        except Exception:
+            pass
         if not correr(ids):
             log("ERROR: Resolve no pudo iniciar el render.")
             return []

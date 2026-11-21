@@ -49,6 +49,15 @@ def _carpeta(mp, padre, nombre):
 PESO_MOMENTO = {"MAQUILLAJE": 0.25, "IGLESIA": 0.30, "FIESTA": 0.45}     # como la apertura de las versiones
 
 
+# (1.8.7, la persona: «varía de tomas entre plantillas para que cada plantilla sea diferente entre la otra») lo que
+# ya usaron las plantillas anteriores de este armado (motor.armar_plantillas_ref lo vacia al empezar)
+_VARIEDAD = {"tomas": []}
+
+
+def reiniciar_variedad():
+    _VARIEDAD["tomas"] = []
+
+
 def elegir_tomas(analisis, info, tipo_evento, log=print, con_g=False):
     """[(item, ini, dur_s)] una por hueco (sin el final con logo), en el orden del dia, y el plano final.
     (19-nov, visto en la Plantilla 3) Antes se tomaban planos de ~1 s del plan de 1 / 3 min y se ALARGABAN al hueco
@@ -64,6 +73,14 @@ def elegir_tomas(analisis, info, tipo_evento, log=print, con_g=False):
     items = g["decisiones"](list(analisis.get("items") or []))
     plan = g["Planificador"](items, fps)
     plan.usados = {}
+    # (1.8.7) lo que ya salio en otra plantilla no esta libre (otra parte de la toma si) y su imagen cuenta como escena
+    # ya vista: cada plantilla sale con tomas distintas
+    por_ruta = {v["ruta"]: v for v in getattr(plan, "vids", [])}
+    plan.otras_plantillas = {t[0] for t in _VARIEDAD["tomas"]}      # esos videos pesan menos en esta plantilla
+    for ruta, a, b, h in _VARIEDAD["tomas"]:
+        plan.usados.setdefault(ruta, []).append((a, b))
+        if h is not None and ruta in por_ruta and hasattr(plan, "escenas"):
+            plan.escenas.append((por_ruta[ruta], h))
     try:
         plan.poner_estorbo_duro(True)
     except Exception:
@@ -89,7 +106,7 @@ def elegir_tomas(analisis, info, tipo_evento, log=print, con_g=False):
                 elegido = m
                 break
         momento_de.append(elegido)
-    rng = random.Random(4242)
+    rng = random.Random(4242 + sum(ord(ch) for ch in str(info.get("nombre") or "")))    # (1.8.7) otra por plantilla
     # (19-nov, visto: 6 tomas distintas en 20 huecos) hueco por hueco el planificador no sabe que tomas ya puso: se le
     # pide la ZONA ENTERA de cada momento (su manera de variar), con planos al menos tan largos como el hueco mas largo,
     # y cada uno se RECORTA a su hueco desde el principio de su tramo bueno (nunca se alarga: no entra nada malo)
@@ -134,6 +151,13 @@ def elegir_tomas(analisis, info, tipo_evento, log=print, con_g=False):
         p = piezas[0]
         elegidas.append((p.get("item") or {}, float(p.get("ini") or 0.0), dur))
     elegidas = _orden_a_mano(elegidas, huecos, info["nombre"], log)
+    for it_e, ini_e, dur_e in elegidas:                 # (1.8.7) para que las siguientes plantillas usen otras
+        if it_e.get("ruta"):
+            try:
+                h_e = plan.huella(it_e, ini_e + dur_e / 2.0) if it_e.get("vista") else None
+            except Exception:
+                h_e = None
+            _VARIEDAD["tomas"].append((it_e["ruta"], ini_e, ini_e + dur_e, h_e))
     final = None
     for ver, _tpl, _intro, zz in sorted(g.get("PLANES") or [], key=lambda x: -x[0].get("seg", 0)):
         if zz and zz[-1][3]:                         # el final de siempre: la mejor foto de la persona (o su plano)
@@ -393,6 +417,27 @@ def _textos(g, tipo_evento, nombre_xv, frase, analisis):
     return nombre, sub
 
 
+def _centrar_aereo(x, item, t, ancho, alto):
+    """(1.8.7) Una toma de dron horizontal en la plantilla 9:16 llena la altura y solo se ve su franja del centro (un
+    tercio del ancho): con la iglesia a un lado se veia el cielo o los techos (la persona, 20-nov: «hay tomas aéreas que
+    no apuntan a nada... centra al objeto que se está grabando»). La IA local de vista (encuadre.sujeto_aereo) ubica lo
+    importante y la imagen se corre para dejarlo al centro, sin descubrir bordes. True si la movio."""
+    try:
+        import encuadre
+        s = encuadre.sujeto_aereo(item["ruta"], t)
+        if not s:
+            return False
+        w, h = float(item.get("ancho") or 16), float(item.get("alto") or 9)
+        img_w = alto * max(w, h) / min(w, h)              # Fill: la altura de la linea manda, el ancho sobra
+        holgura = max(0.0, (img_w - ancho) / 2.0)
+        pan = max(-holgura, min(holgura, (0.5 - s[0]) * img_w))   # DaVinci: Pan = posicion X (derecha +)
+        if abs(pan) < 0.03 * ancho:                       # ya estaba al centro
+            return False
+        return bool(x.SetProperty("Pan", round(pan, 1)))
+    except Exception:
+        return False
+
+
 def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", log=print, nombre_archivo=None,
           nombre_xv="", frase="", con_texto=True, con_destellos=True, con_fundidos=True):
     """Arma la linea de la plantilla y deja su render en cola. Devuelve el nombre de la linea."""
@@ -433,7 +478,7 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
         for c in mp.ImportMedia(sorted(set(faltan))) or []:
             por_ruta[os.path.normcase(c.GetClipProperty("File Path") or "")] = c
     # 1) las tomas, cada una en su hueco
-    puestos, pos_f, a_estabilizar, n_lentos = [], 0, [], 0
+    puestos, pos_f, a_estabilizar, n_lentos, n_centradas = [], 0, [], 0, 0
     con_toma = []                                 # (clip, toma, segundo de origen, segundos de origen) para color y ruido
     for k, ((item, ini, dur), hueco) in enumerate(zip(elegidas, info["planos"])):
         c = por_ruta.get(os.path.normcase(item.get("ruta") or ""))
@@ -464,6 +509,9 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
                     x.SetProperty("Scaling", resolve.SCALE_FILL)
             except Exception:
                 pass
+            if alto > ancho and item.get("tipo") == "dron" and item.get("horizontal", True) and \
+                    _centrar_aereo(x, item, (a + b) / (2.0 * sfps), ancho, alto):
+                n_centradas += 1
             con_toma.append((x, item, a / sfps, (b - a) / sfps))
             if lento and _poner_lento(resolve, x):
                 n_lentos += 1
@@ -670,7 +718,7 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
     if info.get("vertical", True):
         project.SetRenderSettings({"FormatWidth": 1920, "FormatHeight": 1080})     # Entrega vuelve a lo de siempre
     log("%s lista: %d planos con la musica de la plantilla, %d fundidos y %d destellos como ella, %d estabilizados, "
-        "%d en cámara lenta, %d con color por toma, %d sin ruido, título «%s»%s (%.0f s)." % (
-            nombre, len(puestos), fundidos, destellos, n_est, n_lentos, n_color, n_ruido, titulo or "—",
+        "%d en cámara lenta, %d aéreas centradas, %d con color por toma, %d sin ruido, título «%s»%s (%.0f s)." % (
+            nombre, len(puestos), fundidos, destellos, n_est, n_lentos, n_centradas, n_color, n_ruido, titulo or "—",
             "" if en_cola else "; NO quedo en la cola de render", time.time() - t0))
     return nombre

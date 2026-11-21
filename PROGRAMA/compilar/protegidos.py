@@ -27,7 +27,18 @@ def _protegidos():
     for f in FUENTES_CON_LICENCIA:
         if os.path.exists(os.path.join(RECURSOS, "fuentes", f)):
             out.append(os.path.join("fuentes", f))
-    return out
+    return out + musica_con_licencia()
+
+
+def musica_con_licencia():
+    """(1.8.7) Las versiones de canciones con derechos que la persona agrego a los estilos de musica (A Thousand Years,
+    Perfect, Time...): su nombre lleva « - » y el titulo («02 ROMANTICA C - A THOUSAND YEARS (VIOLIN).mp3»). No van en
+    git (.gitignore) ni en las actualizaciones publicas (construir.ps1): van cifradas aqui, como recursos/audio."""
+    out = []
+    for raiz, carpetas, fs in os.walk(os.path.join(RECURSOS, "musica")):
+        carpetas[:] = [c for c in carpetas if c not in ("xv", "_descartadas")]
+        out += [os.path.relpath(os.path.join(raiz, f), RECURSOS) for f in fs if f.lower().endswith(".mp3") and " - " in f]
+    return sorted(out)
 
 
 def _clave():

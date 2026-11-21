@@ -232,6 +232,75 @@ def emocion(tl, mp, buscar, puestos_plan, fps, propios=None, log=print, evitar=(
     return [(h[0], h[1]) for h in hechos]
 
 
+def _brillo_sin_hueco(tl, a, clip, fps):
+    """(1.8.7, MEDIDO en el de 15 min: «1 hueco de silencio (0:19, 1.2 s)» en todos) Despues del titulo la plantilla deja
+    unos segundos sin musica (el whoosh y el destello); el destello se apagaba 1,1 s antes de que entrara la cancion y
+    quedaba silencio total. Si pasa eso (entre 0,5 y 2 s), el destello se corre para terminar 0,25 s antes de la musica
+    (un respiro antes del golpe, no un hueco). Devuelve el cuadro donde va."""
+    if clip is None:
+        return a
+    try:
+        st = tl.GetStartFrame()
+        fin = a + max(2, _frames(clip, fps))
+        entradas = []
+        for t in range(1, tl.GetTrackCount("audio") + 1):
+            if not (tl.GetTrackName("audio", t) or "").upper().startswith("MUSICA"):
+                continue
+            for it in tl.GetItemListInTrack("audio", t) or []:
+                s, e = it.GetStart() - st, it.GetEnd() - st
+                if s < fin < e:                  # ya suena musica cuando se apaga: no hay hueco
+                    return a
+                if s >= fin:
+                    entradas.append(s)
+        if entradas:
+            hueco = min(entradas) - fin
+            if int(0.5 * fps) <= hueco <= int(2.0 * fps):
+                return a + hueco - int(0.25 * fps)
+    except Exception:
+        pass
+    return a
+
+
+def brillo_titulo_sin_hueco(tl, mp, propios, fps):
+    """(1.8.7) Lo mismo que _brillo_sin_hueco, pero con las canciones ya en su sitio final: cruces_de_musica (despues de
+    los SFX) puede atrasar la cancion que entra tras el titulo y el hueco volvia («0:19, 1.2 s» otra vez). El destello del
+    titulo (pista SFX MOMENTOS) se quita y se pone donde termina 0,25 s antes de la musica. True si lo movio."""
+    c = (propios or {}).get("XV_BRILLO")
+    t = _pista(tl, PISTA_MOMENTOS)
+    if c is None or not t:
+        return False
+    st = tl.GetStartFrame()
+    nombre = [it.GetStart() - st for v in range(1, tl.GetTrackCount("video") + 1)
+              for it in tl.GetItemListInTrack("video", v) or [] if (it.GetName() or "").upper().startswith("TEXTO NOMBRE")]
+    if not nombre:
+        return False
+    x = next((it for it in tl.GetItemListInTrack("audio", t) or []
+              if "BRILLO" in (it.GetName() or "").upper() and 0 <= it.GetStart() - st - min(nombre) <= int(1.0 * fps)), None)
+    if x is None:
+        return False
+    a = x.GetStart() - st
+    nuevo = _brillo_sin_hueco(tl, a, c, fps)
+    if nuevo == a:
+        return False
+    fades = x.GetFades() or {}
+    vol = x.GetProperty("AudioVolume")
+    tl.SetTrackLock("audio", t, False)
+    if not tl.DeleteClips([x], False):
+        return False
+    dur = max(2, _frames(c, fps))
+    r = mp.AppendToTimeline([{"mediaPoolItem": c, "startFrame": 0, "endFrame": dur - 1, "mediaType": 2,
+                              "trackIndex": t, "recordFrame": st + nuevo}]) or []
+    if not r:
+        return False
+    try:
+        if vol is not None:
+            r[0].SetProperty("AudioVolume", vol)
+        r[0].SetFades({"FadeIn": int(fades.get("FadeIn", 0)), "FadeOut": int(fades.get("FadeOut", 0.5 * fps))})
+    except Exception:
+        pass
+    return True
+
+
 def momentos(tl, mp, propios, fps, fotos_intro=(), log=print):
     """Los momentos fuertes, con los SFX propios del programa (propios: {"XV_GOLPE": MediaPoolItem, ...}):
       - entrada de la FIESTA (marcador ACTO ... FIESTA): subida de aire que termina en seco y golpe grave en el cambio;
@@ -294,7 +363,10 @@ def momentos(tl, mp, propios, fps, fotos_intro=(), log=print):
                 textos.append((it.GetStart() - st, n))
     for ini, n in sorted(textos):
         if n.startswith("TEXTO NOMBRE") or n.startswith("TEXTO FINAL"):
-            poner("XV_BRILLO", ini + int(0.15 * S), fo=0.5 * S)
+            a = ini + int(0.15 * S)
+            if n.startswith("TEXTO NOMBRE"):
+                a = _brillo_sin_hueco(tl, a, propios.get("XV_BRILLO"), fps)
+            poner("XV_BRILLO", a, fo=0.5 * S)
         elif n.startswith("TEXTO CAPITULO"):
             poner("XV_PASO", ini - int(0.2 * S), VOL_PASO)
     for f in fotos_intro:
@@ -305,3 +377,41 @@ def momentos(tl, mp, propios, fps, fotos_intro=(), log=print):
         nombre = next((n for n, c in RAMPAS.items() if list(c[:len(pasos)]) == pasos and n in propios), "XV_RAMPA")
         poner(nombre, fs[0])
     return puestos
+
+
+def tras_voces(tl, mp, propios, voces, fps, log=print):
+    """(1.8.7, la persona: «algo bonito junto la música y SFX») Un destello suave (XV_BRILLO) al terminar las frases que
+    abren y cierran el video y los votos: el momento «piel de gallina», mientras la musica vuelve a subir. voces:
+    [(inicio, fin, voz)] en cuadros de la linea (poner_voces). Devuelve cuantos puso."""
+    c = (propios or {}).get("XV_BRILLO")
+    if c is None or not voces:
+        return 0
+    t = _pista(tl, PISTA_MOMENTOS)
+    if not t:
+        if not tl.AddTrack("audio", "stereo"):
+            return 0
+        t = tl.GetTrackCount("audio")
+        tl.SetTrackName("audio", t, PISTA_MOMENTOS)
+    tl.SetTrackLock("audio", t, False)
+    ocupado = [(y.GetStart(), y.GetEnd()) for y in tl.GetItemListInTrack("audio", t) or []]
+    dur = max(2, _frames(c, fps))
+    n = 0
+    for _a, b, v in voces:
+        if v.get("papel") not in ("apertura", "cierre") and v.get("tipo") not in ("VOTOS", "DECLARACION"):
+            continue
+        ini = int(b - 0.35 * fps)
+        if any(x < ini + dur and ini < y for x, y in ocupado):
+            continue
+        r = mp.AppendToTimeline([{"mediaPoolItem": c, "startFrame": 0, "endFrame": dur - 1, "mediaType": 2,
+                                  "trackIndex": t, "recordFrame": ini}])
+        if not r:
+            continue
+        try:
+            r[0].SetProperty("AudioVolume", -7.0)
+        except Exception:
+            pass
+        ocupado.append((ini, ini + dur))
+        n += 1
+    if n:
+        log("Destellos suaves al final de %d frases clave de la voz." % n)
+    return n

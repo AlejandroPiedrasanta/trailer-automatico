@@ -43,8 +43,9 @@ def fuerza(item, ini_s, dur_s):
     return (0.0, "") if habla > 0.8 and mejor < 0.7 else (mejor, que)
 
 
-def poner(tl, mp, pool, puestos, fps, log=print):
-    """puestos: [(pieza del plan, clip de la linea)]. Devuelve [(que, segundo)] de lo que puso."""
+def poner(tl, mp, pool, puestos, fps, log=print, evitar=()):
+    """puestos: [(pieza del plan, clip de la linea)]. Devuelve [(que, segundo)] de lo que puso. evitar (1.8.7): los
+    tramos de la voz original [(ini, fin)] en cuadros desde el inicio de la linea: ahi no va (taparia lo que dicen)."""
     if not activo():
         return []
     pista = next((t for t in range(1, tl.GetTrackCount("audio") + 1)
@@ -85,6 +86,8 @@ def poner(tl, mp, pool, puestos, fps, log=print):
             break
         a, b = it.GetStart(), it.GetEnd()
         if any(a < y + int(1.5 * fps) and b > x - int(1.5 * fps) for x, y in ocupado):     # no dos pegados
+            continue
+        if any(a < st + y and b > st + x for x, y in evitar or ()):     # (1.8.7) no encima de la voz original
             continue
         mpi = pool.get(os.path.normcase(p["item"].get("ruta") or ""))
         if mpi is None:

@@ -206,7 +206,8 @@ def pasajes_de(transcripcion, inicio_tc, fps, dur):
             continue
         out.append({"ini": round(a, 2), "fin": round(b, 2), "texto": texto[:400], "tipo": tipo, "palabras": len(palabras),
                     "claves": fe + emo, "puntaje": round(puntaje, 3), "hablante": hablante, "pureza": round(pureza, 2),
-                    "oraciones": [[round(o[0], 2), round(o[1], 2), o[2]] for o in g]})
+                    # (1.8.7) con el texto de cada oracion: la IA editora (guion_voz) lee el trozo exacto que sonara
+                    "oraciones": [[round(o[0], 2), round(o[1], 2), o[2], o[3][:200]] for o in g]})
     return out
 
 

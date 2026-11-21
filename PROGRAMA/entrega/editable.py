@@ -345,6 +345,29 @@ def _girado(ruta):
         return False, 0, 0
 
 
+@_por_archivo
+def _rotacion(ruta):
+    """(1.8.7) La rotacion que trae el video ("-180", "90"...) como texto («0» de verdad no es un fallo de ffprobe)."""
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                            "stream_side_data=rotation:stream_tags=rotate", "-of", "json", ruta],
+                           capture_output=True, text=True, timeout=60, creationflags=rutas.SIN_VENTANA)
+        import json
+        s = (json.loads(r.stdout).get("streams") or [{}])[0]
+        rot = [d.get("rotation") for d in s.get("side_data_list") or [] if "rotation" in d]
+        rot = rot[0] if rot else (s.get("tags") or {}).get("rotate", 0)
+        return str(int(float(rot or 0)))
+    except Exception:
+        return "0"
+
+
+def _de_cabeza(ruta):
+    try:
+        return abs(int(_rotacion(ruta))) % 360 == 180
+    except (TypeError, ValueError):
+        return False
+
+
 _CANDADOS = {}
 _CANDADO_LISTA = threading.Lock()
 
@@ -364,6 +387,15 @@ def _hacer_proxy(original, log=print, codificador=None, start_tc=None, fps=None)
     if not os.path.exists(destino):              # (19-nov) hecho cuando el video estaba en otra carpeta: no se rehace
         destino = proxy_huerfano(original) or destino
     girado, _, _ = _girado(original)
+    cabeza = _de_cabeza(original)
+    if cabeza and os.path.exists(destino) and os.path.getsize(destino) > 0 and not _de_cabeza(destino):
+        # (1.8.7) hecho derecho (ffmpeg endereza): en DaVinci, con la toma girada en la linea, se veria al reves
+        log("Proxy de %s hecho derecho: lo rehago como lo ve DaVinci." % os.path.basename(original))
+        try:
+            os.remove(destino)
+            _REHECHOS.add(destino)
+        except OSError:
+            pass
     if os.path.exists(destino) and os.path.getsize(destino) > 0:
         # (18-nov) los proxies hechos todo en la tarjeta de un video vertical de celular salian ACOSTADOS (960x540 sin
         # rotacion: con -hwaccel_output_format cuda ffmpeg no gira) y en DaVinci se veia la toma de lado
@@ -403,6 +435,9 @@ def _hacer_proxy(original, log=print, codificador=None, start_tc=None, fps=None)
                            ["-c:a", "pcm_s16le", "-movflags", "+faststart"] + con_tc + [tmp])
         if c != "libx264":
             rapidas.append(orden[:4] + ["-hwaccel", "auto"] + orden[4:])
+        if cabeza:                                       # (1.8.7) sin enderezar: igual que el original en DaVinci
+            for cmd in rapidas + [orden]:
+                cmd.insert(cmd.index("-i"), "-noautorotate")
         for rapida in rapidas:
             r = subprocess.run(rapida, capture_output=True, text=True, timeout=7200, creationflags=rutas.SIN_VENTANA)
             if r.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 0:

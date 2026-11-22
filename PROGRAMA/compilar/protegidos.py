@@ -35,9 +35,13 @@ def musica_con_licencia():
     Perfect, Time...): su nombre lleva « - » y el titulo («02 ROMANTICA C - A THOUSAND YEARS (VIOLIN).mp3»). No van en
     git (.gitignore) ni en las actualizaciones publicas (construir.ps1): van cifradas aqui, como recursos/audio."""
     out = []
+    tu_musica = os.path.join(RECURSOS, "musica", "TU MUSICA")
     for raiz, carpetas, fs in os.walk(os.path.join(RECURSOS, "musica")):
         carpetas[:] = [c for c in carpetas if c not in ("xv", "_descartadas")]
-        out += [os.path.relpath(os.path.join(raiz, f), RECURSOS) for f in fs if f.lower().endswith(".mp3") and " - " in f]
+        # (1.8.9) «Tu música» (las carpetas de musica de la persona): todas tienen dueño, lleven « - » o no
+        toda = raiz == tu_musica or raiz.startswith(tu_musica + os.sep)
+        out += [os.path.relpath(os.path.join(raiz, f), RECURSOS) for f in fs
+                if f.lower().endswith((".mp3", ".wav", ".m4a", ".flac")) and (toda or " - " in f)]
     return sorted(out)
 
 

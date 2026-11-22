@@ -39,6 +39,7 @@ def ruta(nombre):
 
 
 _CERRANDO = False
+_EXE = {}                                  # (1.8.9) la ruta de ffmpeg, buscada una vez
 
 
 @atexit.register
@@ -151,7 +152,9 @@ class Pelicula(QObject):
     def reproducir(self, ruta, ancho, alto, fps=24.0, bucle=True, alfa=False):
         """True si arranco (hace falta ffmpeg y el video)."""
         self.detener()
-        exe = shutil.which("ffmpeg")
+        if "ffmpeg" not in _EXE:                 # (1.8.9) buscarlo en el PATH tardaba en cada video (al estirar la ventana)
+            _EXE["ffmpeg"] = shutil.which("ffmpeg")
+        exe = _EXE["ffmpeg"]
         ancho, alto = int(ancho) // 2 * 2, int(alto) // 2 * 2      # pares: el escalador de yuv420 los pide
         if not exe or not ruta or not os.path.isfile(ruta) or ancho < 16 or alto < 16:
             return False

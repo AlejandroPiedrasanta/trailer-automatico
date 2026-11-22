@@ -1056,6 +1056,51 @@ def app():
         w.style().polish(w)
 
     # ------------------------------------------------------------------ ventana
+    class BordeVentana(QWidget):
+        """(1.8.9) Una tira invisible en un borde o esquina de la ventana sin marco. El cursor de estirar lo pone Qt solo
+        (sin Python a cada movimiento del raton) y al apretar el sistema cambia el tamaño (startSystemResize)."""
+        CURSORES = {Qt.LeftEdge: Qt.SizeHorCursor, Qt.RightEdge: Qt.SizeHorCursor, Qt.TopEdge: Qt.SizeVerCursor,
+                    Qt.BottomEdge: Qt.SizeVerCursor, Qt.LeftEdge | Qt.TopEdge: Qt.SizeFDiagCursor,
+                    Qt.RightEdge | Qt.BottomEdge: Qt.SizeFDiagCursor, Qt.RightEdge | Qt.TopEdge: Qt.SizeBDiagCursor,
+                    Qt.LeftEdge | Qt.BottomEdge: Qt.SizeBDiagCursor}
+
+        def __init__(self, ventana, bordes):
+            super().__init__(ventana)
+            self.bordes = bordes
+            self.setCursor(self.CURSORES[bordes])
+            self.setAttribute(Qt.WA_NoSystemBackground, True)
+            self.setStyleSheet("background: transparent; border: none;")
+
+        def colocar(self, grueso, maximizada):
+            v = self.parentWidget()
+            w, h, b = v.width(), v.height(), self.bordes
+            esquina = grueso * 2
+            x = 0 if b & Qt.LeftEdge else (w - grueso if b == Qt.RightEdge else w - esquina if b & Qt.RightEdge
+                                           else esquina)
+            y = 0 if b & Qt.TopEdge else (h - grueso if b == Qt.BottomEdge else h - esquina if b & Qt.BottomEdge
+                                          else esquina)
+            ancho = grueso if b in (Qt.LeftEdge, Qt.RightEdge) else (w - 2 * esquina if b in (Qt.TopEdge, Qt.BottomEdge)
+                                                                     else esquina)
+            alto = grueso if b in (Qt.TopEdge, Qt.BottomEdge) else (h - 2 * esquina if b in (Qt.LeftEdge, Qt.RightEdge)
+                                                                    else esquina)
+            if b in (Qt.LeftEdge | Qt.TopEdge, Qt.RightEdge | Qt.TopEdge, Qt.LeftEdge | Qt.BottomEdge,
+                     Qt.RightEdge | Qt.BottomEdge):
+                ancho = alto = esquina
+            self.setGeometry(x, y, max(1, ancho), max(1, alto))
+            self.setVisible(not maximizada)
+            self.raise_()
+
+        def paintEvent(self, e):
+            pass
+
+        def mousePressEvent(self, e):
+            h = self.window().windowHandle()
+            if e.button() == Qt.LeftButton and h is not None and not self.window().isMaximized():
+                h.startSystemResize(self.bordes)
+                e.accept()
+                return
+            super().mousePressEvent(e)
+
     class Ventana(QWidget):
         def __init__(self):
             super().__init__()
@@ -1237,7 +1282,12 @@ def app():
             self.t_dv = QTimer(self)
             self.t_dv.timeout.connect(self._ver_davinci)
             self.t_dv.start(10000)
-            QApplication.instance().installEventFilter(self)       # bordes para cambiar el tamano
+            # (1.8.9) los bordes para cambiar el tamaño son tiras propias (BordeVentana): antes un filtro de eventos
+            # de TODA la app hacia pasar por Python cada evento de cada pieza (~2000 por segundo; MEDIDO: el popup de
+            # canciones con 11 congelones en vez de 1 y re-escalar 280 ms en vez de 190)
+            self._tiras = [BordeVentana(self, b) for b in BordeVentana.CURSORES]
+            for e in self.findChildren(QLineEdit):                 # el menu del clic derecho, en español
+                e.installEventFilter(self)
             self._sin_recorte()                                    # (al final: mide texto, y las fuentes ya cargaron)
             self._chips_editable()
             self.t_eta = QTimer(self)                # «Listo a las 17:40» sigue al reloj
@@ -1453,8 +1503,23 @@ def app():
             except Exception as ex:
                 registro.info("La barra en QML no cargó (quedan los botones de siempre): %s" % ex)
                 self.barra_qml = None
+            if self.barra_qml is None:
+                return
+            # (1.8.9, MEDIDO) todo junto congelaba la ventana 0,4 s justo al abrir: el resto va por partes, una en cada
+            # vuelta (la pantalla de trabajo, los popups y cada pagina), con la ventana atendiendo entre una y otra
+            self._pasos_qml = [self._trabajo_a_qml, self._popup_a_qml] + [
+                (lambda i=i: self._pagina_a_qml(i)) for i in (4, 5, 3)]
+            QTimer.singleShot(40, self._siguiente_qml)
+
+        def _siguiente_qml(self):
+            if getattr(self, "_pasos_qml", None):
+                self._pasos_qml.pop(0)()
+                QTimer.singleShot(40, self._siguiente_qml)
+
+        def _trabajo_a_qml(self):
             # (1.7, parte 2) la pantalla de trabajo: los pasos y las versiones en QML (qml/Trabajo.qml). Los adaptadores
             # tienen la misma API que piezas.Pasos / piezas.Versiones: el resto de la ventana no cambia
+            import barra_qml
             if self.barra_qml is not None and self.trabajo_qml is None:
                 try:
                     t = barra_qml.TrabajoQML(self.panel_trabajo, PASOS_VISTA, self._cancelar, self.pasos, self.versiones)
@@ -1470,42 +1535,52 @@ def app():
                     self.trabajo_qml, self.pasos, self.versiones = t, t.pasos, t.versiones
                 except Exception as ex:
                     registro.info("La pantalla de trabajo en QML no cargó (queda la de siempre): %s" % ex)
+
+        def _popup_a_qml(self):
             # (1.7, parte 3) los popups en QML (qml/Popup.qml): se crea ya, asi el primero no tarda
+            import barra_qml
             if self.barra_qml is not None and getattr(self, "popup_qml", None) is None:
                 try:
                     self.popup_qml = barra_qml.PopupQML(self)
                 except Exception as ex:
                     self.popup_qml = None
                     registro.info("Los popups en QML no cargaron (quedan los de siempre): %s" % ex)
+
+        def _pagina_a_qml(self, indice):
             # (1.7, parte 4) las paginas Tráilers, Plantillas y Ajustes en QML. Los widgets de siempre siguen (sin
             # verse) guardando el estado; la pagina QML los lee (PaginaQML.leer) y les pide (acciones)
-            if self.barra_qml is not None and not getattr(self, "paginas_qml", None):
+            import barra_qml
+            if self.barra_qml is None:
+                return
+            if getattr(self, "paginas_qml", None) is None:
                 self.paginas_qml = {}
-                for indice, archivo, poner, leer, acciones, soltar in (
-                        (4, "Trailers.qml", self._pag_trailers, self._datos_trailers, self._acciones_trailers(), None),
-                        (5, "Plantillas.qml", self._pag_plantillas, self._datos_plantillas, self._acciones_plantillas(),
-                         self._soltar_plantillas),
-                        (3, "Ajustes.qml", None, self._datos_ajustes, self._acciones_ajustes(), None)):
-                    try:
-                        if poner is not None:
-                            pag, lay = poner
-                            p = barra_qml.PaginaQML(archivo, pag, leer, acciones, soltar)
-                            for c in pag.findChildren(QWidget, options=Qt.FindDirectChildrenOnly):
-                                if c is not p.widget:
-                                    c.hide()
-                            lay.setContentsMargins(0, 0, 0, 0)
-                            lay.insertWidget(0, p.widget, 10)
-                        else:
-                            p = barra_qml.PaginaQML(archivo, self.aj_mas.parentWidget(), leer, acciones, soltar)
-                            for c in (self.aj_principal, self.aj_mas, self.b_mas_aj):
-                                c.hide()
-                            self._aj_der.insertWidget(0, p.widget)
-                        self.paginas_qml[indice] = p
-                    except Exception as ex:
-                        registro.info("La página %s en QML no cargó (queda la de siempre): %s" % (archivo, ex))
                 self.paginas.currentChanged.connect(
                     lambda i: self.paginas_qml[i].entrar(self._direccion_pagina(i)) if i in self.paginas_qml
                     else self._direccion_pagina(i))
+            if indice in self.paginas_qml:
+                return
+            archivo, poner, leer, acciones, soltar = {
+                4: ("Trailers.qml", self._pag_trailers, self._datos_trailers, self._acciones_trailers, None),
+                5: ("Plantillas.qml", self._pag_plantillas, self._datos_plantillas, self._acciones_plantillas,
+                    self._soltar_plantillas),
+                3: ("Ajustes.qml", None, self._datos_ajustes, self._acciones_ajustes, None)}[indice]
+            try:
+                if poner is not None:
+                    pag, lay = poner
+                    p = barra_qml.PaginaQML(archivo, pag, leer, acciones(), soltar)
+                    for c in pag.findChildren(QWidget, options=Qt.FindDirectChildrenOnly):
+                        if c is not p.widget:
+                            c.hide()
+                    lay.setContentsMargins(0, 0, 0, 0)
+                    lay.insertWidget(0, p.widget, 10)
+                else:
+                    p = barra_qml.PaginaQML(archivo, self.aj_mas.parentWidget(), leer, acciones(), soltar)
+                    for c in (self.aj_principal, self.aj_mas, self.b_mas_aj):
+                        c.hide()
+                    self._aj_der.insertWidget(0, p.widget)
+                self.paginas_qml[indice] = p
+            except Exception as ex:
+                registro.info("La página %s en QML no cargó (queda la de siempre): %s" % (archivo, ex))
 
         # ---- (1.7) lo que muestran las paginas QML y lo que piden (las piezas de siempre, sin verse, mandan)
         def _datos_trailers(self):
@@ -3361,14 +3436,12 @@ def app():
                 gb = float((examen or {}).get("bytes") or 0) / 1e9 or n * 0.4
                 vert = self._versiones_v() or (["1min"] if n else [])
                 nuevos = None                # (18-nov) lo ya analizado no se cuenta otra vez (decia 80 min de mas)
-                try:
-                    import analizar_material as am
-                    faltan, total = am.cuantos_faltan()
-                    if total:
-                        nuevos = int(round(n * faltan / float(total)))
-                    self._ya_analizado = bool(total) and faltan == 0
-                except Exception:
-                    pass
+                # (1.8.9, MEDIDO: leer las fichas y medir 700 archivos de D: frenaba la ventana hasta 0,4 s al abrir)
+                # la cuenta la hace el hilo de _revisar_material_fondo; aqui solo se usa la ultima
+                faltan, total = getattr(self, "_faltan_analizar", None) or (0, 0)
+                if total:
+                    nuevos = int(round(n * faltan / float(total)))
+                    self._ya_analizado = faltan == 0
                 return motor.estimar_segundos(n, gb, self._versiones(), vert, getattr(self, "_con_render", True),
                                               nuevos)
             except Exception:
@@ -3466,7 +3539,18 @@ def app():
                     self._avisar("No pude revisar 1 MATERIAL: %s" % error, "error")
                 elif res:
                     self._revisar_material(res)
-            qt_kit.correr_en_hilo(self, motor.revisar_material, listo)
+            qt_kit.correr_en_hilo(self, self._material_y_faltan, listo)
+
+        @staticmethod
+        def _material_y_faltan():
+            """(1.8.9) En el hilo: lo que hay y cuantos archivos faltan por analizar (fichas + tamaños)."""
+            res = motor.revisar_material()
+            try:
+                import analizar_material as am
+                res["_faltan"] = am.cuantos_faltan()
+            except Exception:
+                pass
+            return res
 
         def _revisar_material(self, hecho=None):
             try:
@@ -3474,6 +3558,14 @@ def app():
             except Exception as ex:
                 self._avisar("No pude revisar 1 MATERIAL: %s" % ex, "error")
                 return
+            if "_faltan" in self.material:
+                self._faltan_analizar = self.material.pop("_faltan")
+            elif hecho is None:                      # revisado aqui mismo: la cuenta de lo analizado, en el hilo
+                def listo_faltan(res, error):
+                    if error is None and res:
+                        self._faltan_analizar = res
+                        self._sub_material()
+                qt_kit.correr_en_hilo(self, lambda: __import__("analizar_material").cuantos_faltan(), listo_faltan)
             for tipo, (t, n, e) in self.tarjetas.items():
                 cuantos = self.material["cuenta"][tipo]
                 falta = dict(self.material["faltan"]).get(tipo)
@@ -4449,20 +4541,26 @@ def app():
             s = max(0.5, min(1.0, min(self.width() / 2048.0, self.height() / 1300.0)))
             if abs(s - piezas.ESCALA) < 0.015:
                 return
-            QApplication.instance().setStyleSheet(estilo_completo(s))
-            for w in self.findChildren(QWidget):
-                if hasattr(w, "reescalar"):
-                    w.reescalar()
-            for q in [getattr(self, "barra_qml", None), getattr(self, "trabajo_qml", None)] + \
-                    list((getattr(self, "paginas_qml", None) or {}).values()):
-                if q is not None:                    # (1.7) las piezas en QML no son widgets propios
-                    q.reescalar()
-            self.b_logo.setIconSize(QSize(piezas.px(72), piezas.px(72)))
-            self._estado(self.b_log.text(), self.b_log.property("tipo") or "ok")
-            self.b_log.setIconSize(QSize(piezas.px(24), piezas.px(24)))
-            self._sin_recorte()
-            self._brillos()                          # los radios del estilo cambiaron con la escala
-            self._acomodar()
+            # (1.8.9) sin pintar mientras se re-aplica el estilo: cada pieza repulida pedia su repintado (y se veia la
+            # ventana a medio cambiar); al final se pinta una sola vez
+            self.setUpdatesEnabled(False)
+            try:
+                QApplication.instance().setStyleSheet(estilo_completo(s))
+                for w in self.findChildren(QWidget):
+                    if hasattr(w, "reescalar"):
+                        w.reescalar()
+                for q in [getattr(self, "barra_qml", None), getattr(self, "trabajo_qml", None)] + \
+                        list((getattr(self, "paginas_qml", None) or {}).values()):
+                    if q is not None:                # (1.7) las piezas en QML no son widgets propios
+                        q.reescalar()
+                self.b_logo.setIconSize(QSize(piezas.px(72), piezas.px(72)))
+                self._estado(self.b_log.text(), self.b_log.property("tipo") or "ok")
+                self.b_log.setIconSize(QSize(piezas.px(24), piezas.px(24)))
+                self._sin_recorte()
+                self._brillos()                      # los radios del estilo cambiaron con la escala
+                self._acomodar()
+            finally:
+                self.setUpdatesEnabled(True)
 
         def _sin_recorte(self):
             """(1.6.1) Pestañas y pastillas con sitio para su texto en negrita (piezas.sin_recorte)."""
@@ -4474,6 +4572,7 @@ def app():
 
         def resizeEvent(self, e):
             super().resizeEvent(e)
+            self._poner_tiras()
             if hasattr(self, "boton"):
                 self._ancho_registro()
                 QTimer.singleShot(0, self._acomodar)
@@ -4618,37 +4717,23 @@ def app():
                 self._popup("Se crea sola la primera vez que armas un evento.", titulo="Todavía no hay clasificación")
 
         # ============================================================== ventana sin marco
-        BORDE = 7
-
-        def _bordes(self, pos_global):
-            if self.isMaximized():
-                return Qt.Edges()
-            g = self.frameGeometry()
-            x, y = pos_global.x() - g.left(), pos_global.y() - g.top()
-            b = Qt.Edges()
-            if 0 <= x < self.BORDE:
-                b |= Qt.LeftEdge
-            elif g.width() - self.BORDE <= x <= g.width():
-                b |= Qt.RightEdge
-            if 0 <= y < self.BORDE:
-                b |= Qt.TopEdge
-            elif g.height() - self.BORDE <= y <= g.height():
-                b |= Qt.BottomEdge
-            return b
+        BORDE = 7                                    # grueso de las tiras para estirar (BordeVentana)
 
         def _ver_canciones(self, n):
-            """Doble clic en un estilo de Música: sus canciones, para verlas y oírlas (vistas_ajustes.ListaCanciones)."""
+            """Un estilo de Música (doble clic en Ajustes o su ▶ en Tráilers): sus canciones para oírlas, cambiarlas,
+            quitarlas o agregar de «Tu música» o de la PC (1.8.9, vistas_ajustes.CancionesEstilo)."""
             import vistas_ajustes
+            import importlib.util
             estilos = self.estilos_musica
+            try:
+                spec = importlib.util.spec_from_file_location("musica_propia", rutas.codigo("musica_propia.py"))
+                mp = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mp)
+            except Exception as ex:
+                self._popup("No pude leer la música: %s" % ex)
+                return
             if n == 0:                                   # Auto: el que le toca al tipo de evento
-                try:
-                    import importlib.util
-                    spec = importlib.util.spec_from_file_location("musica_propia", rutas.codigo("musica_propia.py"))
-                    mp = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(mp)
-                    quiero = mp.POR_TIPO.get(self.c_tipo.currentData() or "xv", "")
-                except Exception:
-                    quiero = ""
+                quiero = mp.POR_TIPO.get(self.c_tipo.currentData() or "xv", "")
                 carpeta = next((e for e in estilos if quiero and quiero in e.upper()), estilos[0] if estilos else None)
                 titulo = "Auto: %s" % (carpeta or "").lstrip("0123456789 ").capitalize()
             elif n - 1 < len(estilos):
@@ -4660,9 +4745,9 @@ def app():
                 return
             if not carpeta:
                 return
-            lista = vistas_ajustes.ListaCanciones(os.path.join(rutas.RECURSOS, "musica", carpeta))
+            lista = vistas_ajustes.CancionesEstilo(carpeta, mp, self)
             try:
-                piezas.preguntar(self, titulo, "", ("Cerrar",), "info", 0, contenido=lista)
+                piezas.preguntar(self, titulo, "", ("Listo",), "info", 0, contenido=lista)
             finally:
                 vistas_ajustes.callar()
 
@@ -4719,23 +4804,12 @@ def app():
                     QTimer.singleShot(0, self._acomodar)
                 else:
                     self._centrar_boton()               # el astrolabio crece o se achica con suavidad: siempre al medio
-            if t in (QEvent.MouseMove, QEvent.MouseButtonPress) and isinstance(obj, QWidget) and obj.window() is self:
-                b = self._bordes(ev.globalPosition().toPoint())
-                if t == QEvent.MouseMove and not ev.buttons():
-                    if b in (Qt.LeftEdge | Qt.TopEdge, Qt.RightEdge | Qt.BottomEdge):
-                        self.setCursor(Qt.SizeFDiagCursor)
-                    elif b in (Qt.RightEdge | Qt.TopEdge, Qt.LeftEdge | Qt.BottomEdge):
-                        self.setCursor(Qt.SizeBDiagCursor)
-                    elif b & (Qt.LeftEdge | Qt.RightEdge):
-                        self.setCursor(Qt.SizeHorCursor)
-                    elif b & (Qt.TopEdge | Qt.BottomEdge):
-                        self.setCursor(Qt.SizeVerCursor)
-                    else:
-                        self.unsetCursor()
-                elif t == QEvent.MouseButtonPress and ev.button() == Qt.LeftButton and b and self.windowHandle():
-                    self.windowHandle().startSystemResize(b)
-                    return True
             return super().eventFilter(obj, ev)
+
+        def _poner_tiras(self):
+            """(1.8.9) Las tiras de los bordes en su sitio y encima de todo; maximizada no hay bordes que estirar."""
+            for tira in getattr(self, "_tiras", ()):
+                tira.colocar(self.BORDE, self.isMaximized())
 
         def _maximizar(self):
             self.showNormal() if self.isMaximized() else self.showMaximized()
@@ -4809,6 +4883,15 @@ def app():
         except Exception:
             pass
     _tiempo("clases definidas")
+    if rutas.ES_WIN and os.environ.get("TRAILER_VSYNC") != "1":
+        # (1.8.9, la persona: «tiene trabones o tirones, no está nada fluido»; MEDIDO con la ventana real y DaVinci
+        # abierto) al presentar cada cuadro la ventana esperaba el refresco de la pantalla y, con la tarjeta ocupada,
+        # esperaba DOS: las paginas QML iban a 21-26 cuadros por segundo con ~30 congelones de 35 ms por segundo. Sin
+        # esa espera: 56-62 cuadros y casi ninguno. Windows (DWM) sigue componiendo al ritmo de la pantalla.
+        from PySide6.QtGui import QSurfaceFormat
+        formato = QSurfaceFormat.defaultFormat()
+        formato.setSwapInterval(0)
+        QSurfaceFormat.setDefaultFormat(formato)
     qapp = QApplication(sys.argv)
     _tiempo("QApplication")
     import threading
@@ -4882,6 +4965,9 @@ def app():
     if preparar_fuentes:                                    # con la ventana ya a la vista: las fuentes de reserva
         QTimer.singleShot(120, lambda: threading.Thread(target=preparar_fuentes, args=("✓",), name="fuentes de reserva",
                                                         daemon=True).start())
+    if os.environ.get("TRAILER_MEDIR_FLUIDEZ"):            # (1.8.9) herramientas/medir_fluidez.py: huecos y cuadros
+        import medir_fluidez
+        win._medidor = medir_fluidez.Guion(win, qapp, None, os.environ["TRAILER_MEDIR_FLUIDEZ"])
     if os.environ.get("TRAILER_PRUEBA_ARRASTRE"):          # prueba de punta a punta: suelta una carpeta y mira que arme
         import prueba_arrastre
         win._guion = prueba_arrastre.Guion(win, qapp, os.environ["TRAILER_PRUEBA_ARRASTRE"],

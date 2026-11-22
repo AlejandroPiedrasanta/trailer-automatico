@@ -29,12 +29,18 @@ ANCHO = 240                               # (240x135: las medidas salen iguales 
 QUEMADO, APLASTADO = 0.98, 0.02
 PASOS = (1.0, 0.7, 0.45, 0.2, 0.0)       # cuanto del CDL se deja al suavizar
 # limites (contra la TOMA original, y para quemado contra la cadena sin CDL: el look ya suaviza las altas)
-MAS_QUEMADO = 0.3                        # % de pixeles quemados que el CDL puede sumar
+MAS_QUEMADO = 0.8                        # % de pixeles quemados que el CDL puede sumar (1.8.7: 0,3; MEDIDO en el de
+                                         # 15 min: casi todos los avisos eran 0,31-0,35 %, brillitos; los de verdad 2-5 %)
 MAS_NEGROS = 1.5                         # % de negros aplastados que puede sumar
-SAT_TOPE = 1.0                           # saturacion p95 del final contra la de la toma (nunca mas)
+SAT_TOPE = 1.06                          # color relativo p95 del final contra la toma (1.8.7: 1,0; MEDIDO: quitar una
+                                         # dominante sube el color un 4 % en la mediana y el guardia deshacia la
+                                         # correccion en 24 de 145 planos; los casos de +16-20 % se siguen frenando)
 SAT_MARGEN = 0.004
+LUZ_REL = 0.10                           # (1.8.7) color relativo = radio Cb/Cr / (luz + esto): lo oscuro no se dispara
+SAT_MARGEN_REL = 0.01
 EXPOSICION_MAX = 0.10                    # cuanto pueden moverse los medios (igualar sin desfigurar)
 DOMINANTE_MAX = 0.02                     # Cb/Cr de los grises: mas que esto (y mas que la toma) es dominante
+LOOK_POTENCIA_MIN = 0.85                 # (1.8.7) hasta donde baja la potencia del CDL al devolver la luz del look
 
 
 # ------------------------------------------------------------------ la cadena de DaVinci en numpy
@@ -140,6 +146,7 @@ def medidas(img):
     hay = neutro.sum() > 150
     return {"y50": float(np.percentile(y, 50)), "quem": float((y > QUEMADO).mean() * 100),
             "aplast": float((y < APLASTADO).mean() * 100), "s95": float(np.percentile(rad, 95)),
+            "s95r": float(np.percentile(rad / (y + LUZ_REL), 95)),
             "cb": float(cb[neutro].mean()) if hay else 0.0, "cr": float(cr[neutro].mean()) if hay else 0.0}
 
 
@@ -184,6 +191,36 @@ def cuadros(pedidos, hilos=8):
         return dict(zip(unicos, ex.map(lambda p: cuadro(*p), unicos)))
 
 
+# ------------------------------------------------------------------ la luz que quita el look
+def _y50(img):
+    return float(__import__("numpy").percentile(0.2126 * img[..., 0] + 0.7152 * img[..., 1] + 0.0722 * img[..., 2], 50))
+
+
+def devolver_luz(cdl, img, look):
+    """(1.8.7, la persona: «pule el color grading») El CDL apunta a la luz que se quiere VER, con el look ya puesto.
+    MEDIDO en NUESTRA BODA (medir_color.py y esta cadena, 158 planos): el look FILM KODAK del de 15 min oscurecia los
+    medios un 5 % (el final quedaba 4 % mas oscuro que la toma), TEAL ORANGE del de 1 min un 1,5 %. Se devuelve con
+    la potencia (gamma) del CDL, que sube los medios sin mover el blanco ni el negro: no quema nada (el guardia no
+    suavizo ningun plano de mas) ni sube el color (p95 igual). Probado tambien subiendo la saturacion para devolver el
+    color que quita el look: pasaba los colores vivos por encima de la toma en 111 de 158 planos (descartado).
+    Los looks que aclaran no se tocan."""
+    if cdl is None or img is None or not look or not os.path.exists(look):
+        return cdl
+    import math
+    base = _pre(img)
+    quiero = _y50(_cdl(base, cdl))
+    c = dict(cdl)
+    for _ in range(3):
+        y = _y50(_look(_cdl(base, c), look))
+        f = quiero / max(y, 1e-3)
+        if f < 1.01:
+            break
+        pw = [float(x) for x in c["Power"].split()]
+        k = max(1.0 + math.log(f) / math.log(min(max(y, 0.05), 0.9)), LOOK_POTENCIA_MIN / max(min(pw), 0.01))
+        c["Power"] = " ".join("%.4f" % (x * k) for x in pw)
+    return c
+
+
 # ------------------------------------------------------------------ la revision
 def _mezcla(c, t):
     """El CDL al t (0 = sin tocar, 1 = entero)."""
@@ -200,7 +237,10 @@ def _fallas(mt, ms, mb):
         f.append("quema")
     if mt["aplast"] > max(ms["aplast"], mb["aplast"]) + MAS_NEGROS:
         f.append("negros")
-    if mt["s95"] > max(ms["s95"] * SAT_TOPE, mb["s95"]) + SAT_MARGEN:
+    # (1.8.7, MEDIDO en NUESTRA BODA: 21 de 145 planos del de 15 min «saturaban» y se suavizaban) el radio Cb/Cr crece
+    # con la luz: aclarar un plano lo «saturaba» sin que el color se viera mas vivo, y el guardia deshacia la
+    # correccion (el final quedaba mas oscuro y gris que la toma). Ahora se compara el color RELATIVO a la luz.
+    if mt["s95r"] > max(ms["s95r"] * SAT_TOPE, mb["s95r"]) + SAT_MARGEN_REL:
         f.append("satura")
     if abs(mt["y50"] - ms["y50"]) > EXPOSICION_MAX:
         f.append("exposicion")
@@ -230,8 +270,10 @@ def vigilar(cdl, img, look=None):
 
 
 def vigilar_varios(trabajos, look=None, hilos=8):
-    """trabajos: {clave: (cdl, imagen)} -> {clave: (cdl, fallas, t)}, en paralelo (numpy suelta el GIL)."""
+    """trabajos: {clave: (cdl, imagen)} -> {clave: (cdl, fallas, t)}, en paralelo (numpy suelta el GIL). Antes de
+    revisarlo, cada CDL devuelve la luz que le quita el look (devolver_luz)."""
     claves = list(trabajos)
     with ThreadPoolExecutor(hilos) as ex:
-        res = list(ex.map(lambda k: vigilar(trabajos[k][0], trabajos[k][1], look), claves))
+        res = list(ex.map(lambda k: vigilar(devolver_luz(trabajos[k][0], trabajos[k][1], look), trabajos[k][1], look),
+                          claves))
     return dict(zip(claves, res))

@@ -573,7 +573,7 @@ INSTANTES_MAX = 200           # cuadros como mucho por toma (mas de 10 min: el p
 APUNTA = ("personas", "detalle", "techo", "piso", "pared", "tapado", "equipo", "nada")
 APUNTA_BIEN = ("personas", "detalle")
 MOTIVOS = {"techo": "apunta al techo", "piso": "apunta al piso", "pared": "apunta a una pared", "tapado": "algo tapa",
-           "equipo": "la camara tapa", "nada": "no se ve nada", "de_cabeza": "de cabeza o ladeada",
+           "equipo": "la camara tapa", "nada": "no se ve nada", "de_cabeza": "de cabeza o ladeada", "al_reves": "TOMA AL REVÉS (girada en el video)",
            "estorbo": "algo pegado al lente tapa un costado", "sin_cabeza": "gente sin cabeza",
            "sin_cara": "no se ve ninguna cara"}
 # en cada cuadro solo interesan los momentos clave (para saber EN QUE SEGUNDO estan): la lista entera de etiquetas hacia

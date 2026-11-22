@@ -23,6 +23,11 @@ FIN_INTRO_S = 15.0                     # s: hasta aqui llega el bloque de intro 
 VITORES = ["cheer_big", "cheer_short", "applause", "sicilian"]
 CADA_VITOR_S = 25.0                    # s de fiesta por cada vitor (maximo MAX_VITORES)
 MAX_VITORES = 10
+# (1.8.7, la persona: «mejora la música y SFX para los videos de 15 a 30») MEDIDO en el de 15 min de NUESTRA BODA: 21
+# vitores y aplausos de biblioteca, 3 gritos invertidos y 10 whoosh. En una pelicula de boda larga suenan a trailer de
+# fiesta y tapan lo de verdad: desde LARGO_SOBRIO_S, solo campanas, destellos y los aplausos REALES del evento
+# (build_trailers._reaccion_real, ambiente.py).
+LARGO_SOBRIO_S = 600.0
 # Los SFX PROPIOS del programa (recursos/sfx, los crea herramientas/hacer_sfx.py) van en su pista. Los de mas de 1 s
 # los nivela mezcla.py (objetivo SFX); a los cortos se les pone aqui el volumen.
 PISTA_MOMENTOS = "SFX MOMENTOS"
@@ -66,6 +71,7 @@ def sonorizar(tl, mp, buscar, zonas, fps, cortes, log=print, evitar=()):
     st = tl.GetStartFrame()
     S = fps
     total = max(z1 for _, _, z1 in zonas)
+    sobrio = total >= LARGO_SOBRIO_S * S
     pistas = {k: _pista(tl, v) for k, v in PISTAS.items()}
     # 1) fuera los SFX de posicion fija (menos el grito invertido)
     ocupado = {}
@@ -77,7 +83,8 @@ def sonorizar(tl, mp, buscar, zonas, fps, cortes, log=print, evitar=()):
         for it in tl.GetItemListInTrack("audio", t) or []:
             nombre = (it.GetName() or "").upper()
             ini = it.GetStart() - st
-            if any(c in nombre for c in CONSERVAR) or (PUBLICO_EN_INTRO and ini < FIN_INTRO_S * S):
+            plantilla = any(c in nombre for c in CONSERVAR) and (not sobrio or ini < FIN_INTRO_S * S)
+            if plantilla or (PUBLICO_EN_INTRO and ini < FIN_INTRO_S * S):
                 ocupado.setdefault(t, []).append((ini, it.GetEnd() - st))
             else:
                 quitar.append(it)
@@ -130,22 +137,23 @@ def sonorizar(tl, mp, buscar, zonas, fps, cortes, log=print, evitar=()):
     if "IGLESIA" in z:
         i0, i1 = z["IGLESIA"]
         poner("campanas", "campanas", i0 - 1 * S, min(9 * S, i1 - i0), 0.3 * S, 2.5 * S, "publico2")
-        if i1 - i0 >= 15 * S:                                     # salida de la iglesia
+        if i1 - i0 >= 15 * S and not sobrio:                      # salida de la iglesia
             poner("cheer_flowers", "publico2", min(i1, cierre) - 5 * S, 6 * S, 0.5 * S, 1.5 * S, "publico")
     if "FIESTA" in z:
         f0, f1 = z["FIESTA"]
         f1 = min(f1, cierre)
         largo = f1 - f0
-        if largo > 4 * S:
+        if largo > 4 * S and not sobrio:
             poner("coupleentrance", "publico", f0, min(12 * S, largo * 0.5), 0.2 * S, 2 * S, "publico2")
         if largo >= 12 * S:
             poner("chispa", "chispa", al_corte(f0 + 0.45 * largo), min(7 * S, 0.4 * largo), 0.5 * S, 2 * S)
-        n = min(MAX_VITORES, max(1, int(largo / (CADA_VITOR_S * S))))
+        n = 0 if sobrio else min(MAX_VITORES, max(1, int(largo / (CADA_VITOR_S * S))))
         for k in range(n):
             t = al_corte(f0 + (k + 1) * largo / (n + 1.0))
             poner(VITORES[k % len(VITORES)], "publico2" if k % 2 == 0 else "publico", t, 6 * S,
                   0.4 * S, 1.5 * S, "publico" if k % 2 == 0 else "publico2")
-    poner("applause", "publico", cierre - 2 * S, total - cierre + 2 * S, 0.5 * S, 2.5 * S, "publico2")
+    if not sobrio:                       # en los largos el final es la musica que termina, sin aplausos de biblioteca
+        poner("applause", "publico", cierre - 2 * S, total - cierre + 2 * S, 0.5 * S, 2.5 * S, "publico2")
     return puestos
 
 
@@ -200,6 +208,10 @@ def emocion(tl, mp, buscar, puestos_plan, fps, propios=None, log=print, evitar=(
         if f < FIN_INTRO_S * S:              # (visto) vitores a los 3 s, sobre «UN FILM DE»: en la intro no
             continue
         opciones = EMOCION[clave]
+        if total_s >= LARGO_SOBRIO_S:
+            opciones = tuple(o for o in opciones if o.startswith("XV_"))
+            if not opciones:
+                continue
         n = usados.get(clave, 0)
         nombre = opciones[n % len(opciones)]
         c = (propios or {}).get(nombre) if nombre.startswith("XV_") else buscar(nombre)

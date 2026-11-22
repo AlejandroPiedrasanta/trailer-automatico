@@ -2378,6 +2378,17 @@ class GotaPestanas(QWidget):
         self._anim.finished.connect(self._llego)
         grupo.buttonToggled.connect(lambda b, si: si and self.ir_a(b))
         self._destino = None
+        # (1.8.9) esto estaba por error dentro de _llego: ahi «barra» no existe y cada pestaña nueva dejaba un error
+        # en el registro (y un tiron al escribirlo) sin seguir a la barra cuando cambiaba de tamaño
+        barra.installEventFilter(self)
+        for b in grupo.buttons():           # (1.7.9) tambien si un boton se mueve o cambia (la gota quedaba corrida)
+            b.installEventFilter(self)
+        self.lower()
+        self.hide()                         # hasta saber donde va (no se ve en la esquina mientras tanto)
+        # (1.7.9, medido) al abrir, los botones ya «se ven» pero aun tienen el sitio provisional (0, 0): la gota lo
+        # copiaba y se quedaba en la esquina tapando «Inicio». Se vuelve a colocar varias veces mientras todo se acomoda
+        for ms in (0, 150, 400, 900, 1600, 3000):
+            QTimer.singleShot(ms, self._recolocar)
 
     def _marcar(self, boton, si):
         """(1.7.9) La pestaña lleva texto OSCURO solo cuando la gota esta debajo (QSS [llego="true"]): antes se
@@ -2391,15 +2402,6 @@ class GotaPestanas(QWidget):
 
     def _llego(self):
         self._marcar(self._destino, True)
-        barra.installEventFilter(self)
-        for b in grupo.buttons():           # (1.7.9) tambien si un boton se mueve o cambia (la gota quedaba corrida)
-            b.installEventFilter(self)
-        self.lower()
-        self.hide()                         # hasta saber donde va (no se ve en la esquina mientras tanto)
-        # (1.7.9, medido) al abrir, los botones ya «se ven» pero aun tienen el sitio provisional (0, 0): la gota lo
-        # copiaba y se quedaba en la esquina tapando «Inicio». Se vuelve a colocar varias veces mientras todo se acomoda
-        for ms in (0, 150, 400, 900, 1600, 3000):
-            QTimer.singleShot(ms, self._recolocar)
 
     def _recolocar(self):
         if self._anim.state() != QVariantAnimation.State.Running:

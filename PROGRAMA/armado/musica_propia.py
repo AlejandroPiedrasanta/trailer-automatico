@@ -139,21 +139,147 @@ def medidas(ruta):
 
 
 def catalogo(tipo=None):
-    """{papel: [rutas]} de las pistas del estilo elegido (por una palabra del nombre del archivo)."""
+    """{papel: [rutas]} de las pistas del estilo elegido (por una palabra del nombre del archivo), con lo que la
+    persona agrego o quito en el popup de canciones (pistas)."""
     estilo = estilo_elegido(tipo) if os.environ.get("TRAILER_MUSICA", "").lower() != "plantilla" else ""
     cat = {}
     if not estilo:
         return cat
-    d = os.path.join(CARPETA, estilo)
-    for f in sorted(os.listdir(d)):
-        if f.startswith(".") or os.path.splitext(f)[1].lower() not in EXT:
-            continue
-        for papel, palabra in (("apertura", "INTRO"), ("epica", "EPICA"), ("romantica", "ROMANTICA"),
-                               ("fiesta", "FIESTA")):
-            if palabra in f.upper():
-                cat.setdefault(papel, []).append(os.path.join(d, f))
-                break
+    for p in pistas(estilo):
+        if not p["quitada"]:
+            cat.setdefault(p["papel"], []).append(p["ruta"])
     return cat
+
+
+# ---------------------------------------------------------------- (1.8.9) las canciones de cada estilo, a gusto
+# La persona (22-nov): «si escojo el estilo de música me sale el pop up, pero si agrego otra canción o cambio alguna,
+# que se pueda; ya te di las carpetas de música pero no lo veo ahí aún». En el popup de un estilo se oye, se cambia,
+# se quita y se agrega (de «Tu música» = sus carpetas dentro del programa, o de cualquier archivo). Lo agregado se
+# COPIA a DATOS/musica/<estilo>/ con su papel en el nombre (sobrevive a las actualizaciones); lo quitado del programa
+# queda en el estado («musica_quitadas»); nada del programa ni de la persona se borra.
+PAPELES = (("apertura", "INTRO"), ("epica", "EPICA"), ("romantica", "ROMANTICA"), ("fiesta", "FIESTA"))
+PREFIJO = {"apertura": "01 INTRO", "romantica": "02 ROMANTICA", "fiesta": "03 FIESTA", "epica": "04 EPICA"}
+BIBLIOTECA = os.path.join(CARPETA, "TU MUSICA")
+
+
+def propias():
+    return os.path.join(rutas.DATOS, "musica")
+
+
+def papel_archivo(nombre):
+    n = (nombre or "").upper()
+    return next((papel for papel, palabra in PAPELES if palabra in n), None)
+
+
+def _quitadas(estilo):
+    try:
+        import motor
+        return set((motor.leer_estado().get("musica_quitadas") or {}).get(estilo) or [])
+    except Exception:
+        return set()
+
+
+def pistas(estilo):
+    """[{ruta, nombre, papel, propia, quitada}] del estilo: las del programa (las que la persona quito, marcadas) y las
+    que agrego. Un papel nunca se queda sin canciones: si se quitaron todas las de uno, vuelven (el armado las pide)."""
+    fuera = _quitadas(estilo)
+    out = []
+    for d, propia in ((os.path.join(CARPETA, estilo), False), (os.path.join(propias(), estilo), True)):
+        try:
+            archivos = sorted(os.listdir(d))
+        except OSError:
+            continue
+        for f in archivos:
+            if f.startswith(".") or os.path.splitext(f)[1].lower() not in EXT:
+                continue
+            papel = papel_archivo(f)
+            if papel:
+                out.append({"ruta": os.path.join(d, f), "nombre": f, "papel": papel, "propia": propia,
+                            "quitada": not propia and f in fuera})
+    activos = {p["papel"] for p in out if not p["quitada"]}
+    for p in out:
+        if p["quitada"] and p["papel"] not in activos:
+            p["quitada"] = False
+            p["volvio"] = True
+    return out
+
+
+def biblioteca():
+    """[(grupo, [rutas])] de «Tu música» (recursos/musica/TU MUSICA/<grupo>/)."""
+    out = []
+    try:
+        grupos = sorted(os.listdir(BIBLIOTECA))
+    except OSError:
+        return out
+    for g in grupos:
+        d = os.path.join(BIBLIOTECA, g)
+        if os.path.isdir(d):
+            fs = sorted(f for f in os.listdir(d) if not f.startswith(".") and os.path.splitext(f)[1].lower() in EXT)
+            if fs:
+                out.append((g, [os.path.join(d, f) for f in fs]))
+    return out
+
+
+def papel_sugerido(ruta):
+    """El papel mas probable de una cancion nueva, por su nombre y su carpeta (la persona lo cambia si no)."""
+    import re
+    n = (ruta or "").upper().replace("\\", "/")
+    if papel_archivo(os.path.basename(n)):
+        return papel_archivo(os.path.basename(n))
+    if re.search(r"\b(FORZA|TIME|EPIC|EPICA|CAROL OF THE BELLS|POTTER)\b", n):
+        return "epica"
+    if "/FIESTA/" in n or any(p in n for p in ("DANCE", "MACARENA", "CALMA", "PALETA", "AFTERMOVIE")):
+        return "fiesta"
+    return "romantica"
+
+
+def agregar(estilo, origen, papel):
+    """Copia `origen` a DATOS/musica/<estilo>/ con el papel en el nombre («02 ROMANTICA - Titulo.mp3»). La ruta nueva."""
+    import re
+    import shutil
+    d = os.path.join(propias(), estilo)
+    os.makedirs(d, exist_ok=True)
+    base, ext = os.path.splitext(os.path.basename(origen))
+    titulo = re.sub(r'[<>:"/\\|?*]+', " ", re.sub(r"^\d+\s+(INTRO|ROMANTICA|FIESTA|EPICA)\S*\s*(-\s*)?", "", base,
+                                                     flags=re.I)).strip() or "cancion"
+    destino = os.path.join(d, "%s - %s%s" % (PREFIJO[papel], titulo, ext.lower()))
+    n = 2
+    while os.path.exists(destino):
+        destino = os.path.join(d, "%s - %s (%d)%s" % (PREFIJO[papel], titulo, n, ext.lower()))
+        n += 1
+    shutil.copy2(origen, destino)
+    return destino
+
+
+def quitar(estilo, pista):
+    """La saca del estilo: una del programa queda en el estado; una agregada se aparta a DATOS/musica/_quitadas/."""
+    if pista.get("propia"):
+        import shutil
+        d = os.path.join(propias(), "_quitadas", estilo)
+        os.makedirs(d, exist_ok=True)
+        base, ext = os.path.splitext(pista["nombre"])
+        destino, n = os.path.join(d, pista["nombre"]), 2
+        while os.path.exists(destino):          # otra con el mismo nombre ya apartada antes: no se pisa
+            destino = os.path.join(d, "%s (%d)%s" % (base, n, ext))
+            n += 1
+        shutil.move(pista["ruta"], destino)
+        return
+    _marcar_quitada(estilo, pista["nombre"], True)
+
+
+def devolver(estilo, nombre):
+    """Vuelve a poner una del programa que se habia quitado."""
+    _marcar_quitada(estilo, nombre, False)
+
+
+def _marcar_quitada(estilo, nombre, si):
+    import motor
+    est = motor.leer_estado()
+    q = dict(est.get("musica_quitadas") or {})
+    lista = [x for x in (q.get(estilo) or []) if x != nombre] + ([nombre] if si else [])
+    q[estilo] = lista
+    est["musica_quitadas"] = q
+    motor.guardar_estado(est)
 
 
 def papel_de(nombre_clip, nombre_pista):
@@ -166,7 +292,10 @@ def papel_de(nombre_clip, nombre_pista):
     return "romantica"
 
 
-def _llenar(papel, lista, dur, fps, turno):
+FINAL_FUNDIDO_S = 2.0            # (1.8.7) fundido de la ultima cancion al terminar el video
+
+
+def _llenar(papel, lista, dur, fps, turno, final=False):
     """Los trozos [{ini (cuadros desde el inicio del tramo), dur, ruta, desde_s, natural}] que llenan un tramo de `dur`
     cuadros con las pistas de ese papel."""
     falta_s = dur / float(fps)
@@ -206,6 +335,16 @@ def _llenar(papel, lista, dur, fps, turno):
             natural = False
         out.append({"ini": pos, "dur": trozo, "ruta": r, "desde_s": util[r][0], "natural": natural})
         pos += trozo
+    if final and out:
+        # (1.8.7, la persona: «mejora el final») MEDIDO en el de 15 min: la musica seguia a -13 LUFS hasta el ultimo
+        # cuadro y se cortaba con el video. La ultima cancion entra mas adelante en su archivo para que su FINAL
+        # natural (el ultimo acorde y su cola) caiga justo cuando termina el video.
+        z = out[-1]
+        fin_natural = medidas(z["ruta"])[1]
+        desde = fin_natural - z["dur"] / float(fps)
+        if desde > z["desde_s"]:
+            z["desde_s"] = round(desde, 3)
+        z["final"] = True
     return out
 
 
@@ -229,6 +368,7 @@ def plan(tl, fps, tipo=None):
                 grupos.append({"nombre": nombre, "ini": it.GetStart(), "fin": it.GetEnd()})
         todos += [dict(g, pista=t, nombre_pista=pista) for g in grupos if g["fin"] - g["ini"] >= MIN_S * fps]
     out = []
+    ultimo_fin = max([g["fin"] for g in todos if "INTRO" not in g["nombre_pista"]] or [0])
     for g in sorted(todos, key=lambda g: g["ini"]):        # en el orden en que suenan: no repite la misma seguida
         ini, dur = g["ini"], g["fin"] - g["ini"]
         papel = papel_de(g["nombre"], g["nombre_pista"])
@@ -243,7 +383,8 @@ def plan(tl, fps, tipo=None):
             if abs(ini - fin_ant) <= int(0.5 * fps) and all(
                     x.GetEnd() <= desde or x.GetStart() >= ini for x in tl.GetItemListInTrack("audio", g["pista"]) or []):
                 ini, dur = desde, dur + (ini - desde)
-        trozos = _llenar(papel, cat.get(papel) or [], dur, fps, turno) if cat.get(papel) else []
+        final = not intro and g["fin"] >= ultimo_fin
+        trozos = _llenar(papel, cat.get(papel) or [], dur, fps, turno, final) if cat.get(papel) else []
         if trozos:
             p = {"pista": g["pista"], "ini": ini - st, "dur": dur, "papel": papel, "intro": intro, "nombre": g["nombre"],
                  "trozos": trozos}
@@ -325,6 +466,8 @@ def aplicar(tl, mp, carpeta_mp, fps, tipo=None, log=print):
                 if j and not p["trozos"][j - 1]["natural"]:
                     entra = int(fps * 0.5)
                 sale = int(max(fo, fps)) if j == n - 1 else (int(fps * 0.4) if z["natural"] else int(fps * 1.5))
+                if z.get("final"):                  # (1.8.7) el video termina con la cancion, que se apaga suave
+                    sale = int(max(sale, FINAL_FUNDIDO_S * fps))
                 y.SetFades({"FadeIn": entra, "FadeOut": sale})
                 pistas += 1
             hechos += 1

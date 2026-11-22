@@ -102,6 +102,8 @@ LENTO_BARRIDO_WARP = 2.0      # px por cuadro de barrido medio maximo para Speed
 # plano de video en camara lenta (Planificador.heroe). Antes caia el plano que tocara (espaldas bailando).
 FINAL_ANTES_S = 1.5           # s antes del marcador CIERRE en que entra el plano final
 FINAL_VEL = 0.5               # velocidad del plano final (Speed Warp de Resolve inventa los cuadros que faltan)
+FINAL_NOVIOS_S = 5.0          # (1.8.7) en los largos, los novios en camara lenta antes de la foto final (sin aerea)
+FINAL_NOVIOS_MAX = 8.0        # y como mucho esto (si el ultimo plano era largo, conserva su parte)
 # Las PERSONAS que reconoce DaVinci (escenas_ia.reconocer -> it["caras"], it["prota"]): cuanto pesa en el puntaje de
 # un video que salga la persona festejada, que salga alguien de frente o que no salga nadie (el piso, espaldas,
 # detalles sueltos). El dron no cuenta: ahi nunca hay caras.
@@ -225,13 +227,21 @@ IGUALAR = globals().get("IGUALAR", True)
 FUERZA_EXPOSICION = 0.4           # 0 = no toca, 1 = iguala del todo a la luz tipica del momento
 FUERZA_BLANCOS = 0.4              # cuanto corrige la dominante de color de los grises
 LUZ_OBJETIVO = (0.30, 0.50)       # limites de la luz tipica de cada momento
-PENDIENTE_LIMITES = (0.92, 1.12)  # cuanto puede oscurecer o aclarar una toma
+PENDIENTE_LIMITES = (0.92, 1.18)  # cuanto puede oscurecer o aclarar una toma (1.8.7: 1,12; las de noche quedaban oscuras)
+# (1.8.7, la persona: «pule el color grading») MEDIDO en el de 15 min de NUESTRA BODA con medir_color.py: el final quedaba
+# mas oscuro que la toma (medios 0,394 -> 0,370; 7 planos OSCURO) y 24 % mas gris (DCTL 0,93 + CDL + look). La luz de
+# cada momento apunta un poco por encima de su mediana (boda luminosa) y la saturacion base sube a 0,98 (nunca pasa
+# de la de camara: lo muy vivo lo sigue calmando el DCTL).
+LUZ_MAS = 0.02
 NEGRO_LECHOSO = 0.08              # desde aqui el negro se considera lavado y se limpia (antes 0.05: tocaba de mas)
 DESPLAZO_LIMITES = (-0.04, 0.02)  # cuanto baja unos negros lechosos
 BLANCOS_LIMITES = (0.96, 1.04)    # cuanto mueve cada canal al quitar una dominante
 SAT_OBJETIVO = 0.36               # respaldo; lo normal es la saturacion tipica del propio evento (objetivo_de_saturacion)
 SAT_OBJETIVO_LIMITES = (0.28, 0.38)
-SAT_LIMITES = (0.85, 1.00)        # cuanto puede bajar la saturacion de una toma (LED de fiesta); nunca sube
+SAT_LIMITES = (0.90, 1.00)        # cuanto puede bajar la saturacion de una toma; nunca sube (1.8.7: 0,85 dejaba todo
+                                  # gris, -18 % medido; lo muy vivo, LED y flores, ya lo calma el DCTL)
+LUZ_OSCURA = 0.30                 # (1.8.7) toma oscura (la fiesta de noche): si la pendiente no puede aclararla (trae
+POTENCIA_OSCURA = 0.88            # luces quemadas), la gamma levanta los medios hasta esto sin mover el blanco
 POTENCIA_MAX = 1.22               # cuanto puede bajar los medios (gamma) una toma sobreexpuesta, sin tocar el blanco
 FUERZA_QUEMADA = 0.75             # fuerza de la exposicion cuando la toma viene con las luces reventadas de camara
 FUENTE_TITULO, FUENTE_SUB = "Great Vibes", "Montserrat"
@@ -1649,7 +1659,7 @@ def objetivos_de_luz(items):
     for mom in ZONAS:
         luces = [_mediana([s[0] for s in i["color"]]) for i in items
                  if i["tipo"] != "foto" and i.get("momento") == mom and i.get("color")]
-        res[mom] = _lim(_mediana(luces) if luces else 0.42, *LUZ_OBJETIVO)
+        res[mom] = _lim((_mediana(luces) if luces else 0.42) + LUZ_MAS, *LUZ_OBJETIVO)
     return res
 
 
@@ -1695,8 +1705,13 @@ def cdl_para(pieza, objetivo, sat_objetivo=None, fps=24.0):
             s = meta / max(0.02, luz)
         # si ya trae luces al tope no se aclara: se quemaria mas
         tope = 1.0 + (PENDIENTE_LIMITES[1] - 1.0) * max(0.0, 1.0 - quem / 0.03)
+        quiere = s
         s = _lim(s, PENDIENTE_LIMITES[0], tope)
         o = _lim(meta - luz * s, *DESPLAZO_LIMITES) if negro > NEGRO_LECHOSO else 0.0
+        if s < quiere and 0.03 < luz < LUZ_OSCURA:
+            # (1.8.7, MEDIDO: 6 planos OSCURO de noche en el de 15 min, medios 0,11-0,17 con 2-8 % quemado) la
+            # pendiente no aclara sin quemar mas las luces: la gamma levanta los medios y el blanco se queda
+            potencia = _lim(math.log(max(min(meta, 0.95), 0.02)) / math.log(max(luz * s, 0.02)), POTENCIA_OSCURA, 1.0)
     gan = [1.0, 1.0, 1.0]
     if len(grises) >= max(1, len(m) // 3):            # hay suficientes grises: corrige la dominante
         rgb = [sum(x[k] for x in grises) / len(grises) for k in (3, 4, 5)]
@@ -1810,7 +1825,11 @@ def repartir_zonas(zonas, capacidad, fps):
 
 
 def de_cabeza(it):
-    """(1.8.7) La toma trae rotacion de 180 (celular de cabeza): DaVinci la muestra al reves si no se gira."""
+    """(1.8.7) La toma se ve de cabeza en DaVinci y hay que girarla 180: lo dice la orientacion medida de lo que se ve
+    (it['girar'], analisis/orientacion.py); sin medida, la rotacion de 180 del archivo (el celular la marca mal)."""
+    g = (it or {}).get("girar")
+    if g is not None:
+        return g == 180
     try:
         return abs(int(float((it or {}).get("rotacion") or 0))) % 360 == 180
     except (TypeError, ValueError):
@@ -2344,6 +2363,11 @@ VOZ_ESCENA_PARTE = 0.25       # (1.8.7) y la voz de UNA escena continua (la bend
 VOZ_AISLAR = 60               # aislamiento de voz de Resolve Studio (0-100): quita musica y murmullo de fondo (1.8.7:
 #                               70 -> 60, queda un poco del lugar y la voz no suena «de estudio»)
 VOZ_FUNDIDOS = (6, 12)        # cuadros de entrada y salida de cada voz
+# (1.8.7, la persona: «mejora la voz de fondo para los de 15 a 30») MEDIDO en el de 15 min: con el aislamiento al 60 %
+# se colaba la musica del DJ y el murmullo del microfono de la camara, y la voz entraba y salia de golpe (6 / 12
+# cuadros). En los largos: aislamiento mas fuerte y fundidos mas largos (la voz aparece y se va suave).
+VOZ_AISLAR_LARGO = 75          # (con 60 se colaba el DJ; 85 ya suena a estudio)
+VOZ_FUNDIDOS_LARGO = (12, 24)
 # (1.8.7, la persona: «con la voz del audio original pasando tomas encima de la voz, algo bonito») como en una pelicula
 # de bodas: la voz entra un poco ANTES de ver a quien habla (corte J), se le ve decir la frase, luego tomas de ese mismo
 # momento (otra camara en el mismo instante, reacciones) y la voz termina sobre otra toma (corte L); los cortes bajo la
@@ -2938,13 +2962,13 @@ def pista_voz(tl):
     return t
 
 
-def pulir_voz(x):
+def pulir_voz(x, aislar=None):
     """Voz limpia y pareja con la IA de Resolve Studio, clip por clip: aislamiento de voz (quita musica y murmullo)
     y nivelador de dialogo (sube lo bajo, baja lo fuerte). Devuelve True si se pudo aislar."""
     ok = False
     try:
         ok = bool(x.SetProperty("AudioVoiceIsolationEnabled", True)) and \
-            bool(x.SetProperty("AudioVoiceIsolationAmount", VOZ_AISLAR))
+            bool(x.SetProperty("AudioVoiceIsolationAmount", aislar or VOZ_AISLAR))
     except Exception:
         pass
     try:
@@ -2985,11 +3009,13 @@ def poner_voces(tl, mp, pool, voces, fps):
         if not r:
             continue
         x = r[0]
+        largo = (tl.GetEndFrame() - st) / float(fps) >= LARGO_DESDE_SEG
         try:
-            x.SetFades({"FadeIn": VOZ_FUNDIDOS[0], "FadeOut": VOZ_FUNDIDOS[1]})
+            fi, fo = VOZ_FUNDIDOS_LARGO if largo else VOZ_FUNDIDOS
+            x.SetFades({"FadeIn": fi, "FadeOut": fo})
         except Exception:
             pass
-        aisladas += bool(pulir_voz(x))
+        aisladas += bool(pulir_voz(x, VOZ_AISLAR_LARGO if largo else VOZ_AISLAR))
         tramos.append((x.GetStart(), x.GetEnd(), v))
         try:                                     # (1.8.7) los aplausos o risas de verdad que vinieron despues
             if _reaccion_real(tl, mp, c, it, v, x, fps):
@@ -3510,6 +3536,17 @@ def disenar_titulo(it, principal, secundario, frase=False, abajo=False):
     return True
 
 
+def _alargar_texto(it, quiero, hasta):
+    """(1.8.7) Alarga un texto de la plantilla hasta `quiero` cuadros (y no mas alla de `hasta`) con lo que su titulo
+    da de si (su largo de fuente: 5,2 s en las plantillas; SetRightOffset, medido)."""
+    try:
+        d = min(quiero, hasta, it.GetDuration() + max(0, it.GetRightOffset()))
+        if d > it.GetDuration():
+            it.SetRightOffset(it.GetDuration() + it.GetRightOffset() - d)
+    except Exception:
+        pass
+
+
 def titulos(tl, ver, fps, fecha_txt, perfil, anio):
     st = tl.GetStartFrame()
     total_f = int(ver["seg"] * fps)
@@ -3528,6 +3565,8 @@ def titulos(tl, ver, fps, fecha_txt, perfil, anio):
         rel = it.GetStart() - st
         if n.startswith("TEXTO NOMBRE"):
             p1, p2 = nombre, frase
+            if ver["seg"] >= LARGO_DESDE_SEG:
+                _alargar_texto(it, int(TEXTO_PLANTILLA_S * fps), total_f - rel - int(0.5 * fps))
         elif n.startswith("TEXTO FINAL"):
             p1, p2 = nombre, fmt(FECHA_LUGAR) or fecha_txt
             d = min(int(6 * fps), total_f - rel - int(0.5 * fps),        # tarjeta final de hasta 6 s
@@ -3540,6 +3579,8 @@ def titulos(tl, ver, fps, fecha_txt, perfil, anio):
             p1, p2 = [fmt(x) for x in perfil["actos"][clave]] if clave else ("", "")
             if not p1:
                 continue
+            if ver["seg"] >= LARGO_DESDE_SEG:
+                _alargar_texto(it, int(TEXTO_PLANTILLA_S * fps), total_f - rel - int(0.5 * fps))
         else:
             continue
         if disenar_titulo(it, p1, p2, abajo=n.startswith("TEXTO FINAL")):
@@ -3599,8 +3640,15 @@ SEPARACION_TEXTOS = 12.0                                  # s minimos entre dos 
 # (1.8.7, la persona: «que los captions no salgan muy rápido entre cada uno y animaciones más fluidas») menos frases en
 # los largos (una cada 150 / 200 s de momento), escritura de 1,5 s, fundidos de 1 s y nunca encima de la voz original
 CADA_FRASE = [(60, 30.0), (180, 55.0), (900, 150.0), (1e9, 200.0)]   # (hasta s de version, s de momento por frase)
-FUNDIDO_TEXTO = (1.0, 1.2)                                # s de entrada y salida de cada texto (antes 0,5 / 0,6)
-ESCRITURA_S = (0.9, 1.6)                                  # s en que el texto se escribe (antes 8-22 cuadros)
+FUNDIDO_TEXTO = (1.2, 1.5)                                # s de entrada y salida de cada texto (1.8.7: 1,0 / 1,2)
+ESCRITURA_S = (1.2, 2.2)                                  # s en que el texto se escribe (1.8.7: 0,9-1,6)
+# (1.8.7, la persona: «pule más los captions, pasan muy rápidos y seguidos en el de 15 y 30») MEDIDO en NUESTRA BODA: el
+# titulo y los «actos» de la plantilla duraban 3 s (con la escritura y el fundido se leian menos de 1 s), un acto
+# entraba 18 s despues del capitulo y «gracias» 12 s antes de la tarjeta final. En los largos: mas tiempo en pantalla,
+# 30 s de aire entre dos textos y el capitulo manda sobre el acto de la plantilla que le quede pegado.
+TEXTOS_LARGOS = {"capitulo": 7.5, "frase": 9.0, "gracias": 8.5, "separacion": 30.0}
+TEXTO_PLANTILLA_S = 6.0                                   # hasta aqui se alargan titulo y actos (lo que el titulo de)
+LARGO_DESDE_SEG = 600                                     # versiones de 10 min o mas: las de 15 y 30
 TRAS_CORTE_S = 0.3                                        # el texto entra un poco despues del corte, no con el
 
 
@@ -3695,8 +3743,28 @@ def textos_extra(tl, mp, png, zonas, fps, perfil, ver, cortes, evitar=()):
         for x in tl.GetItemListInTrack("video", t) or []:
             if t == pt or x.GetMediaPoolItem() is None:
                 ocupado.append((x.GetStart() - st, x.GetEnd() - st))
-    m = int(SEPARACION_TEXTOS * fps)
+    largo = ver["seg"] >= LARGO_DESDE_SEG
+    dur_cap = TEXTOS_LARGOS["capitulo"] if largo else DUR_CAPITULO
+    dur_frase = TEXTOS_LARGOS["frase"] if largo else DUR_FRASE
+    dur_gracias = TEXTOS_LARGOS["gracias"] if largo else DUR_GRACIAS
+    m = int((TEXTOS_LARGOS["separacion"] if largo else SEPARACION_TEXTOS) * fps)
     voz = [(int(a), int(b)) for a, b in evitar or ()]
+    # los «actos» de la plantilla (frases cortas en sus marcadores): si quedan pegados a un capitulo, se quitan
+    actos = [x for x in tl.GetItemListInTrack("video", pt) or [] if (x.GetName() or "").upper().startswith("TEXTO ACTO")]
+
+    def quitar_actos(a, b):
+        """Quita los actos de la plantilla a menos de `m` de [a, b]. True si quito alguno."""
+        quitar = [(x, x.GetStart() - st, x.GetEnd() - st) for x in actos]
+        quitar = [q for q in quitar if not (b + m <= q[1] or a >= q[2] + m)]
+        # (los tramos se leen ANTES de borrar: un clip borrado devuelve None en GetStart)
+        if not quitar or not tl.DeleteClips([q[0] for q in quitar], False):
+            return False
+        for x, x0, x1 in quitar:
+            actos.remove(x)
+            # (MEDIDO) sus fundidos encadenados tambien salen en la pista como piezas sueltas (sin clip): se iban con
+            # el acto pero seguian contando como ocupado, y el capitulo no entraba
+            ocupado[:] = [o for o in ocupado if not (x0 <= o[0] and o[1] <= x1)]
+        return True
 
     def libre(a, b, sin_voz=False):
         return all(b + m <= x0 or a >= x1 + m for x0, x1 in ocupado) and \
@@ -3719,8 +3787,10 @@ def textos_extra(tl, mp, png, zonas, fps, perfil, ver, cortes, evitar=()):
         if piezas and not any((p.get("item") or {}).get("momento") == nombre for p in piezas):
             continue
         z1 = min(z1, cierre)
-        d = int(DUR_CAPITULO * fps)
+        d = int(dur_cap * fps)
         a = z0 + int(0.4 * fps)
+        if nombre in caps and a + d < z1 - fps and not libre(a, a + d) and largo:
+            quitar_actos(a, a + d)
         if nombre in caps and a + d < z1 - fps and libre(a, a + d):
             p1, p2 = (caps[nombre] + [""])[:2]
             if nuevo_texto(tl, mp, png, pt, a, d, "TEXTO CAPITULO " + nombre, p1, p2, False, fps):
@@ -3728,10 +3798,10 @@ def textos_extra(tl, mp, png, zonas, fps, perfil, ver, cortes, evitar=()):
                 n += 1
         lista = frases.get(nombre) or []
         cuantas = min(len(lista), int((z1 - z0) / float(cada * fps) + 0.5))
-        d = int(DUR_FRASE * fps)
+        d = int(dur_frase * fps)
         k = 0
         # (1.5.7) repartidas en lo que queda del momento DESPUES de su capitulo (antes podian quedar pegadas a el)
-        u0 = z0 + int((DUR_CAPITULO + SEPARACION_TEXTOS) * fps) if nombre in caps else z0
+        u0 = z0 + int(dur_cap * fps) + m if nombre in caps else z0
         for j in range(cuantas):
             centro = u0 + (j + 0.5) * (z1 - u0) / float(cuantas)
             for desv in sorted(range(-int((z1 - u0) / (2.0 * (cuantas + 1))), int((z1 - u0) / (2.0 * (cuantas + 1))) + 1,
@@ -3745,7 +3815,7 @@ def textos_extra(tl, mp, png, zonas, fps, perfil, ver, cortes, evitar=()):
                     break
     gracias = perfil.get("gracias")
     if gracias and ver["seg"] >= 180:
-        d = int(DUR_GRACIAS * fps)
+        d = int(dur_gracias * fps)
         final = [x.GetStart() - st for x in tl.GetItemListInTrack("video", pt) or []
                  if (x.GetName() or "").upper().startswith("TEXTO FINAL")]
         a = min(final + [cierre]) - m - d                # justo antes de la tarjeta final
@@ -3755,12 +3825,21 @@ def textos_extra(tl, mp, png, zonas, fps, perfil, ver, cortes, evitar=()):
     return n
 
 
-def whooshes(tl, mp, zonas, fps, clip):
+WHOOSH_INTRO_S = 15.0         # (1.8.7) hasta aqui llega el bloque de intro de la plantilla (sus whoosh se quedan)
+
+
+def whooshes(tl, mp, zonas, fps, clip, sobrio=False):
     if clip is None:
         return 0
     st = tl.GetStartFrame()
     pa = pista(tl, "audio", PISTA_WHOOSH, 7)
     tl.SetTrackLock("audio", pa, False)
+    if sobrio:
+        # (1.8.7, MEDIDO: 10 whoosh iguales en el de 15 min) los de la plantilla caen donde ELLA tenia sus cortes, no
+        # donde estan los de este video: en los largos se quitan (menos los de la intro) y queda uno por capitulo
+        viejos = [x for x in tl.GetItemListInTrack("audio", pa) or [] if x.GetStart() - st >= int(WHOOSH_INTRO_S * fps)]
+        if viejos:
+            tl.DeleteClips(viejos, False)
     ocupado = [(x.GetStart(), x.GetEnd()) for x in tl.GetItemListInTrack("audio", pa) or []]
     dur = int(2.5 * fps)
     n = 0
@@ -4216,11 +4295,29 @@ def main():
                             quedan[-1]["dur_f"] += c0 - pos
                         # (1.8.7, «tomas aéreas en momentos claves») en los videos largos el video se despide desde el
                         # aire: el ultimo plano antes de la imagen final es la mejor aerea de ese momento (si queda)
-                        if ver["seg"] > 180 and quedan and quedan[-1]["tipo"] != "dron" and \
-                                quedan[-1]["dur_f"] >= int(3.0 * fps):
-                            adios = plan.dron_clave([nombre_z], quedan[-1]["dur_f"])
+                        if ver["seg"] > 180 and quedan and quedan[-1]["tipo"] != "dron":
+                            adios = (plan.dron_clave([nombre_z], quedan[-1]["dur_f"])
+                                     if quedan[-1]["dur_f"] >= int(3.0 * fps) else None)
                             if adios is not None:
                                 quedan[-1] = adios
+                            elif ver["seg"] >= LARGO_DESDE_SEG and h.get("tipo") == "foto":
+                                # (1.8.7, la persona: «mejora el final») sin aerea de ese momento (la fiesta, de noche)
+                                # el ultimo plano era cualquiera (MEDIDO en el de 15 min: espaldas en la pista de baile):
+                                # ahora los novios en camara lenta, el plano mas emotivo y firme del evento (heroe), de
+                                # al menos FINAL_NOVIOS_S, y despues la foto final con su tarjeta
+                                k, largo_k = len(quedan), 0
+                                while k > 1 and largo_k < int(FINAL_NOVIOS_S * fps):
+                                    k -= 1
+                                    largo_k += quedan[k]["dur_f"]
+                                antes_k = []
+                                if largo_k > int(FINAL_NOVIOS_MAX * fps):   # (un plano largo: se queda su parte)
+                                    sobra = largo_k - int(FINAL_NOVIOS_S * fps)
+                                    if quedan[k]["dur_f"] - sobra >= 0 and sobra >= int(2.0 * fps):
+                                        antes_k = [dict(quedan[k], dur_f=sobra)]
+                                        largo_k -= sobra
+                                novios = plan.heroe(largo_k) if largo_k >= int(3.0 * fps) else None
+                                if novios is not None:
+                                    quedan = quedan[:k] + antes_k + [novios]
                         zonas[-1] = (nombre_z, z0, z1, quedan + [h])
             except Exception as ex:
                 aviso("%s: no se pudo preparar el plano final (%s)" % (ver["sufijo"], ex))
@@ -4563,7 +4660,7 @@ def main():
                  for z, v in (perfil.get("capitulos") or {}).items()})
         except Exception as ex:
             aviso("%s: no se pudieron guardar los capitulos (%s)" % (nombre, ex))
-        info["whoosh"] = whooshes(tl, mp, zonas, fps, whoosh)
+        info["whoosh"] = whooshes(tl, mp, zonas, fps, whoosh, ver["seg"] >= LARGO_DESDE_SEG)
         # (1.8.0, auditoria) donde va la voz original (pastor, brindis): los SFX no la tapan
         tramos_voz = [(v["pos"], v["pos"] + int(round((v["fin"] - v["ini"]) * fps)))
                       for v in voces_plan or [] if v.get("pos") is not None]

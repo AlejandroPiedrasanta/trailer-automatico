@@ -417,6 +417,18 @@ def _textos(g, tipo_evento, nombre_xv, frase, analisis):
     return nombre, sub
 
 
+def _de_cabeza(item):
+    """(1.8.7) La toma se ve de cabeza en DaVinci (la misma regla que build_trailers.de_cabeza: la orientacion medida de
+    lo que se ve; sin medida, la rotacion de 180 del archivo). Antes las plantillas no la giraban."""
+    g = (item or {}).get("girar")
+    if g is not None:
+        return g == 180
+    try:
+        return abs(int(float((item or {}).get("rotacion") or 0))) % 360 == 180
+    except (TypeError, ValueError):
+        return False
+
+
 def _centrar_aereo(x, item, t, ancho, alto):
     """(1.8.7) Una toma de dron horizontal en la plantilla 9:16 llena la altura y solo se ve su franja del centro (un
     tercio del ancho): con la iglesia a un lado se veia el cielo o los techos (la persona, 20-nov: «hay tomas aéreas que
@@ -509,6 +521,11 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
                     x.SetProperty("Scaling", resolve.SCALE_FILL)
             except Exception:
                 pass
+            if _de_cabeza(item):                  # (1.8.7) se ve de cabeza (orientacion medida): se gira
+                try:
+                    x.SetProperty("RotationAngle", 180.0)
+                except Exception:
+                    pass
             if alto > ancho and item.get("tipo") == "dron" and item.get("horizontal", True) and \
                     _centrar_aereo(x, item, (a + b) / (2.0 * sfps), ancho, alto):
                 n_centradas += 1

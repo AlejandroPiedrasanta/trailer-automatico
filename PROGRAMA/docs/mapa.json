@@ -353,7 +353,8 @@
    "PROGRAMA/interfaz/trailer_xv.py",
    "PROGRAMA/interfaz/linea_dia.py",
    "PROGRAMA/analisis/analizar_material.py",
-   "PROGRAMA/herramientas/hacer_portada.py"
+   "PROGRAMA/herramientas/hacer_portada.py",
+   "PROGRAMA/herramientas/medir_fluidez.py"
   ],
   "simbolos": [
    "_tiempo",
@@ -371,7 +372,11 @@
    "_revisar_material_fondo",
    "_pintar_fondo",
    "_pintar",
-   "_chips_editable"
+   "_chips_editable",
+   "BordeVentana",
+   "_poner_tiras",
+   "_siguiente_qml",
+   "_material_y_faltan"
   ],
   "notas": [
    "Medir: TRAILER_TIEMPOS=1 anota en el registro cada marca _tiempo (portada nativa, QApplication, estilos, paginas, ventana visible, primer cuadro). Con TRAILER_DATOS aparte no choca con el programa ya abierto.",
@@ -382,7 +387,8 @@
    "Fluidez: LineaDia y Cielo pintan una vez en una imagen (_imagen, _fondo); la ventana lee material_ventana.json (resumen de 100 KB, no los 6 MB); revisar_material va en otro hilo.",
    "numpy y Pillow: _AlUsar los carga al primer uso; _para_el_empaquetador mantiene el import escrito para PyInstaller. recursos/icono.ico lo hace hacer_portada.py.",
    "No se toca: escena_go/estilos_inicio/orbe_mecanica (CineCaptions). Lo que queda al abrir es pulir los widgets (0,16 s) y el primer cuadro de la escena (0,14 s).",
-   "(17-nov, 1.6.0) La persona: «no me gusta el cuadro que aparece al inicio... elimina eso». Sin portada nativa (Windows) ni QSplashScreen (Mac): trailer_xv.PORTADA = False; el codigo queda por si se vuelve a pedir. La ventana sale sola en ~1,7 s (desde el codigo)."
+   "(17-nov, 1.6.0) La persona: «no me gusta el cuadro que aparece al inicio... elimina eso». Sin portada nativa (Windows) ni QSplashScreen (Mac): trailer_xv.PORTADA = False; el codigo queda por si se vuelve a pedir. La ventana sale sola en ~1,7 s (desde el codigo).",
+   "(1.8.9, la persona: «aún tiene trabones o tirones, no está nada fluido»; MEDIDO con herramientas/medir_fluidez.py en la ventana real) 1) Al presentar cada cuadro la ventana esperaba el refresco de la pantalla y, con DaVinci ocupando la tarjeta, esperaba DOS: las paginas QML iban a 21-26 cuadros con ~30 congelones de 35 ms por segundo -> QSurfaceFormat.setSwapInterval(0) antes de QApplication (Windows; TRAILER_VSYNC=1 lo deja como antes): 56-77 cuadros y ningun congelon en Tráilers, carrusel, Plantillas ni Ajustes. 2) Un filtro de eventos de TODA la app (los bordes para estirar la ventana sin marco) pasaba ~2000 eventos por segundo por Python: ahora son 8 tiras (BordeVentana, el cursor lo pone Qt y al apretar startSystemResize) y el menu en español de los QLineEdit va en cada uno. 3) _barra_a_qml creaba barra, trabajo, popups y 3 paginas de golpe (387-441 ms congelada al abrir): ahora una por vuelta (_siguiente_qml, 40 ms entre una y otra): 227 ms. 4) Contar lo ya analizado (fichas + 700 tamaños de D:) va en el hilo de _revisar_material_fondo. 5) _escalar sin pintar mientras re-aplica el estilo (280 -> 150 ms). 6) piezas.GotaPestanas: medio __init__ estaba dentro de _llego (NameError en cada cambio de pestaña y la gota no seguia a la barra). 7) animacion: la ruta de ffmpeg se busca una vez. Lo que queda: el arranque (Qt cargando QML, shaders y videos: 0,2-0,6 s segun la tarjeta) y re-escalar al soltar el borde."
   ]
  },
  {
@@ -568,7 +574,8 @@
   ],
   "archivos": [
    "PROGRAMA/analisis/analizar_material.py",
-   "PROGRAMA/analisis/vision_ia.py"
+   "PROGRAMA/analisis/vision_ia.py",
+   "PROGRAMA/analisis/orientacion.py"
   ],
   "simbolos": [
    "analizar",
@@ -608,7 +615,8 @@
    "motivo_cuadro",
    "parte_mala",
    "cuadro_malo",
-   "_instantes_con_ia"
+   "_instantes_con_ia",
+   "medir"
   ],
   "notas": [
    "(18-nov) DIA DEL EVENTO: si hay un telefono (iPhone, o EXIF Apple/Samsung/Google... = TELEFONOS) o un dron con hora, el dia lo votan SOLO esas camaras (se ponen en hora por la red). Antes 230 fotos de una Sony A7 III con el reloj en 2018 ganaban por numero a 44 videos de un iPhone 17 y el evento salia «BODA 2018-12-03»; ahora 2026-11-15 y la Sony se alinea con el reloj corrido (3b).",
@@ -623,7 +631,8 @@
    "(1.5.7) vision_ia VERSION 2: 'equipo' (camara/flash/celular en primer plano) -> util false; en_gpu(): con DaVinci llenando la GPU no hay instantes y la revision mira 30 cuadros; NUM_CTX 8192.",
    "(16-nov) Revision cuadro por cuadro (INSTANTES_V 4): TODAS las tomas cada 3 s; apunta/de_cabeza/cara/sin_cabeza con respuesta cerrada. Regla de la persona: si sale gente se le ve la cara; techo, de cabeza, sin cabeza, sin cara -> fuera ese tramo; toma entera si es la mitad de una corta o el 80% de una larga.",
    "(1.8.0, 20-nov) IA local a prueba de caidas: cortacircuitos en vision_ia._pedir (4 fallos seguidos de /api/chat = 90 s sin preguntar, IACaida); un cuadro sin respuesta queda [t, [], None, 'fallo'] y si fallan mas de 1 de 10 (FALLOS_TOPE) instantes() devuelve None: la toma NO se guarda como revisada. describir() devuelve False si Ollama no contesto (no gasta intento) y None si contesto algo roto. caras._imagenes lanza si no salio ningun cuadro (antes quedaba 'nadie sale'). oido: solo 'sin audio' es para siempre; otro error se reintenta una vez.",
-   "(1.8.2, 20-nov, la persona: «aplica todo») (1) motor.preanalizar: al soltar la carpeta (sala de espera) el analisis entero corre en un QThread (Preanalisis) con el mismo CANDADO que el armado: si se pulsa Empezar, el armado espera y no repite nada; su avance se ve como el del trabajo. TRAILER_PREANALISIS=0 lo apaga. (2) motor.calentar_ia: vision_ia.en_gpu en un hilo al empezar (modelo cargado mientras se mide). (3) Numeracion ESTABLE en renombrar_material: el que ya tiene nombre conserva su numero (antes se renumeraba por hora y dos archivos intercambiaban nombre: DaVinci mostraba OTRO video en la linea ya armada; asi se estropeo la «061»). La clave nombre|tamaño ya distingue archivos: no hace falta huella. (4) vision_ia guarda los cuadros que saca (analisis/cuadros/<nombre>_<tamaño>/<seg>.jpg, 448 px) y color_guardia los usa (0,1 s contra 0,7 s abriendo el video); en Borrar cache. (5) ruido_tomas.adelantar dentro de am.analizar (CPU mientras la IA usa la GPU). (6) Verticales medidos en 108x192 (antes aplastados a 192x108: temblor 0,26 vs 0,115 real y giro 5 vs 45: se descartaban los de celular; ahora el 1 min trae 5 s de IGLESIA que antes no tenia); se remiden solos (medida_vertical); _vista_cuadros generico (rejilla 3x4 y huella 8x9 en cualquier orientacion). (7) describir con FORMATO_TOMA cerrado y un reintento con otra semilla: 18/18 tomas con el mismo momento y el mismo «sirve» que antes, 0 rotas, 3,0 s c/u. (8) Planificador.lo_que_ve x _peso_ruido: ruido nivel 4 x0,94, nivel 5 x0,86 (preferencia, nunca descarta)."
+   "(1.8.2, 20-nov, la persona: «aplica todo») (1) motor.preanalizar: al soltar la carpeta (sala de espera) el analisis entero corre en un QThread (Preanalisis) con el mismo CANDADO que el armado: si se pulsa Empezar, el armado espera y no repite nada; su avance se ve como el del trabajo. TRAILER_PREANALISIS=0 lo apaga. (2) motor.calentar_ia: vision_ia.en_gpu en un hilo al empezar (modelo cargado mientras se mide). (3) Numeracion ESTABLE en renombrar_material: el que ya tiene nombre conserva su numero (antes se renumeraba por hora y dos archivos intercambiaban nombre: DaVinci mostraba OTRO video en la linea ya armada; asi se estropeo la «061»). La clave nombre|tamaño ya distingue archivos: no hace falta huella. (4) vision_ia guarda los cuadros que saca (analisis/cuadros/<nombre>_<tamaño>/<seg>.jpg, 448 px) y color_guardia los usa (0,1 s contra 0,7 s abriendo el video); en Borrar cache. (5) ruido_tomas.adelantar dentro de am.analizar (CPU mientras la IA usa la GPU). (6) Verticales medidos en 108x192 (antes aplastados a 192x108: temblor 0,26 vs 0,115 real y giro 5 vs 45: se descartaban los de celular; ahora el 1 min trae 5 s de IGLESIA que antes no tenia); se remiden solos (medida_vertical); _vista_cuadros generico (rejilla 3x4 y huella 8x9 en cualquier orientacion). (7) describir con FORMATO_TOMA cerrado y un reintento con otra semilla: 18/18 tomas con el mismo momento y el mismo «sirve» que antes, 0 rotas, 3,0 s c/u. (8) Planificador.lo_que_ve x _peso_ruido: ruido nivel 4 x0,94, nivel 5 x0,86 (preferencia, nunca descarta).",
+   "(1.8.7, 22-nov, la persona: «que la IA reconozca las tomas al revés») analisis/orientacion.py: el celular marca mal la rotacion (NUESTRA BODA: los -180 salian de cabeza, los +90 eran horizontales y salian de lado; la IA los vio «de cabeza» y los descarto). medir() mira 5 cuadros como se ven: caras YuNet en las 4 rotaciones, cada cuadro vota (3 de 5 para girar) y la IA de vista confirma; sin caras, la IA de vista (2 de 3). analizar_material deja it['girar']: 180 -> sus cuadros «de cabeza» valen; 90/270 -> fuera. YuNet solo veia «caras» en flores y adornos girados (009, 001, 002): por eso los votos y la confirmacion."
   ]
  },
  {
@@ -772,7 +781,10 @@
    "ZOOM_HABLA_MAX",
    "CARA_HABLA",
    "el_sacerdote",
-   "CARA_HABLA_SEGURA"
+   "CARA_HABLA_SEGURA",
+   "FINAL_NOVIOS_S",
+   "_de_cabeza",
+   "FINAL_NOVIOS_MAX"
   ],
   "notas": [
    "zonas_de: si el marcador ACTO esta a menos de 5 s, el momento empieza en el cambio de cancion.",
@@ -797,7 +809,9 @@
    "(1.8.7) Plantillas 9:16: el dron horizontal llena la altura y solo se ve su tercio central; armar_ref._centrar_aereo pide a la IA local (encuadre.sujeto_aereo) donde esta lo importante y corre la imagen (Pan, hasta (ancho_imagen - 1080) / 2) para centrarlo.",
    "(1.8.7, MEDIDO) Quien habla: encuadre.quien_habla mira 2 s (12 cuadros) y gana la cara cuya boca cambia mas que su frente (YuNet da comisuras y ojos); la cara mas grande fallaba en 4 de 4 (el padrino en vez del sacerdote, la novia en vez del abuelo que bendecia) y Qwen3-VL con un solo cuadro tampoco acertaba. Si no esta claro, plano abierto. ubicar_voces: HABLA_MAX_TOMA = 2 vistas por toma y version; elegir_voces: VOZ_ESCENA_PARTE = 0,25 del capitulo para la voz de una escena continua (30 min: 18 -> 12 voces, 7 bendiciones en vez de 13).",
    "(1.8.7) Cuanto acercar a quien habla: que su cara mida CARA_HABLA (0,11 la 1.a vez, plano medio; 0,20 la 2.a) y lo bastante para traerla al centro, hasta ZOOM_HABLA_MAX = 2x si la toma es 4K (linea de 1080: sin perder nitidez). En la casa las caras median 5 % del alto y con 1,12x quien hablaba seguia al borde. encuadre.acercar corregido: el punto cae justo en el objetivo.",
-   "(1.8.7, MEDIDO) Probado y quitado: que el movimiento de la boca siguiera el volumen del audio de la toma (musica, eco y gente: fallaba con el cura y el abuelo). En la ceremonia (voz PASTOR o DISCURSO en IGLESIA) primero encuadre.el_sacerdote: Qwen3-VL lo ubica por la ropa y se toma la cara de arriba al centro de su caja (con la mas grande salia la novia). BOCA_MIN 2,5 (cura 10-14, abuelo 4,6, novio cabizbajo 1,8); cara de menos de 7 % del alto: hasta 1,5x."
+   "(1.8.7, MEDIDO) Probado y quitado: que el movimiento de la boca siguiera el volumen del audio de la toma (musica, eco y gente: fallaba con el cura y el abuelo). En la ceremonia (voz PASTOR o DISCURSO en IGLESIA) primero encuadre.el_sacerdote: Qwen3-VL lo ubica por la ropa y se toma la cara de arriba al centro de su caja (con la mas grande salia la novia). BOCA_MIN 2,5 (cura 10-14, abuelo 4,6, novio cabizbajo 1,8); cara de menos de 7 % del alto: hasta 1,5x.",
+   "(1.8.7, 22-nov) Final de los largos: si no hay aerea del ultimo momento (la fiesta, de noche), los ultimos planos (al menos FINAL_NOVIOS_S = 5 s) se cambian por los novios en camara lenta (Planificador.heroe) antes de la foto final; antes era cualquiera (espaldas en la pista).",
+   "(1.8.7) armar_ref._de_cabeza: las plantillas tambien giran 180 lo que se ve de cabeza (antes no). Final de los largos: los novios en camara lenta entre FINAL_NOVIOS_S y FINAL_NOVIOS_MAX (5-8 s); si el ultimo plano era largo, conserva su parte."
   ]
  },
  {
@@ -870,7 +884,13 @@
    "vigilar",
    "vigilar_varios",
    "proteger",
-   "medidas"
+   "medidas",
+   "LUZ_MAS",
+   "LUZ_OSCURA",
+   "POTENCIA_OSCURA",
+   "SAT_TOPE",
+   "devolver_luz",
+   "LOOK_POTENCIA_MIN"
   ],
   "notas": [
    "Tomas Rec.709: se tocan poco. Por plano solo empareja (pendiente 0.92-1.12, saturacion 0.90-1.08 hacia la del evento), DCTL casi neutro y look _REC709 a media fuerza (LOOK_REC709). Medir antes de subir margenes.",
@@ -879,7 +899,11 @@
    "Ruido de DaVinci: Ajustes > «Guardar el del clip actual» captura el grado del clip bajo el cursor (datos/ruido_davinci/ruido.drx) y al armar se aplica a todas las tomas con ApplyGradeFromDRX; el DCTL queda transparente (N0).",
    "Saturacion: nunca por encima de la de camara. CDL 0,85-1,00 (solo baja), DCTL 0,93 + calma colores muy vivos y quita color a las luces casi quemadas, y los looks _REC709 no suben la saturacion de ningun color (suavizar_looks.sin_subir_saturacion).",
    "Toma sobreexpuesta: gamma (Power <= 1,22) en vez de bajar la pendiente (que volvia grises las luces); con luces al tope no se aclara.",
-   "(1.8.1, 20-nov, la persona: «al colorizar satura o expone demasiado... usa el vectorscopio o la forma de onda... la estructura de nodos... el balance de blancos») MEDIDO con herramientas/medir_color.py (cada plano del render contra su toma en el mismo instante: medios, % quemado y % negros aplastados de la forma de onda; saturacion p95 y dominante de los grises del vectorscopio). (1) Los looks _REC709 SI subian el color (piel +5-10 %, lila +6-8 %, blanco calido +16-34 %: la saturacion (max-min)/max + 0,035 era enorme para colores casi grises), el Kodak aclaraba las altas y todos aplastaban negros (071: 5 -> 11 %). suavizar_looks.proteger acota cada punto del LUT por luz Rec.709 y radio Cb/Cr: croma <= el de entrada + 0,004, desde luz 0,75 nunca aclara, bajo 0,15 nunca oscurece. (2) color_guardia: al armar, un cuadro real (240 px) del tramo de cada plano, la cadena PRE DCTL -> CDL -> look en numpy y si el CDL quema, aplasta negros, satura, tiñe o mueve los medios mas de 0,10, se suaviza (70/45/20/0 %). Encontro una medida de OTRO archivo (061: cache de codigo e instalado renumerando aparte) que dejaba el plano en 0,22 y 12 % de negros. RESULTADO en DaVinci (1 min XV): quema 0, satura 0, dominante 0, negros 2 de 37 (antes 8 de 16); quemado mediano 1,5 % -> 0,25 %. La API no deja AGREGAR nodos (solo LUT/CDL/etiqueta en los que hay; el .drx va comprimido): la cadena es 1 BASE (grupo PRE) -> 2 BALANCE Y EXPOSICION + RUIDO (clip) -> 3 LOOK (grupo POST), con esos nombres."
+   "(1.8.1, 20-nov, la persona: «al colorizar satura o expone demasiado... usa el vectorscopio o la forma de onda... la estructura de nodos... el balance de blancos») MEDIDO con herramientas/medir_color.py (cada plano del render contra su toma en el mismo instante: medios, % quemado y % negros aplastados de la forma de onda; saturacion p95 y dominante de los grises del vectorscopio). (1) Los looks _REC709 SI subian el color (piel +5-10 %, lila +6-8 %, blanco calido +16-34 %: la saturacion (max-min)/max + 0,035 era enorme para colores casi grises), el Kodak aclaraba las altas y todos aplastaban negros (071: 5 -> 11 %). suavizar_looks.proteger acota cada punto del LUT por luz Rec.709 y radio Cb/Cr: croma <= el de entrada + 0,004, desde luz 0,75 nunca aclara, bajo 0,15 nunca oscurece. (2) color_guardia: al armar, un cuadro real (240 px) del tramo de cada plano, la cadena PRE DCTL -> CDL -> look en numpy y si el CDL quema, aplasta negros, satura, tiñe o mueve los medios mas de 0,10, se suaviza (70/45/20/0 %). Encontro una medida de OTRO archivo (061: cache de codigo e instalado renumerando aparte) que dejaba el plano en 0,22 y 12 % de negros. RESULTADO en DaVinci (1 min XV): quema 0, satura 0, dominante 0, negros 2 de 37 (antes 8 de 16); quemado mediano 1,5 % -> 0,25 %. La API no deja AGREGAR nodos (solo LUT/CDL/etiqueta en los que hay; el .drx va comprimido): la cadena es 1 BASE (grupo PRE) -> 2 BALANCE Y EXPOSICION + RUIDO (clip) -> 3 LOOK (grupo POST), con esos nombres.",
+   "(1.8.7, 22-nov, la persona: «pule el color grading») MEDIDO con medir_color.py en el de 15 min: el final quedaba 24 % mas gris (s50 0,038 -> 0,029) y mas oscuro (medios 0,394 -> 0,370; 7 OSCURO) que la toma. DCTL base SATURACION 0,98 (antes 0,93; VIVOS sigue calmando LED y flores), LUZ_MAS +0,02 sobre la mediana de cada momento y PENDIENTE_LIMITES hasta 1,18 (las de noche quedaban oscuras; con luces quemadas no se aclara).",
+   "(1.8.7) Tras el primer ajuste el de 15 min seguia -18 % de color y 6 planos OSCURO de noche (medios 0,11-0,17 con 2-8 % quemado: la pendiente no puede aclarar sin quemar). SAT_LIMITES 0,90-1,00 y, si la pendiente queda corta en una toma oscura (LUZ_OSCURA 0,30), cdl_para usa Power hasta POTENCIA_OSCURA 0,88 (levanta los medios, el blanco se queda). medir_color marca SATURA/OSCURO de mas en los planos acercados (quien habla, ACERCAR): compara el cuadro entero de la toma con la parte que se ve.",
+   "(1.8.7, MEDIDO sin DaVinci con el plan del de 15 min: cdl_para + color_guardia.vigilar sobre los cuadros reales) el guardia suavizaba 47 de 145 planos (quema 30, satura 24): el «satura» era el balance de blancos (+4 % de color en la mediana, hasta +20 % en pocos) y el «quema» casi siempre 0,31-0,35 % de pixeles. Ahora: color RELATIVO a la luz (s95r = p95 de radio/(luz+0,10)), SAT_TOPE 1,06 y MAS_QUEMADO 0,8 %: satura 1, quema 17, 124 planos con su correccion entera (antes 98). herramientas/medir_color marca SATURA con el mismo criterio.",
+   "(1.8.7, MEDIDO con la cadena simulada en 158 planos) el look FILM KODAK del de 15 min oscurecia los medios 5 % (el final 4 % mas oscuro que la toma) y le quitaba 6 % de color: color_guardia.devolver_luz hace que el CDL apunte a la luz que se VE con el look puesto, con la potencia (gamma) del CDL hasta 0,85 (LOOK_POTENCIA_MIN): medios 0,957 -> 1,006 de la toma, mismo p95 de color y el guardia no suaviza ningun plano de mas. Subir la saturacion para devolver el color del look pasaba los vivos por encima de la toma en 111 de 158 planos (descartado). El de 30 (NATURAL SUAVE) ya quedaba como la camara: color -2 %, misma luz."
   ]
  },
  {
@@ -908,7 +932,9 @@
    "nuevo_texto",
    "png_texto",
    "velos_plantilla",
-   "legibilidad_plantilla"
+   "legibilidad_plantilla",
+   "_alargar_texto",
+   "TEXTOS_LARGOS"
   ],
   "notas": [
    "NUNCA InsertFusionTitleIntoTimeline: inserta en V1 con ripple. Textos nuevos = PNG transparente + AddFusionComp.",
@@ -918,7 +944,8 @@
    "Los titulos propios de la plantilla son macros (mWedding, MultiText): no se pueden redisenar; velos_plantilla pone un velo oscuro en la pista TEXTOS (debajo de ellos) mientras estan en pantalla.",
    "disenar_titulo(abajo=True): la tarjeta final en el tercio inferior. Frases 0,088 de tamano y velo 0,55.",
    "(1.5.7) DUR_CAPITULO/FRASE/GRACIAS 5/6/6,5 s, SEPARACION_TEXTOS 4, frases repartidas despues del capitulo y TRAS_CORTE_S.",
-   "1.8.7 (la persona: «que los captions no salgan muy rápido entre cada uno y animaciones más fluidas»): DUR_CAPITULO/FRASE/GRACIAS 6 / 7,5 / 7,5 s, SEPARACION_TEXTOS 12 s, CADA_FRASE 15 min 150 s y 30 min 200 s, FUNDIDO_TEXTO 1,0 / 1,2 s, escritura ESCRITURA_S 0,9-1,6 s (antes 8-22 cuadros) y las frases nunca encima de la voz original (textos_extra(evitar=voces))."
+   "1.8.7 (la persona: «que los captions no salgan muy rápido entre cada uno y animaciones más fluidas»): DUR_CAPITULO/FRASE/GRACIAS 6 / 7,5 / 7,5 s, SEPARACION_TEXTOS 12 s, CADA_FRASE 15 min 150 s y 30 min 200 s, FUNDIDO_TEXTO 1,0 / 1,2 s, escritura ESCRITURA_S 0,9-1,6 s (antes 8-22 cuadros) y las frases nunca encima de la voz original (textos_extra(evitar=voces)).",
+   "(1.8.7, 22-nov, MEDIDO en NUESTRA BODA) El titulo y los «actos» de la plantilla duraban 3 s (se leian menos de 1 s), un acto entraba 18 s despues del capitulo y «gracias» 12 s antes de la tarjeta final. En los largos (LARGO_DESDE_SEG): TEXTOS_LARGOS (frase 9, capitulo 7,5, gracias 8,5, separacion 30 s); _alargar_texto lleva titulo y actos a lo que da su titulo (SetRightOffset: 5,2 s); textos_extra.quitar_actos quita el acto pegado a un capitulo. ESCRITURA_S 1,2-2,2 s y FUNDIDO_TEXTO 1,2/1,5 s."
   ]
  },
  {
@@ -966,7 +993,10 @@
    "momentos",
    "sfx_propios",
    "_brillo_sin_hueco",
-   "brillo_titulo_sin_hueco"
+   "brillo_titulo_sin_hueco",
+   "LARGO_SOBRIO_S",
+   "WHOOSH_INTRO_S",
+   "VOZ_AISLAR_LARGO"
   ],
   "notas": [
    "Sin librosa en el .exe: ritmo de las canciones de plantilla en recursos/ritmo_plantillas.json.",
@@ -981,7 +1011,8 @@
    "1.8.7: el cierre lo decide el TIPO (TIPOS_CIERRE: bendicion, agradecimiento, brindis, deseos), mejor de la fiesta: la IA no marco «cierre» en ninguna de 62 frases. elegir_voces pone apertura y cierre ANTES de la historia (con la historia primero el tope de voces dejaba fuera el cierre).",
    "1.8.7 (la persona, 20-nov: «la voz más presente, no poquito; la persona que habla, un par de tomas que la enfoque»): VOCES 15/30 = 10/22, VOZ_LARGO 8-22 / 10-30 s, VOZ_PARTE_ZONA 0,55, MUSICA_BAJO_VOZ -16 dB, guion_voz NOTA_HISTORIA 5. Quien habla se ve DOS veces (_sincronizar pone habla=1; _otra_vez_quien_habla, hacia el final de la voz, habla=2) y enfocar() le pone encuadre con su cara (encuadre.cara: YuNet local; ZOOM_HABLA 1,12 / 1,38, cara a y 0,42, Pan/Tilt sin descubrir bordes) que acercar() aplica en DaVinci.",
    "(1.8.7, MEDIDO) La plantilla de 15 min deja 14,7-20,3 s sin musica tras la intro (whoosh y el destello del titulo); el destello se apagaba en 19,25 s y quedaba 1,1 s de silencio total («hueco de silencio 0:19» en todos). sfx._brillo_sin_hueco lo corre para que acabe 0,25 s antes de que entre la musica (solo si el hueco es de 0,5 a 2 s).",
-   "(1.8.7, MEDIDO) cruces_de_musica corre DESPUES de los SFX y puede atrasar la cancion que entra tras el titulo: el hueco volvia. sfx.brillo_titulo_sin_hueco, despues de cruces_de_musica, quita y vuelve a poner el destello del titulo (la API no mueve clips) para que acabe 0,25 s antes de la musica."
+   "(1.8.7, MEDIDO) cruces_de_musica corre DESPUES de los SFX y puede atrasar la cancion que entra tras el titulo: el hueco volvia. sfx.brillo_titulo_sin_hueco, despues de cruces_de_musica, quita y vuelve a poner el destello del titulo (la API no mueve clips) para que acabe 0,25 s antes de la musica.",
+   "(1.8.7, 22-nov, MEDIDO en el de 15 min: 21 vitores de biblioteca, 3 gritos invertidos, 10 whoosh iguales) sfx.LARGO_SOBRIO_S: en los largos sin vitores, aplausos ni gritos fuera de la intro (solo campanas, destellos y los aplausos reales); whooshes(sobrio) quita los de la plantilla (caian en SUS cortes) menos la intro y deja uno por capitulo. Voz: VOZ_AISLAR_LARGO 75 (60 dejaba pasar al DJ; 85 suena a estudio) y VOZ_FUNDIDOS_LARGO 12/24 cuadros. Resolve ya aplica a cada voz su nivelador de dialogo (AudioDialogueLeveler*, comprobado)."
   ]
  },
  {
@@ -1053,7 +1084,11 @@
    "verificar_imagen",
    "medir",
    "revisar",
-   "marcar"
+   "marcar",
+   "_visto",
+   "_otro_cuadro",
+   "tramos_vistos",
+   "_al_reves"
   ],
   "notas": [
    "Salida: EVENTO TERMINADO - <evento>/VIDEO TERMINADO/VIDEO FINAL 1 MIN.mov (TargetDir y CustomName en build_trailers y motor.encolar_render).",
@@ -1062,7 +1097,9 @@
    "(1.5.7) revision_ia: la IA mira el video final (cada 3 s, max 180) y pone marcadores rojos REVISAR (IA) en la linea.",
    "(16-nov) revision_ia usa la misma regla que el analisis y dice el motivo de cada marca REVISAR.",
    "(1.8.0) renderizar.RENDER_QUIETO_S = 300: si en 5 min no sube el % NI crece el archivo que DaVinci escribe (1.8.7), StopRendering y va por el reintento / reinicio de DaVinci. poner_revision_ia espera con tope de 15 min y oyendo Cancelar. editable._exportar_drp exporta a '<video> (nuevo).drp' y solo si salio bien reemplaza (antes se borraba el viejo antes). Trabado de vigia_davinci ya no se lo tragan los except de _recortar_base / proyecto_por_video / _por_drt; el vigia marca SOLO la seccion culpable (la que paso su tope o la mas reciente).",
-   "(1.8.7, MEDIDO) el de 30 min se detenia en el 6 %: 7 camaras lentas seguidas con Speed Warp a ~1 cuadro/s y la tarjeta llena (Ollama con 7,9 GB). Ahora vision_ia.soltar_gpu() antes de renderizar y el vigilante cuenta tambien el archivo que crece: el de 30 min llego al 30 % en 2 min. Con la IA cargada en la tarjeta el Speed Warp se arrastra."
+   "(1.8.7, MEDIDO) el de 30 min se detenia en el 6 %: 7 camaras lentas seguidas con Speed Warp a ~1 cuadro/s y la tarjeta llena (Ollama con 7,9 GB). Ahora vision_ia.soltar_gpu() antes de renderizar y el vigilante cuenta tambien el archivo que crece: el de 30 min llego al 30 % en 2 min. Con la IA cargada en la tarjeta el Speed Warp se arrastra.",
+   "(1.8.7, 22-nov) revision_ia: tramos_vistos da por clip la parte de la toma (GetSourceStartTime/EndTime) y _visto mira CADA cuadro contra los instantes de la IA al analizar (a menos de 2 s); no pregunta en fundidos (FUNDIDO_S), aereas, fotos ni verticales con relleno; cada aviso se confirma con otro cuadro de la misma toma (_otro_cuadro, CONFIRMAR_S). GetIsTrackEnabled da False en todas las pistas de una linea no activa (el de 30 no salteaba nada): si todas dicen False, se toman encendidas. NUESTRA BODA: 13+13 marcas -> 4+3.",
+   "(1.8.7) revision_ia._al_reves: en TODOS los cuadros del video terminado (tambien los ya vistos: el giro lo hace DaVinci) caras en las 4 rotaciones y, si parece girado, la IA de vista lo confirma -> marca «TOMA AL REVÉS». NUESTRA BODA 15 y 30 min: 0 en 199 cuadros (54 s)."
   ]
  },
  {
@@ -1473,7 +1510,8 @@
    "PROGRAMA/nucleo/prueba_arrastre.py",
    "PROGRAMA/analisis/oido.py",
    "PROGRAMA/compilar/windows/construir.ps1",
-   "PROGRAMA/compilar/mac/construir_desde_windows.ps1"
+   "PROGRAMA/compilar/mac/construir_desde_windows.ps1",
+   "PROGRAMA/herramientas/medir_fluidez.py"
   ],
   "simbolos": [
    "planear",
@@ -1487,7 +1525,8 @@
    "Oido sin earshot: TRAILER_EARSHOT_PY=<ruta que no existe>. Audio final: oido.revisar_audio(ruta) (numpy, 1-7 s).",
    "Boda de practica: D:/BODA 7 NOVIEMBRE (ya renombrada); videos en Escritorio/EVENTO TERMINADO - BODA 7 NOVIEMBRE.",
    "Salidas: | Select-Object -Last N; lo largo en segundo plano con salida a archivo (Select-Object guarda todo hasta el final). El scratchpad se puede vaciar solo: guardar ahi solo lo desechable.",
-   "Compilar (solo si se pide): version.txt; construir.ps1 (Windows, instalar /silencioso); Mac SOLO Apple Silicon: commit + push y construir_desde_windows.ps1 (GitHub Actions, gh)."
+   "Compilar (solo si se pide): version.txt; construir.ps1 (Windows, instalar /silencioso); Mac SOLO Apple Silicon: commit + push y construir_desde_windows.ps1 (GitHub Actions, gh).",
+   "(1.8.9) Fluidez de la ventana real: python PROGRAMA/herramientas/medir_fluidez.py [recorrido|musica] abre la ventana ~40 s con datos aparte (TRAILER_MEDIR_FLUIDEZ) y deja datos/fluidez/fluidez.txt: por fase, huecos > 20 ms del hilo de la ventana con su pila de Python (si solo sale «app», es Qt pintando), cuadros por segundo de cada QML y CPU; «musica» recorre el popup de canciones con capturas. No tocar el teclado mientras mide (un Enter cierra el popup)."
   ]
  },
  {
@@ -1589,7 +1628,9 @@
    "PROGRAMA/armado/sfx.py",
    "PROGRAMA/analisis/ritmo.py",
    "PROGRAMA/armado/build_trailers.py",
-   "PROGRAMA/interfaz/trailer_xv.py"
+   "PROGRAMA/interfaz/trailer_xv.py",
+   "PROGRAMA/interfaz/vistas_ajustes.py",
+   "PROGRAMA/compilar/protegidos.py"
   ],
   "simbolos": [
    "plan",
@@ -1604,7 +1645,17 @@
    "describir",
    "app.Ventana._estilo_musica",
    "app.Ventana._guardar_musica",
-   "golpes"
+   "golpes",
+   "FINAL_FUNDIDO_S",
+   "pistas",
+   "agregar",
+   "quitar",
+   "devolver",
+   "biblioteca",
+   "papel_sugerido",
+   "CancionesEstilo",
+   "titulo_cancion",
+   "musica_con_licencia"
   ],
   "notas": [
    "(17-nov, la persona: «la musica no es acorde, hay cortes feos, crea musica para reutilizarla») Las plantillas XV traen canciones de boda (Perfect wedding version, Un pacto con Dios), covers de saxo y un MIX de DJ de 1 hora (sus cambios internos = cortes feos); todas con dueño.",
@@ -1623,7 +1674,9 @@
    "cruces_de_musica SALTA dos pistas propias del mismo papel puestas seguidas: las «arreglaba» (alargaba la que sale hasta su cola de silencio y la otra entraba 4 s tarde): 2,5 s de silencio en el 14:19 del de 15 min. Encadenar por lo FUERTE (medidas[3], [4]: -32 y -27 dB).",
    "1.8.5: de fabrica EMOTIVO (trailer_xv.ESTILO_DEFECTO y musica_propia.estilo_elegido) hasta que la persona elija (estado musica_estilo_persona, lo pone _guardar_musica). Trailers.qml: el carrusel se centra en la elegida despues de asentar el modelo (Qt.callLater) y al mostrarse (onEntro).",
    "1.8.7: 4 EMOTIVO con 8 pistas de la persona (E:/X/BODAS & XV RECURSOS/MUSICA/BODAS, instrumentales; las cantadas fuera porque chocan con la voz): ROMANTICA C-H (A Thousand Years violin, All of Me piano, Can't Help Falling violin, Perfect violin y piano, Storybook Love piano, River Flows in You), EPICA B (Time, Hans Zimmer), FIESTA B (Dance the Night instrumental). Tienen dueño: en redes pueden silenciarse; la actualizacion publica va sin musica.",
-   "(1.8.7, MEDIDO) La intro suena hasta su final natural (Emotivo: 20 s); si acaba antes que su tramo de la plantilla, plan() hace entrar la cancion siguiente en ese momento (su pista libre en el hueco): quitaba «1 hueco de silencio (0:19, 1.2 s)» de todos los de 15 min con Emotivo."
+   "(1.8.7, MEDIDO) La intro suena hasta su final natural (Emotivo: 20 s); si acaba antes que su tramo de la plantilla, plan() hace entrar la cancion siguiente en ese momento (su pista libre en el hueco): quitaba «1 hueco de silencio (0:19, 1.2 s)» de todos los de 15 min con Emotivo.",
+   "(1.8.7, MEDIDO: la musica seguia a -13 LUFS hasta el ultimo cuadro) _llenar(final=True): la ultima cancion entra mas adelante en su archivo para que su final natural caiga justo al terminar el video, con fundido de FINAL_FUNDIDO_S (2 s).",
+   "(1.8.9, la persona: «si escojo el estilo de música me sale el pop up, pero si agrego otra canción o cambio alguna, que se pueda; ya te di las carpetas de música pero no lo veo ahí aún») El popup de cada estilo (▶ en Tráilers o doble clic en Ajustes) es vistas_ajustes.CancionesEstilo: cada canción con oír, «Cambiar» y «Quitar» (las quitadas, con «Volver a poner»); «Tu música» = las carpetas de la persona (E:/X/BODAS  & XV RECURSOS/MUSICA: 32 canciones, 264 MB, sin los mix de DJ ni repetidas) en recursos/musica/TU MUSICA/<VALS, FIESTA, MUSICA DE BODA, MUSICA DE XV, INSTRUMENTALES>, en grupos que se arman al abrirlos, con «Agregar» (y su parte: apertura, romántica, fiesta, épica; la sugerida en verde) o «Usar esta» al cambiar; y «Otra canción de la PC…». musica_propia.agregar COPIA a DATOS/musica/<estilo>/ con el papel en el nombre («02 ROMANTICA - Titulo.mp3», sobrevive a las actualizaciones); quitar = estado «musica_quitadas» (las del programa) o se aparta a DATOS/musica/_quitadas (las agregadas); nunca se borra nada. pistas() lo junta para catalogo() y el armado; un papel sin ninguna vuelve a tener las suyas. «Tu música» tiene dueño: fuera de git (.gitignore), de la actualizacion publica (construir.ps1) y cifrada para Mac (protegidos.py)."
   ]
  },
  {

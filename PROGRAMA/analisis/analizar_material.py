@@ -1365,6 +1365,31 @@ def clasificar(items, base, log=print):
         except Exception:
             pass
         return None
+    # (1.8.7, la persona: «verifica que no haya tomas al revés, ya vi algunas, que la IA reconozca eso») MEDIDO en
+    # NUESTRA BODA: el celular marca mal la rotacion. La orientacion de VERDAD de cada toma con rotacion la dice lo que
+    # se ve (orientacion.py: caras en las 4 rotaciones + IA de vista): de cabeza -> build_trailers la gira 180 y sus
+    # cuadros «de cabeza» del analisis valen; de lado -> fuera (con su motivo); derecha -> no se gira aunque el archivo
+    # diga -180.
+    try:
+        import orientacion
+        ladeadas = []
+        for it in items:
+            if it.get("tipo") != "video" or int(float(it.get("rotacion") or 0)) % 360 == 0:
+                continue
+            o = orientacion.medir(it["ruta"], it.get("dur"))
+            it["girar"] = o.get("girar")
+            if it["girar"] == 180:
+                for x in (it.get("ia") or {}).get("instantes") or []:
+                    if len(x) > 3 and x[2] is False and x[3] == "de_cabeza":
+                        x[2] = True
+            elif it["girar"] in (90, 270):
+                it["descartar"], it["por_descarte"] = True, "grabada de lado (el celular marcó mal la rotación)"
+                ladeadas.append(it["nombre"])
+        if ladeadas:
+            avisos.append("%d tomas grabadas de lado quedan fuera (el celular marcó mal la rotación): %s" % (
+                len(ladeadas), ", ".join(ladeadas[:4]) + ("…" if len(ladeadas) > 4 else "")))
+    except Exception as ex:
+        log("Aviso: no se pudo mirar la orientación de las tomas (%s)" % ex)
     inutiles = [(it, _razon(it)) for it in items if it["nombre"].upper() not in excep]
     inutiles = [(it, r) for it, r in inutiles if r is not None]
     if len(inutiles) > PARTE_IA_MAX * len(items):      # si dijera que casi nada sirve: solo las peores

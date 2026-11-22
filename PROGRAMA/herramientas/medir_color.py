@@ -56,6 +56,7 @@ def medidas(img):
     return {"y50": float(np.percentile(y, 50)), "y99": float(np.percentile(y, 99)),
             "quem": float((y > QUEMADO).mean() * 100), "aplast": float((y < APLASTADO).mean() * 100),
             "s50": float(np.percentile(rad, 50)), "s95": float(np.percentile(rad, 95)),
+            "s95r": float(np.percentile(rad / (y + 0.10), 95)),       # (1.8.7) color relativo a la luz
             "fuera": float((rad > FUERA_75).mean() * 100),
             "cb": float(cb[neutro].mean()) if neutro.sum() > 200 else 0.0,
             "cr": float(cr[neutro].mean()) if neutro.sum() > 200 else 0.0}
@@ -65,7 +66,9 @@ def problemas(src, out):
     p = []
     if out["quem"] > max(1.0, src["quem"] * 1.5 + 0.5):
         p.append("QUEMA")
-    if out["s95"] > src["s95"] * 1.06 + 0.005 or out["fuera"] > src["fuera"] + 0.5:
+    # (1.8.7) como color_guardia: el radio Cb/Cr crece al aclarar sin que el color se vea mas vivo; se compara el
+    # color relativo a la luz (y lo que pasa del 75 %)
+    if out["s95r"] > src["s95r"] * 1.06 + 0.01 or out["fuera"] > src["fuera"] + 0.5:
         p.append("SATURA")
     if max(abs(out["cb"]), abs(out["cr"])) > 0.025 and max(abs(out["cb"]), abs(out["cr"])) > \
             max(abs(src["cb"]), abs(src["cr"])):

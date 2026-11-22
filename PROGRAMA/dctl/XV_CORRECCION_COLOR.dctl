@@ -8,7 +8,8 @@
 __CONSTANT__ float NEGROS = 0.0f;          // no mueve los negros
 __CONSTANT__ float CONTRASTE = 1.0f;       // sin contraste extra
 __CONSTANT__ float PIVOTE = 0.42f;
-__CONSTANT__ float SATURACION = 0.93f;     // saturacion general: un poco menos que la camara
+__CONSTANT__ float SATURACION = 0.98f;     // saturacion general: casi la de camara (1.8.7: 0,93 dejaba la piel
+                                           // y la ropa 24 % mas grises que la toma, medido; lo chillon lo calma VIVOS)
 __CONSTANT__ float VIVOS = 0.22f;          // cuanto mas se bajan los colores MUY vivos (0 = igual que el resto)
 __CONSTANT__ float RODILLA = 0.86f;        // desde aqui se suavizan las altas luces
 __CONSTANT__ float LUCES_SIN_COLOR = 0.55f; // cuanto color pierden las luces casi quemadas

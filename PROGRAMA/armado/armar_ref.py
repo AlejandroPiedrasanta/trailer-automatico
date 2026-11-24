@@ -33,6 +33,7 @@ LENTO_VEL = 0.5                        # camara lenta al 50 % con Speed Warp
 LENTO_MIN_S = 1.4                      # solo en huecos largos (en uno corto no se nota y se pierde el ritmo)
 DESTELLO_OPACIDAD = 60.0               # % de los destellos blancos en las plantillas
 LENTO_PARTE = 0.25                     # como mucho 1 de cada 4 planos, los mas firmes
+_POR_RUTA = {}                         # (1.9.3) {ruta: clip} del media pool, uno por armado (rutas._armado_id)
 
 
 def _clips(carpeta):
@@ -295,6 +296,49 @@ def _medir_temblor(elegidas, info, log):
     return est, medidas
 
 
+def _medir_vertical(elegidas, info, lentos, analisis, tipo_evento, log):
+    """(1.9.1, la persona: «si escojo plantillas, igual armas con lo de video en horizontal adaptado a vertical para
+    llenar las plantillas; pule más eso») La franja 9:16 de cada toma HORIZONTAL (vertical.py: la festejada al centro,
+    sin cortar caras): (modulo, [camino o None por hueco]). Los lentos, fijos (Speed Warp + un comp que se mueve no se
+    probo); los demas siguen a la persona si el hueco es largo."""
+    vacio = [None] * len(elegidas)
+    if not info.get("vertical", True):
+        return None, vacio
+    try:
+        import vertical as vt
+    except Exception as ex:
+        log("  plantilla: sin encuadre vertical (%s)" % ex)
+        return None, vacio
+    from concurrent.futures import ThreadPoolExecutor
+    if any(e[0].get("tipo") == "video" and e[0].get("horizontal", True) for e in elegidas):
+        vt.preparar(log=log)                      # la IA de vista en la GPU (si cabe) y su presupuesto de tiempo
+    ps = vt.protas(analisis.get("items") or [], tipo_evento)
+
+    def medir(k):
+        it, ini, h = elegidas[k][0], elegidas[k][1], info["planos"][k]
+        if it.get("tipo") != "video" or not it.get("horizontal", True) or not it.get("ruta") or _de_cabeza(it):
+            return None
+        hueco_s = float(h["fin"]) - float(h["ini"])
+        if k in lentos:                           # lo que se ve en camara lenta: la mitad del centro (ver armar)
+            ini_s, dur_s = ini + hueco_s * (1 - LENTO_VEL) / 2.0, hueco_s * LENTO_VEL
+        else:
+            ini_s, dur_s = ini, hueco_s
+        fr = vt.franja(float(it.get("ancho") or 1920), float(it.get("alto") or 1080), 1080, 1920)
+        try:
+            return vt.camino(vt.medir(it, ini_s, dur_s, ps, tipo_evento), fr, hueco_s, mover=k not in lentos)
+        except Exception:
+            return None
+    t0 = time.time()
+    with ThreadPoolExecutor(8) as ex:
+        cams = list(ex.map(medir, range(len(elegidas))))
+    vt.guardar()
+    horiz = [c for (it, _i, _d), c in zip(elegidas, cams) if it.get("tipo") == "video" and it.get("horizontal", True)]
+    if horiz:
+        log("  plantilla: %d tomas horizontales en 9:16 (%.0f s): %s." % (len(horiz), time.time() - t0,
+                                                                          vt.resumen(horiz)))
+    return vt, cams
+
+
 def _elegir_lentos(elegidas, info, medidas):
     """Los planos en camara lenta: huecos largos (no el primero), los de toma mas firme, 1 de cada 4 como mucho."""
     cand = [k for k, (_e, h) in enumerate(zip(elegidas, info["planos"]))
@@ -313,7 +357,10 @@ def _poner_lento(resolve, x):
     if ok:
         try:
             x.SetProperty("RetimeProcess", resolve.RETIME_OPTICAL_FLOW)
-            x.SetProperty("MotionEstimation", resolve.MOTION_EST_SPEED_WARP_BETTER)
+            # (1.9.3, medido: Faster tarda la mitad y no se ve diferencia; build_trailers.SPEED_WARP_MEJOR)
+            mejor = os.environ.get("TRAILER_SPEED_WARP", "").lower() == "better"
+            x.SetProperty("MotionEstimation", resolve.MOTION_EST_SPEED_WARP_BETTER if mejor else
+                          getattr(resolve, "MOTION_EST_SPEED_WARP_FASTER", resolve.MOTION_EST_SPEED_WARP_BETTER))
         except Exception:
             pass
     return ok
@@ -323,8 +370,9 @@ FRANJAS = (0.50, 0.30, 0.70, 0.22, 0.78)   # donde puede ir el titulo (desde arr
 MEDIA_FRANJA = 0.08                         # medio alto del titulo (fraccion del alto)
 
 
-def _cuadro_rgb(ruta, t, vertical):
-    """El cuadro de la toma en el segundo t, como se ve en la linea (9:16 recortado al centro)."""
+def _cuadro_rgb(ruta, t, vertical, centro=0.5):
+    """El cuadro de la toma en el segundo t, como se ve en la linea (9:16: la franja de `centro`, de 0 a 1 del ancho;
+    1.9.1, vertical.py la corre a lo importante)."""
     import io
     import subprocess
     import numpy as np
@@ -341,16 +389,18 @@ def _cuadro_rgb(ruta, t, vertical):
     prop = 9 / 16.0 if vertical else 16 / 9.0
     if w / float(h) > prop + 0.01:                   # mas ancho que la linea: se recorta a los lados
         nw = int(h * prop)
-        im = im.crop(((w - nw) // 2, 0, (w - nw) // 2 + nw, h))
+        x0 = max(0, min(w - nw, int(round(centro * w - nw / 2.0))))
+        im = im.crop((x0, 0, x0 + nw, h))
     elif w / float(h) < prop - 0.01:
         nh = int(w / prop)
         im = im.crop((0, (h - nh) // 2, w, (h - nh) // 2 + nh))
     return np.asarray(im)
 
 
-def _franja_sin_caras(elegidas, info, lentos, ini_s, fin_s, log):
+def _franja_sin_caras(elegidas, info, lentos, ini_s, fin_s, log, centros=None):
     """(19-nov, la persona: «siempre que no tape la cara el caption del intro») La altura (Fusion: 0 abajo, 1 arriba)
-    donde el titulo no tapa ninguna cara de las tomas que hay debajo mientras se ve. None si no se pudo mirar."""
+    donde el titulo no tapa ninguna cara de las tomas que hay debajo mientras se ve. None si no se pudo mirar.
+    centros: la franja 9:16 de cada toma (1.9.1: las horizontales ya no se ven al centro)."""
     try:
         import caras
         if not caras.disponible():
@@ -358,7 +408,7 @@ def _franja_sin_caras(elegidas, info, lentos, ini_s, fin_s, log):
     except Exception:
         return None
     vertical = bool(info.get("vertical", True))
-    cajas, mirados = [], 0
+    cajas, mirados, pedidos = [], 0, []
     for k, ((item, ini, _d), h) in enumerate(zip(elegidas, info["planos"])):
         h0, h1 = float(h["ini"]), float(h["fin"])
         a, b = max(h0, ini_s), min(h1, fin_s)
@@ -369,13 +419,18 @@ def _franja_sin_caras(elegidas, info, lentos, ini_s, fin_s, log):
                 src = ini + (h1 - h0) * (1 - LENTO_VEL) / 2 + (t - h0) * LENTO_VEL
             else:
                 src = ini + (t - h0)
-            img = _cuadro_rgb(item["ruta"], src, vertical)
-            if img is None:
-                continue
-            mirados += 1
-            alto = float(img.shape[0])
-            for c in caras.detectar(img):
-                cajas.append((c[1] / alto, (c[1] + c[3]) / alto, c[3] / alto))
+            pedidos.append((item["ruta"], src, vertical, (centros or {}).get(k, 0.5)))
+    # (23-nov, MEDIDO: 4-8 s por plantilla sacando estos cuadros uno tras otro) ffmpeg a la vez; las caras, en orden
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(6) as ex:
+        imagenes = list(ex.map(lambda p: _cuadro_rgb(*p), pedidos))
+    for img in imagenes:
+        if img is None:
+            continue
+        mirados += 1
+        alto = float(img.shape[0])
+        for c in caras.detectar(img):
+            cajas.append((c[1] / alto, (c[1] + c[3]) / alto, c[3] / alto))
     if not mirados:
         return None
 
@@ -465,6 +520,8 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
     lentos = _elegir_lentos(elegidas, info, medidas)
     log("  plantilla: temblor medido en %d tomas (%.0f s); %d en cámara lenta." % (
         sum(1 for m in medidas if m), time.time() - t_med, len(lentos)))
+    vt, cams = _medir_vertical(elegidas, info, lentos, analisis, tipo_evento, log)     # (1.9.1) horizontal en 9:16
+    a_mover = []                                  # (clip, camino, segundo de la toma, zoom del estabilizador, franja)
     # la linea anterior de esta plantilla (rearmar): fuera
     viejas = [project.GetTimelineByIndex(i) for i in range(1, project.GetTimelineCount() + 1)
               if project.GetTimelineByIndex(i).GetName() == nombre]
@@ -479,11 +536,20 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
     for k, v in (("useCustomSettings", "1"), ("timelineResolutionWidth", str(ancho)),
                  ("timelineResolutionHeight", str(alto)), ("timelineFrameRate", ("%g" % fps)),
                  ("timelineOutputResolutionWidth", str(ancho)), ("timelineOutputResolutionHeight", str(alto))):
+        # (23-nov, MEDIDO en DaVinci, scratch probar_ajustes.py) NO se gana mirando antes con GetSetting: poner un valor
+        # que ya esta es gratis (0,00 s); lo que tarda es el cambio de verdad (useCustomSettings 0,3 s, ancho 0,2, alto
+        # 0,5) y la llamada SIGUIENTE, sea cual sea, espera ~0,3 s a que la linea se asiente (probado: 16,7 s contra 14,3)
         tl.SetSetting(k, v)
     fps = float(tl.GetSetting("timelineFrameRate") or fps)
     st = tl.GetStartFrame()
     # los clips del evento que hacen falta (ya estan en el media pool; si no, se importan)
-    por_ruta = {os.path.normcase(c.GetClipProperty("File Path") or ""): c for c in _clips(root)}
+    # (1.9.3, MEDIDO: el pool entero en cada plantilla, 3 s de GetClipProperty al rearmar) un recorrido por armado
+    marca = (project.GetName(), getattr(rutas, "_armado_id", None))
+    if marca[1] and _POR_RUTA.get("marca") == marca:
+        por_ruta = _POR_RUTA["clips"]
+    else:
+        por_ruta = {os.path.normcase(c.GetClipProperty("File Path") or ""): c for c in _clips(root)}
+        _POR_RUTA.update(marca=marca, clips=por_ruta)
     faltan = [it.get("ruta") for it, _a, _b in elegidas if it.get("ruta") and os.path.normcase(it["ruta"]) not in por_ruta]
     if faltan:
         mp.SetCurrentFolder(_carpeta(mp, root, "03 VIDEO"))
@@ -530,12 +596,25 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
                     _centrar_aereo(x, item, (a + b) / (2.0 * sfps), ancho, alto):
                 n_centradas += 1
             con_toma.append((x, item, a / sfps, (b - a) / sfps))
+            zs = 1.0                              # lo que acerca el estabilizador (la franja se mide sin el)
             if lento and _poner_lento(resolve, x):
                 n_lentos += 1
                 if x.GetDuration() != largo_f:          # el hueco exacto: ni se come el siguiente ni deja negro
                     log("  plantilla: plano lento %d quedó de %d cuadros (hueco %d)." % (k + 1, x.GetDuration(), largo_f))
             elif est is not None and medidas[k]:
                 a_estabilizar.append((x, medidas[k], ini))
+                zs = float(medidas[k].get("zoom") or 1.0)
+            cam = cams[k] if vt is not None else None
+            if cam:                               # (1.9.1) la toma horizontal: la franja de lo importante
+                fr = vt.franja(float(item.get("ancho") or 1920), float(item.get("alto") or 1080), ancho, alto)
+                if "fija" in cam:
+                    try:
+                        x.SetProperty("Pan", vt.pan_para(cam["fija"], float(item.get("ancho") or 1920),
+                                                         float(item.get("alto") or 1080), ancho, alto, 1.0, zs))
+                    except Exception:
+                        pass
+                else:                             # se mueve: va en Fusion, detras del estabilizador (3b)
+                    a_mover.append((x, cam, ini, zs, fr))
         pos_f += largo_f
     # 2) el final con logo: la foto / el plano del final de siempre
     final_f = int(round(float(info.get("dur") or 0) * fps)) - pos_f
@@ -585,6 +664,15 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
                 n_est += 1
         except Exception:
             pass
+    n_mov = 0                                     # (1.9.1) la franja 9:16 que sigue a la persona, despues
+    for x, cam, ini, zs, fr in a_mover:
+        try:
+            vel = est.velocidad(x) if est is not None else 1.0
+            n_mov += bool(vt.aplicar_camino(x, cam, fps, ini, vel, zs, 1.0, fr, log))
+        except Exception:
+            pass
+    if a_mover:
+        log("  plantilla: %d de %d tomas siguen a la persona en el 9:16." % (n_mov, len(a_mover)))
     # 3c) el titulo con los nombres al inicio (encima de todo; los brillos de overlays lo buscan por su nombre)
     titulo = ""
     try:
@@ -599,7 +687,8 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
             if png is not None and g["nuevo_texto"](tl, mp, png, pt, int(TITULO_INI_S * fps), d, "TEXTO NOMBRE XV",
                                                       p1, "", False, fps):     # solo los nombres
                 titulo = p1
-                y = _franja_sin_caras(elegidas, info, lentos, TITULO_INI_S, TITULO_INI_S + d / fps, log)
+                y = _franja_sin_caras(elegidas, info, lentos, TITULO_INI_S, TITULO_INI_S + d / fps, log,
+                                      {k: vt.centro_medio(c) for k, c in enumerate(cams) if c} if vt else None)
                 if y is not None and abs(y - 0.5) > 0.01:
                     for it_ in tl.GetItemListInTrack("video", pt) or []:
                         _mover_titulo(it_, y)

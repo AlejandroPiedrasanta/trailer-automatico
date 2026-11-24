@@ -374,10 +374,10 @@ def guardar():
         try:
             os.makedirs(rutas.ANALISIS, exist_ok=True)
             with open(_archivo() + ".tmp", "w", encoding="utf-8") as f:
-                json.dump({"version": VERSION, "planos": _guardado["datos"]}, f)
+                json.dump({"version": VERSION, "planos": _guardado["datos"]}, f, default=rutas.a_json)
             os.replace(_archivo() + ".tmp", _archivo())
             _guardado["sucio"] = False
-        except OSError:
+        except (OSError, TypeError, ValueError):
             pass
 
 

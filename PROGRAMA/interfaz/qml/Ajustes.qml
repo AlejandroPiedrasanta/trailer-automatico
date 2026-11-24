@@ -1,4 +1,4 @@
-// (1.7, parte 4) Pagina Ajustes: Video, Voz y ruido arriba; Inteligencia, Disco y Programa abajo (como la maqueta).
+// (1.7, parte 4) Pagina Ajustes: Video, Voz y ruido arriba; Rendimiento (23-nov), Inteligencia y Programa (con la cache) abajo (como la maqueta).
 // Python (PaginaQML) pone d = {interruptores: [{clave, texto, si}], voz: [{clave, texto, si}], ruido, ia: {texto, ok,
 // boton}, oido: {...}, cache: {texto, frac}, version, act} y hace accion("interruptor"|"voz"|"ruido"|"instalar_ia"|
 // "instalar_oido"|"borrar_cache"|"buscar", valor).
@@ -20,12 +20,14 @@ Item {
     onDChanged: {
         if (JSON.stringify(d.interruptores || []) !== JSON.stringify(interruptoresL)) interruptoresL = d.interruptores || []
         if (JSON.stringify(d.voz || []) !== JSON.stringify(vozL)) vozL = d.voz || []
+        if (JSON.stringify(d.rendimiento || []) !== JSON.stringify(rendL)) rendL = d.rendimiento || []
     }
+    property var rendL: []
     function px(v) { return Math.round(v * escala) }
     // (1.8.4) con movimiento reducido entra solo fundiendose (sin deslizar); «entro» avisa a las piezas que
     // escalonan su entrada (antes se animaban al crearse la pagina, escondida, y nunca se veia)
     signal entro()
-    onEntro: { video.entrar(0); voz.entrar(1); intel.entrar(2); disco.entrar(3); prog.entrar(4) }
+    onEntro: { video.entrar(0); voz.entrar(1); rend.entrar(2); intel.entrar(3); prog.entrar(4) }
     function entrar(dx) { var q = typeof quieto !== "undefined" && quieto
         opacity = 0; baja.x = q ? 0 : (dx || 0) * px(60); baja.y = (q || dx) ? 0 : px(14); entra.restart(); entro() }   // (1.7.8) dx: +1 entra desde la derecha (pestaña de mas adelante), -1 desde la izquierda
     transform: Translate { id: baja }
@@ -166,7 +168,30 @@ Item {
         id: fila2
         y: fila1.height + raiz.sep
         spacing: raiz.sep
-        height: Math.max(intel.implicitHeight, disco.implicitHeight, prog.implicitHeight)
+        height: Math.max(rend.implicitHeight, intel.implicitHeight, prog.implicitHeight)
+        // (23-nov) Rendimiento: lo que el programa cierra para quedarse con la memoria y la tarjeta, y la prioridad
+        Tarjeta {
+            id: rend
+            escala: raiz.escala; familia: raiz.familia; titulo: "Rendimiento"; icono: "rayo"
+            width: raiz.col6 * 2 + raiz.sep; height: fila2.height
+            Repeater {
+                model: raiz.rendL
+                Item {
+                    width: rend.width - rend.px(88); height: px(74)
+                    Column {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - px(102)
+                        Text { width: parent.width; elide: Text.ElideRight; text: modelData.texto; color: "#F1F5F6"
+                            font.family: raiz.familia; font.pixelSize: px(30) }
+                        Text { width: parent.width; elide: Text.ElideRight; text: modelData.nota; color: "#9DB0B6"
+                            font.family: raiz.familia; font.pixelSize: px(24) }
+                    }
+                    Interruptor { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                        escala: raiz.escala; si: modelData.si
+                        onCambiado: (si) => raiz.accion("interruptor", { "clave": modelData.clave, "si": si }) }
+                }
+            }
+        }
         Tarjeta {
             id: intel
             escala: raiz.escala; familia: raiz.familia; titulo: "Inteligencia"; icono: "chip"
@@ -175,13 +200,33 @@ Item {
             Estado { dato: raiz.d.oido || ({}); accionBoton: "instalar_oido" }
         }
         Tarjeta {
-            id: disco
-            escala: raiz.escala; familia: raiz.familia; titulo: "Disco"; icono: "disco"
+            id: prog
+            escala: raiz.escala; familia: raiz.familia; titulo: "Programa"; icono: "engrane"
             width: raiz.col6 * 2 + raiz.sep; height: fila2.height
-            Text { text: (raiz.d.cache || {}).texto || "Midiendo la caché…"; color: "#F1F5F6"
-                font.family: raiz.familia; font.pixelSize: px(34) }
+            Text { text: raiz.d.version || ""; color: "#F1F5F6"; font.family: raiz.familia; font.pixelSize: px(34) }
+            Text { visible: (raiz.d.act || "") !== ""; width: parent.width; wrapMode: Text.WordWrap
+                text: raiz.d.act || ""; color: "#9DB0B6"; font.family: raiz.familia; font.pixelSize: px(28) }
+            // (1.7.9) sin aviso de actualizacion, el mismo hueco que la barra de Disco: los dos botones a la misma altura
+            Boton { width: parent.width; escala: raiz.escala; familia: raiz.familia; texto: "Buscar actualizaciones"
+                icono: "refrescar"; girar: true; ocupado: !!raiz.d.buscando; onClic: raiz.accion("buscar", 0) }
+            // (23-nov) la cache (antes, la tarjeta «Disco») vive aqui: lo que ocupa, su barra y «Borrar» como enlace
+            Item {
+                width: parent.width; height: px(40)
+                Text { anchors.verticalCenter: parent.verticalCenter; width: parent.width - borrar.width - px(16)
+                    elide: Text.ElideRight; text: (raiz.d.cache || {}).texto || "Midiendo la caché…"; color: "#F1F5F6"
+                    font.family: raiz.familia; font.pixelSize: px(30) }
+                Text { id: borrar; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    // (24-nov, VISTO: «25.6 GB de cac…» cortado) el enlace corto: lo que ocupa se lee entero
+                    text: "Borrar"; color: zb.containsMouse ? "#6CF2B4" : "#3BEE9F"
+                    font.family: raiz.familia; font.pixelSize: px(28); font.weight: Font.Bold
+                    font.underline: zb.containsMouse; scale: zb.pressed ? 0.96 : 1
+                    Behavior on color { ColorAnimation { duration: 150 } }
+                    Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                    MouseArea { id: zb; anchors.fill: parent; anchors.margins: -px(10); hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor; onClicked: raiz.accion("borrar_cache", 0) } }
+            }
             Rectangle {
-                width: parent.width; height: px(26); radius: height / 2
+                width: parent.width; height: px(18); radius: height / 2
                 color: Qt.rgba(1, 1, 1, 0.08); clip: true
                 Rectangle {
                     id: lleno
@@ -205,20 +250,6 @@ Item {
                             loops: Animation.Infinite; from: 0; to: 1; duration: 1800; easing.type: Easing.InOutSine } }
                 }
             }
-            Boton { width: parent.width; escala: raiz.escala; familia: raiz.familia; texto: "Borrar caché"; icono: "papelera"
-                onClic: raiz.accion("borrar_cache", 0) }
-        }
-        Tarjeta {
-            id: prog
-            escala: raiz.escala; familia: raiz.familia; titulo: "Programa"; icono: "engrane"
-            width: raiz.col6 * 2 + raiz.sep; height: fila2.height
-            Text { text: raiz.d.version || ""; color: "#F1F5F6"; font.family: raiz.familia; font.pixelSize: px(34) }
-            Text { visible: (raiz.d.act || "") !== ""; width: parent.width; wrapMode: Text.WordWrap
-                text: raiz.d.act || ""; color: "#9DB0B6"; font.family: raiz.familia; font.pixelSize: px(28) }
-            // (1.7.9) sin aviso de actualizacion, el mismo hueco que la barra de Disco: los dos botones a la misma altura
-            Item { visible: (raiz.d.act || "") === ""; width: 1; height: px(26) }
-            Boton { width: parent.width; escala: raiz.escala; familia: raiz.familia; texto: "Buscar actualizaciones"
-                icono: "refrescar"; girar: true; ocupado: !!raiz.d.buscando; onClic: raiz.accion("buscar", 0) }
         }
     }
 

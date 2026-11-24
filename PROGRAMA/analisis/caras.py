@@ -66,8 +66,10 @@ def _sesion(nombre):
         return _ses[nombre]
 
 
-def detectar(img):
-    """Caras de una imagen RGB (array alto x ancho x 3, uint8): [(x, y, ancho, alto, [5 puntos (x, y)], puntaje)]."""
+def detectar(img, alto_min=None):
+    """Caras de una imagen RGB (array alto x ancho x 3, uint8): [(x, y, ancho, alto, [5 puntos (x, y)], puntaje)].
+    (1.9.1) alto_min: desde que alto (parte de la imagen) cuentan; de fabrica ALTO_MIN (vertical.py mira tambien las
+    mas chicas: para no cortarlas por la mitad)."""
     import numpy as np
     from PIL import Image
     h, w = img.shape[:2]
@@ -99,7 +101,7 @@ def detectar(img):
     for b in cajas:                                              # una sola caja por cara (se quita la que se encima)
         if all(_encima(b, o) < 0.3 for o in out):
             out.append(b)
-    return [b for b in out if b[3] >= ALTO_MIN * h]
+    return [b for b in out if b[3] >= (ALTO_MIN if alto_min is None else alto_min) * h]
 
 
 def _encima(a, b):
@@ -165,17 +167,25 @@ def _imagenes(item):
     dur = float(item.get("dur") or 0.0)
     n = 2 if dur < 4 else (4 if dur < 12 else CUADROS_VIDEO)
     out = []
+    # (23-nov, MEDIDO en la boda de JUTIAPA, GoPro 5,3K HEVC: 6 cuadros de una toma = 16,9 s; decodificando con la
+    # tarjeta y solo el cuadro clave de antes de cada punto = 2,9 s. Las personas de 57 videos eran lo que mas tardaba
+    # de los 224 s. Para saber QUIEN sale no importa el cuadro exacto) En tomas de menos de 4 s, el cuadro exacto: su
+    # unico cuadro clave puede ser el primero. Si asi no sale nada, como antes.
+    rapido = ["-hwaccel", "auto", "-skip_frame", "nokey"] if dur >= 4 else []
     for k in range(n):
         t = dur * (k + 0.5) / n if dur > 0 else 0.0
-        try:
-            r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-ss", "%.2f" % t, "-i", ruta,
-                                "-frames:v", "1", "-vf", "scale=960:960:force_original_aspect_ratio=decrease",
-                                "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "3", "-"],
-                               capture_output=True, timeout=120, creationflags=rutas.SIN_VENTANA)
-            if r.stdout:
-                out.append(np.asarray(Image.open(io.BytesIO(r.stdout)).convert("RGB")))
-        except Exception:
-            pass
+        for antes in ([rapido, []] if rapido else [[]]):
+            try:
+                r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error"] + antes + [
+                                    "-ss", "%.2f" % t, "-i", ruta,
+                                    "-frames:v", "1", "-vf", "scale=960:960:force_original_aspect_ratio=decrease",
+                                    "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "3", "-"],
+                                   capture_output=True, timeout=120, creationflags=rutas.SIN_VENTANA)
+                if r.stdout:
+                    out.append(np.asarray(Image.open(io.BytesIO(r.stdout)).convert("RGB")))
+                    break
+            except Exception:
+                pass
     if n and not out:
         # (1.8.0, auditoria) ningun cuadro (ffmpeg fallo o paso el plazo, disco dormido): antes quedaba guardado como
         # «nadie sale» y la festejada podia perder sus tomas para siempre; asi no se guarda y se mira otra vez
@@ -205,26 +215,60 @@ def huellas_de(item):
 def agrupar(por_archivo):
     """{clave: [huellas]} -> {clave: ["Persona 1", ...]}: las huellas parecidas son la misma persona en todo el evento.
     «Persona 1» es la que sale en mas archivos. Siempre da lo mismo con los mismos datos (orden fijo)."""
+    todas, de, _centros, nombre = _grupos(por_archivo)
+    out = {k: [] for k in por_archivo}
+    for (k, _v), j in zip(todas, de):
+        if j >= 0 and nombre[j] not in out[k]:
+            out[k].append(nombre[j])
+    return out
+
+
+def centros(por_archivo):
+    """(1.9.1) {"Persona 1": (huella media de largo 1, en cuantos archivos sale), ...}: las mismas personas que
+    agrupar(). vertical.py reconoce con ellas a la festejada en cada cuadro (para que el 9:16 la siga a ella)."""
+    import numpy as np
+    todas, de, cs, nombre = _grupos(por_archivo)
+    archivos = {}
+    for (k, _v), j in zip(todas, de):
+        if j >= 0:
+            archivos.setdefault(j, set()).add(k)
+    return {nombre[j]: (cs[j] / max(1e-9, float(np.linalg.norm(cs[j]))), len(archivos[j])) for j in archivos}
+
+
+def _grupos(por_archivo):
+    """(todas las huellas [(clave, huella)], grupo de cada una (-1 = ninguno), suma de cada grupo, nombre de cada
+    grupo): la cuenta que comparten agrupar() y centros()."""
     import numpy as np
     todas = [(k, np.asarray(v, np.float32)) for k in sorted(por_archivo) for v in por_archivo[k]]
     centros, cuenta, de = [], [], []
+    # (23-nov, MEDIDO: 30,6 s con 5.323 caras, 5,7 millones de np.linalg.norm, en CADA pasada del analisis) los centros
+    # de largo 1 se guardan en una tabla y solo se rehace la fila del centro que cambia (antes, todos por cada cara).
+    # Misma cuenta, mismo resultado (comparado cara a cara con la de antes).
+    largos = np.zeros((64, len(todas[0][1]) if todas else 1), np.float32)
+
+    def al_dia(j):
+        nonlocal largos
+        if j >= len(largos):
+            largos = np.concatenate([largos, np.zeros_like(largos)])
+        largos[j] = centros[j] / max(1e-9, np.linalg.norm(centros[j]))
     for _vuelta in range(2):                                     # la segunda vuelta, con los centros ya asentados
         de = []
         for k, v in todas:
             if centros:
-                c = np.stack([x / max(1e-9, np.linalg.norm(x)) for x in centros])
-                par = c @ v
+                par = largos[:len(centros)] @ v
                 j = int(par.argmax())
                 if par[j] >= MISMA:
                     if _vuelta == 0:
                         centros[j] += v
                         cuenta[j] += 1
+                        al_dia(j)
                     de.append(j)
                     continue
             if _vuelta == 0:
                 centros.append(v.copy())
                 cuenta.append(1)
                 de.append(len(centros) - 1)
+                al_dia(len(centros) - 1)
             else:
                 de.append(-1)
     archivos = {}
@@ -233,11 +277,7 @@ def agrupar(por_archivo):
             archivos.setdefault(j, set()).add(k)
     orden = sorted(archivos, key=lambda j: (-len(archivos[j]), j))
     nombre = {j: "Persona %d" % (n + 1) for n, j in enumerate(orden)}
-    out = {k: [] for k in por_archivo}
-    for (k, _v), j in zip(todas, de):
-        if j >= 0 and nombre[j] not in out[k]:
-            out[k].append(nombre[j])
-    return out
+    return todas, de, centros, nombre
 
 
 def _archivo():
@@ -312,11 +352,14 @@ def reconocer(items, log=print):
                 raise
             except Exception:
                 return par[0], None
+        dicho = t0
         with ThreadPoolExecutor(HILOS) as ex:
             for n, (k, h) in enumerate(ex.map(uno, faltan), 1):
                 if h is not None:
                     guardado[k] = h
-                if n % 100 == 0:
+                # (23-nov, «que no se quede parado») de 100 en 100 eran ~35 s sin decir nada: tambien cada 6 s
+                if n % 100 == 0 or n == len(faltan) or time.time() - dicho >= 6.0:
+                    dicho = time.time()
                     log("  personas %d/%d" % (n, len(faltan)))
         try:
             os.makedirs(rutas.ANALISIS, exist_ok=True)

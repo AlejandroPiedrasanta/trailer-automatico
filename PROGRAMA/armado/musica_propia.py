@@ -53,17 +53,32 @@ def estilos():
 POR_TIPO = {"xv": "CINE LATINO", "boda": "EMOTIVO", "bautizo": "CLASICO", "graduacion": "JUVENIL", "cumpleanos": "JUVENIL"}
 
 
+def estilo_guardado(est, tipo):
+    """(1.9.3, el cliente de la boda de JUTIAPA: «la canción del principio es de 15 años, no de boda») Lo elegido a
+    mano en Ajustes PARA ESE tipo de evento («musica_estilo_tipo»), o ''. Antes habia uno solo para todo: CINE LATINO
+    elegido para un XV sonaba tambien en la boda. Lo elegido antes de 1.9.3 (sin tipo) cuenta solo para XV."""
+    t = str(tipo or "xv").lower()
+    por = est.get("musica_estilo_tipo") or {}
+    if t in por:
+        return str(por[t] or "")
+    if t == "xv" and est.get("musica_estilo_persona"):
+        return str(est.get("musica_estilo") or "")
+    return ""
+
+
 def estilo_elegido(tipo=None):
-    """El estilo de Ajustes (estado «musica_estilo») o TRAILER_MUSICA_ESTILO; sin elegir («Auto»), el del tipo de
-    evento (POR_TIPO); si no existe, el primero."""
+    """El estilo de Ajustes para este tipo de evento (estilo_guardado) o TRAILER_MUSICA_ESTILO; «Auto», el del tipo
+    (POR_TIPO); sin elegir, EMOTIVO; si no existe, el primero."""
     hay = estilos()
     quiero = os.environ.get("TRAILER_MUSICA_ESTILO", "")
     if not quiero:
         try:
             import motor
             est = motor.leer_estado()
+            if tipo is None:
+                tipo = est.get("tipo_evento", "xv")
             # (1.8.5, la persona) de fabrica EMOTIVO, hasta que se elija otro en Ajustes / Tráilers
-            quiero = est.get("musica_estilo", "") if est.get("musica_estilo_persona") else "EMOTIVO"
+            quiero = estilo_guardado(est, tipo) or "EMOTIVO"
         except Exception:
             quiero = ""
     q = str(quiero).strip().upper()

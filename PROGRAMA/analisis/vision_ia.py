@@ -219,6 +219,15 @@ def servidor_rapido(nombre=None):
         except Exception:
             pass
         _propio["url"] = url
+
+        def _subir():                            # (23-nov) el que corre el modelo nace con la 1a pregunta y con
+            for espera in (0, 15, 45, 120):      # prioridad normal: se le sube cuando ya existe (liberar.prioridad)
+                time.sleep(espera)
+                try:
+                    __import__("liberar").prioridad()
+                except Exception:
+                    return
+        threading.Thread(target=_subir, daemon=True, name="prioridad-ia").start()
         return True
 
 
@@ -643,7 +652,22 @@ FALLO = "fallo"               # (1.8.0) la IA no contesto ese cuadro (sirve = No
 FALLOS_TOPE = 0.10            # mas de 1 de cada 10 cuadros sin respuesta: la toma no se guarda como revisada
 
 
-def instantes(ruta, dur, log=None, fuera=None, limite=None, dron=False):
+def _tiempos(dur):
+    """(paso, [segundos]) de los cuadros que se miran de una toma: uno cada INSTANTES_CADA_S, a lo sumo INSTANTES_MAX."""
+    paso = max(INSTANTES_CADA_S, dur / float(INSTANTES_MAX))
+    tiempos, t = [], paso / 2.0
+    while t < dur - 0.3:
+        tiempos.append(t)
+        t += paso
+    return paso, (tiempos or [dur / 2.0])
+
+
+def cuantos_instantes(dur):
+    """Cuantos cuadros mira instantes() de una toma de ese largo (0 si es muy corta): para decir «cuadro N de M»."""
+    return len(_tiempos(dur)[1]) if dur > 0 and dur >= INSTANTES_DESDE_S else 0
+
+
+def instantes(ruta, dur, log=None, fuera=None, limite=None, dron=False, previos=None, al_cuadro=None):
     """(1.5.7) Lo que pasa a lo largo de la toma: [[segundo, [etiquetas], sirve, motivo], ...] cada INSTANTES_CADA_S s
     (motivo: '' si sirve, si no una clave de MOTIVOS). Asi el armado sabe EN QUE SEGUNDO esta el beso, los anillos o el
     pastel, y en que tramos la camara apunta al techo, sale gente sin cabeza o no se ve ninguna cara.
@@ -656,12 +680,7 @@ def instantes(ruta, dur, log=None, fuera=None, limite=None, dron=False):
     nombre = modelo(log)
     if not nombre or dur <= 0 or dur < INSTANTES_DESDE_S:
         return None
-    paso = max(INSTANTES_CADA_S, dur / float(INSTANTES_MAX))
-    tiempos, t = [], paso / 2.0
-    while t < dur - 0.3:
-        tiempos.append(t)
-        t += paso
-    tiempos = tiempos or [dur / 2.0]
+    paso, tiempos = _tiempos(dur)
 
     def ver(cuadro):
         rutas.revisar_parada()                    # «Cancelar»: lo que quedaba en fila no se pregunta
@@ -690,9 +709,23 @@ def instantes(ruta, dur, log=None, fuera=None, limite=None, dron=False):
     # un cuadro «vale» por medio paso a cada lado: se salta solo si TODO ese tramo ya esta fuera (con medio segundo de
     # margen se colaban 2 planos en 750 pegados a un cuadro que la IA habia marcado malo; asi, ninguno, y cuesta 40 s)
     margen = paso / 2.0
-    tareas = [None if any(a <= max(0.0, t - margen) and min(dur, t + margen) <= b for a, b in fuera or ()) else pedir(t)
-              for t in tiempos]
-    out = [[round(t, 1), [], None, SIN_MIRAR] if tarea is None else recoger(t, tarea) for t, tarea in zip(tiempos, tareas)]
+    # (23-nov) previos: lo que la IA YA contesto de esta toma (misma version) no se pregunta otra vez: al volver por
+    # los cuadros que antes se salto «por las medidas» solo se miran esos
+    sabido = {round(x[0], 1): list(x) for x in previos or () if len(x) >= 3 and x[2] is not None}
+
+    def tarea_de(t):
+        if round(t, 1) in sabido:
+            return sabido[round(t, 1)]
+        if any(a <= max(0.0, t - margen) and min(dur, t + margen) <= b for a, b in fuera or ()):
+            return None
+        return pedir(t)
+    tareas = [tarea_de(t) for t in tiempos]
+    out = []
+    for t, tarea in zip(tiempos, tareas):
+        out.append([round(t, 1), [], None, SIN_MIRAR] if tarea is None else tarea if isinstance(tarea, list)
+                   else recoger(t, tarea))
+        if al_cuadro is not None:                 # (23-nov) un cuadro mas resuelto: el avance cuenta cuadros, no tomas
+            al_cuadro()
     # «si la mayor parte de la toma no sirve, la toma entera fuera» (parte_mala contra `limite`): si los cuadros saltados
     # pueden cambiar esa cuenta, tambien se miran (asi la regla da lo mismo que mirandolos todos)
     saltados = [k for k, x in enumerate(out) if x is not None and x[2] is None]

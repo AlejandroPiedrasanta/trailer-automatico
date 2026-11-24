@@ -219,6 +219,11 @@ def app():
     _tiempo("sin portada")
     from PySide6.QtCore import (Qt, QThread, Signal, QTimer, QPointF, QRectF, QSize, QFileSystemWatcher, QVariantAnimation,
                                 QEasingCurve, QEvent, QLockFile)
+    try:        # (23-nov, MEDIDO: congelon de 150 ms al abrir) PySide LEE EL CODIGO de cada modulo que se importa despues
+        #         (inspect.getsource) para saber si usa «__feature__»: aqui nadie lo usa, asi que no hace falta leer nada
+        sys.modules["shibokensupport.feature"]._mod_uses_pyside = lambda _modulo: True
+    except Exception:
+        pass
     from PySide6.QtGui import (QColor, QIcon, QPainter, QPixmap, QPen, QBrush, QFont, QPainterPath,
                                QRadialGradient, QLinearGradient, QImageReader)
     from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFrame,
@@ -1190,6 +1195,11 @@ def app():
             ctrls = QFrame(objectName="ventanita")
             hc = QHBoxLayout(ctrls)
             hc.setContentsMargins(6, 4, 6, 4)
+            # (23-nov, la persona: «un icono de registro a la par del icono minimizar que cuando le dé clic pueda ver el
+            # registro de errores») punto rojo = un error nuevo desde la ultima vez que se miro (_revisar_registro)
+            self.b_registro = piezas.BotonIcono("registro", "Registro de errores")
+            self.b_registro.clicked.connect(self._ver_registro)
+            hc.addWidget(self.b_registro)
             for tipo, ayuda, acc in (("min", "Minimizar", self.showMinimized), ("max", "Maximizar", self._maximizar),
                                      ("x", "Cerrar", self.close)):         # (1.6.0) dibujados y sin caja (maqueta)
                 b = piezas.BotonIcono(tipo, ayuda, rojo=tipo == "x")
@@ -1263,6 +1273,13 @@ def app():
             self.paginas.currentChanged.connect(self._ancho_registro)
             self.hoja = Hoja(self.cielo)             # «suelta aqui», preguntas y cuenta atras, sobre toda la ventana
             QTimer.singleShot(0, self._brillos)
+            # (23-nov) el punto rojo del registro: al rato de abrir (en un hilo) y luego cada 3 s mirando la cuenta
+            self._errores_vistos = registro.errores()
+            self._registro_desde = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - 5))
+            QTimer.singleShot(6000, self._revisar_registro)
+            self._reloj_registro = QTimer(self, interval=3000)
+            self._reloj_registro.timeout.connect(self._error_nuevo)
+            self._reloj_registro.start()
             _tiempo("  escena")
 
             # (1.7.9, revision de pulido) el agarre para cambiar el tamaño, INVISIBLE en la esquina (sus puntitos se
@@ -1293,6 +1310,19 @@ def app():
             self.t_eta = QTimer(self)                # «Listo a las 17:40» sigue al reloj
             self.t_eta.timeout.connect(self._sub_material)
             self.t_eta.start(60000)
+            # (1.9.0, medido) la ventana nace ya compuesta por la tarjeta de video (RHI, Direct3D 11): la primera pieza
+            # QML (la barra, a los 0,7 s) la obligaba a cambiar de modo y rehacer su superficie (barra: 205-233 ms ->
+            # 25 ms; dos congelones al abrir -> uno). Basta una pieza de textura escondida desde antes de mostrarla
+            # (solo esta ventana: QT_WIDGETS_RHI haria lo mismo con cada menu y cada aviso suelto). TRAILER_RHI=0: como
+            # antes.
+            if rutas.ES_WIN and os.environ.get("TRAILER_RHI") != "0":
+                try:
+                    from PySide6.QtWidgets import QRhiWidget
+                    self._ancla_rhi = QRhiWidget(self)
+                    self._ancla_rhi.setGeometry(0, 0, 1, 1)
+                    self._ancla_rhi.hide()
+                except Exception:
+                    self._ancla_rhi = None
             _tiempo("  final")
             QTimer.singleShot(300, self._arranque)
             QTimer.singleShot(700, self._barra_a_qml)    # (1.7) con la ventana ya a la vista
@@ -1428,7 +1458,8 @@ def app():
             cv.addLayout(f2)
             self.seg_formato = piezas.Segmentado(["Horizontal", "Vertical"], 0)
             self.seg_formato.setToolTip("Horizontal 16:9: usa los videos horizontales y también los verticales.\n"
-                                        "Vertical 9:16 para celular: solo los videos grabados en vertical.")
+                                        "Vertical 9:16 para celular: lo grabado en vertical y lo horizontal recortado a lo "
+                                        "importante (la festejada al centro).")
             self.seg_formato.cambio.connect(self._ver_formato)
             f_fmt.addStretch(1)
             f_fmt.addWidget(self.seg_formato)
@@ -1439,7 +1470,7 @@ def app():
             self.pills, self.pills_v, self.etqs_formato, self.bs_todas = {}, {}, [], []
             for ayuda, pills, elegidas in (
                     ("16:9 · usa los videos horizontales y también los verticales", self.pills, eleg_h),
-                    ("9:16 para celular · solo usa los videos grabados en vertical", self.pills_v, eleg_v)):
+                    ("9:16 para celular · lo horizontal se recorta a lo importante", self.pills_v, eleg_v)):
                 for ver in motor.VERSIONES:
                     b = QPushButton((" " if ver in elegidas else "") + VERSION_TEXTO[ver], objectName="pill", checkable=True)
                     b.setIconSize(QSize(px(30), px(30)))
@@ -1515,6 +1546,54 @@ def app():
             if getattr(self, "_pasos_qml", None):
                 self._pasos_qml.pop(0)()
                 QTimer.singleShot(40, self._siguiente_qml)
+            else:
+                QTimer.singleShot(1500, self._preparar_fotos)
+
+        def _preparar_fotos(self):
+            """(1.9.0, medido) La foto de la ventana que va detras de cada popup (grab) costaba 70-176 ms la primera vez
+            y ~25 ms despues de cambiar de tamaño: antes de fotografiar, Qt le da a TODAS las piezas (tambien a las de
+            las paginas que no se ven: los widgets de siempre, debajo de las paginas QML) los avisos de mover y cambiar
+            de tamaño que tienen pendientes. Aqui se les dan antes, en reposo, de a trozos (~6 ms por vuelta), en el
+            mismo orden que Qt; asi el popup abre sin esperar. OJO: grab() de una pieza ESCONDIDA no sirve para esto:
+            Qt re-acomoda la ventana entera y la pinta (la escena GO oculta armaba sus texturas: 160-220 ms)."""
+            self._trozos_foto = [w for w in self.findChildren(QWidget) if not w.isWindow()]
+            QTimer.singleShot(0, self._foto_trozo)
+
+        def _foto_trozo(self):
+            from PySide6.QtGui import QMoveEvent, QResizeEvent
+            trozos = getattr(self, "_trozos_foto", None)
+            if not trozos or getattr(self, "popup_abierto", None) is not None or not self.isVisible() \
+                    or self.isMinimized():
+                self._trozos_foto = None                 # (un popup ya hizo su foto; minimizada no hace falta)
+                return
+            try:
+                from PySide6.QtQuickWidgets import QQuickWidget
+            except ImportError:
+                QQuickWidget = type(None)
+            t = time.perf_counter()
+            while trozos and time.perf_counter() - t < 0.006:
+                w = trozos[0]
+                # (medido) una pagina QML escondida se vuelve a pintar entera al cambiar de tamaño (5-38 ms): va sola
+                try:
+                    if isinstance(w, QQuickWidget) and time.perf_counter() - t > 0.0005 \
+                            and w.testAttribute(Qt.WA_PendingResizeEvent):
+                        break
+                except RuntimeError:
+                    pass
+                trozos.pop(0)
+                try:
+                    if w.testAttribute(Qt.WA_PendingMoveEvent):
+                        w.setAttribute(Qt.WA_PendingMoveEvent, False)
+                        QApplication.sendEvent(w, QMoveEvent(w.pos(), w.pos()))
+                    if w.testAttribute(Qt.WA_PendingResizeEvent):
+                        w.setAttribute(Qt.WA_PendingResizeEvent, False)
+                        QApplication.sendEvent(w, QResizeEvent(w.size(), QSize()))
+                except RuntimeError:                     # una pieza ya borrada
+                    pass
+            if trozos:
+                QTimer.singleShot(30, self._foto_trozo)
+            else:
+                self._trozos_foto = None
 
         def _trabajo_a_qml(self):
             # (1.7, parte 2) la pantalla de trabajo: los pasos y las versiones en QML (qml/Trabajo.qml). Los adaptadores
@@ -1586,13 +1665,22 @@ def app():
         def _datos_trailers(self):
             m = getattr(self, "seg_musica", None)
             return {"estilos": [b.text() for b in m.botones] if m else [], "estilo": m.actual() if m else -1,
-                    "intros": [b.text() for b in self.seg_intro.botones], "intro": self.seg_intro.actual()}
+                    "intros": [b.text() for b in self.seg_intro.botones], "intro": self.seg_intro.actual(),
+                    "speed_ramp": bool(self.est.get("speed_ramp", False))}
 
         def _acciones_trailers(self):
             return {"estilo": lambda i: self.seg_musica.botones[int(i)].click(),
                     "intro": lambda i: self.seg_intro.botones[int(i)].click(),
                     "oir": lambda i: self._ver_canciones(int(i)),
-                    "ver_intro": lambda i: self._ver_intro(int(i))}
+                    "ver_intro": lambda i: self._ver_intro(int(i)),
+                    "speed_ramp": lambda si: self._speed_ramp(bool(si))}
+
+        def _speed_ramp(self, si):
+            """(1.9.1, la persona: «agrega la opción en Tráiler de speed ramp») Lo lee build_trailers (SPEED_RAMP)."""
+            est = motor.leer_estado()
+            est["speed_ramp"] = self.est["speed_ramp"] = bool(si)
+            motor.guardar_estado(est)
+            self._avisar("Listo: %s." % ("con speed ramp en algunas tomas de acción" if si else "sin speed ramp"))
 
         PLANTILLAS_OPCIONES = {"plantillas_texto": "Título con los nombres", "plantillas_destellos": "Destellos de luz",
                                "plantillas_fundidos": "Transiciones"}
@@ -1631,8 +1719,14 @@ def app():
             return {"interruptores": [{"clave": k, "texto": t, "si": ch.isChecked()} for k, t, ch in (
                         ("render", "Renderizar al terminar", self.ch_render), ("igualar", "Igualar luz y color", self.ch_igualar),
                         ("vert", "Usar videos verticales", self.ch_vert),
-                        ("liberar", "Cerrar programas pesados al armar", self.ch_liberar),
+                        ("datos", "Etiquetas y estrellas en los archivos", self.ch_datos),
+                        ("4k", "Entregar en 4K", self.ch_4k),
                         ("proxies", "Proxies para editar", self.ch_proxies))],
+                    # (23-nov) su tarjeta «Rendimiento» (icono rayo): lo que el programa cierra y la prioridad
+                    "rendimiento": [{"clave": k, "texto": t, "nota": n, "si": ch.isChecked()} for k, t, n, ch in (
+                        ("google", "Sin Google ni Claude", "se cierran al abrir", self.ch_google),
+                        ("prioridad", "Prioridad alta", "programa, DaVinci e IA", self.ch_prioridad),
+                        ("liberar", "Cerrar lo pesado", "Photoshop y otros, al armar", self.ch_liberar))],
                     "proxies_ruta": rutas.carpeta_proxies() if self.ch_proxies.isChecked() else "",
                     # (19-nov) el ruido de DaVinci (temporal, el que mas limpia), a la vista: antes solo en el menu
                     "ruido_dv": {"texto": self.l_ruido_dv.text(), "hay": not self.b_ruido_quitar.isHidden(),
@@ -1648,7 +1742,8 @@ def app():
 
         def _acciones_ajustes(self):
             ch = {"render": self.ch_render, "igualar": self.ch_igualar, "vert": self.ch_vert, "liberar": self.ch_liberar,
-                  "proxies": self.ch_proxies}
+                  "proxies": self.ch_proxies, "google": self.ch_google, "prioridad": self.ch_prioridad,
+                  "datos": self.ch_datos, "4k": self.ch_4k}
 
             def abrir_proxies(_v):
                 os.makedirs(rutas.carpeta_proxies(), exist_ok=True)
@@ -1694,8 +1789,8 @@ def app():
                         registro.info("No se guardo el tráiler elegido: %s" % ex)
                 self._sub_material()
                 return r
-            if not self.caja_videos.styleSheet():   # el popup pone su estilo a todos los botones: aqui, el de la ventana
-                self.caja_videos.setStyleSheet(QApplication.instance().styleSheet())
+            if self.caja_videos.styleSheet() != self._hoja():   # el popup pone su estilo a todos los botones: aqui,
+                self.caja_videos.setStyleSheet(self._hoja())        # el de la ventana (con su escala de ahora)
             self.caja_videos.show()
             piezas.sin_recorte(self.seg_formato.botones + self._pastillas())    # cada boton, del ancho de su texto
             try:
@@ -1784,7 +1879,7 @@ def app():
                 return
             px = piezas.px
             caja = QWidget()
-            caja.setStyleSheet(QApplication.instance().styleSheet())    # el popup pone su estilo: aqui, el de la ventana
+            caja.setStyleSheet(self._hoja())        # el popup pone su estilo: aqui, el de la ventana
             v = QVBoxLayout(caja)
             v.setContentsMargins(0, 0, 0, 0)
             v.setSpacing(px(26))
@@ -2589,6 +2684,7 @@ def app():
             self.c_tipo.currentIndexChanged.connect(self._pintar_evento)
             self.c_tipo.currentIndexChanged.connect(self._pintar_vista)
             self.c_tipo.currentIndexChanged.connect(self.seg_tipo.poner)   # si otro lado cambia el tipo
+            self.c_tipo.currentIndexChanged.connect(self._musica_del_tipo)  # (1.9.3) su musica
             self._pintar_vista()
             return w
 
@@ -2680,15 +2776,42 @@ def app():
         def _intro_tipo(self):
             seg = getattr(self, "seg_intro", None)
             return self.intros[seg.actual()] if seg is not None and 0 <= seg.actual() < len(self.intros) \
-                else self.est.get("intro_tipo", "rampa")
+                else self.est.get("intro_tipo", "zoom")
 
         def _guardar_musica(self):
             """Guarda al momento lo elegido en Ajustes > Sonido (música e intro): el armado lo lee del estado."""
+            if getattr(self, "_poniendo_musica", False):
+                return                               # (lo puso el cambio de tipo de evento, no la persona)
             est = motor.leer_estado()
+            # (1.9.3) por tipo de evento: lo elegido para un XV no suena en una boda (musica_propia.estilo_guardado)
+            por = dict(est.get("musica_estilo_tipo") or {})
+            if not por and est.get("musica_estilo_persona") and est.get("musica_estilo"):
+                por["xv"] = est["musica_estilo"]       # lo elegido antes de 1.9.3 queda para XV
+            por[self._tipo_musica()] = self._estilo_musica()
+            est["musica_estilo_tipo"] = self.est["musica_estilo_tipo"] = por
             est["musica_estilo"] = self.est["musica_estilo"] = self._estilo_musica()
             est["musica_estilo_persona"] = self.est["musica_estilo_persona"] = True   # (1.8.5) ya eligio
             est["intro_tipo"] = self.est["intro_tipo"] = self._intro_tipo()
             motor.guardar_estado(est)
+
+        def _tipo_musica(self):
+            c = getattr(self, "c_tipo", None)
+            return str((c.currentData() if c is not None else None) or self.est.get("tipo_evento") or "xv").lower()
+
+        def _musica_del_tipo(self, *_):
+            """(1.9.3) Al cambiar el tipo de evento, Ajustes > Música muestra lo elegido para ESE tipo."""
+            seg = getattr(self, "seg_musica", None)
+            if seg is None:
+                return
+            import musica_propia
+            quiero = (musica_propia.estilo_guardado(self.est, self._tipo_musica()) or ESTILO_DEFECTO).upper()
+            i = next((k + 1 for k, n in enumerate(self.estilos_musica) if quiero in n.upper()),
+                     len(self.estilos_musica) + 1 if quiero == "PLANTILLA" else 0)
+            self._poniendo_musica = True
+            try:
+                seg.poner(i)
+            finally:
+                self._poniendo_musica = False
 
         def _pagina_ajustes(self):
             """(1.6.0) IGUAL a la maqueta (docs/capturas/propuesta_4_ajustes.png): el bodegon de fondo
@@ -2718,13 +2841,27 @@ def app():
             self.ch_vert.setToolTip("Encendido (lo normal), el video horizontal acepta videos horizontales y verticales: "
                                     "los verticales entran recortados para llenar la pantalla y DaVinci reencuadra "
                                     "siguiendo a la persona. Apagado, quedan fuera del horizontal (siguen en el media "
-                                    "pool). El formato vertical de Inicio usa siempre solo los verticales.")
+                                    "pool). El formato vertical de Inicio usa los verticales y lo horizontal recortado a lo "
+                                    "importante.")
             self.ch_liberar = piezas.Interruptor("")      # (18-nov) liberar.py
             self.ch_liberar.setChecked(self.est.get("liberar_auto", True) is not False)
             self.ch_liberar.setToolTip("Al pulsar ▶ cierra solos los programas pesados (DxO PureRAW, Photoshop, "
                                        "Premiere, Lightroom, Topaz, CineCaptions, navegadores) como si pulsaras la X: "
                                        "cada uno puede pedir guardar. Con la memoria de video libre la IA va hasta 4 "
                                        "veces más rápida. Nunca toca Windows ni DaVinci.")
+            # (23-nov, la persona: «que cuando arranque cierre absolutamente todos los procesos Google - Claude... y se
+            # dé la prioridad») sus dos interruptores, en la tarjeta «Rendimiento»; se guardan al tocarlos
+            self.ch_google = piezas.Interruptor("")
+            self.ch_google.setChecked(self.est.get("cerrar_google_claude", True) is not False)
+            self.ch_google.setToolTip("Al abrir el programa y al armar cierra del todo Chrome, Google Drive y Claude "
+                                      "(también lo que dejan en segundo plano): toda la memoria y la tarjeta quedan "
+                                      "para el video. Chrome recupera sus pestañas al volver a abrirlo.")
+            self.ch_prioridad = piezas.Interruptor("")
+            self.ch_prioridad.setChecked(self.est.get("prioridad_alta", True) is not False)
+            self.ch_prioridad.setToolTip("Windows atiende primero al programa, a DaVinci, a la IA (Ollama) y a ffmpeg.")
+            for clave, ch in (("cerrar_google_claude", self.ch_google), ("prioridad_alta", self.ch_prioridad),
+                              ("liberar_auto", self.ch_liberar)):
+                ch.toggled.connect(lambda si, k=clave: self._cambio_rendimiento(k, si))
             # (19-nov, la persona) los proxies para editar: si o no; si, todos en Videos/PROXIES TRAILER AUTOMATICO
             self.ch_proxies = piezas.Interruptor("")
             self.ch_proxies.setChecked(rutas.proxies_activos())
@@ -2732,10 +2869,30 @@ def app():
                                        "van todas (de cualquier evento o plantilla) en tu carpeta Videos, en «%s». "
                                        "Apagado, no se hacen: DaVinci usa los originales." % rutas.NOMBRE_PROXIES)
             self.ch_proxies.toggled.connect(self._cambio_proxies)
+            # (24-nov, la persona: «mejora los metadatos a los archivos originales») lo que el analisis entiende de cada
+            # foto y video, escrito en el archivo: a la vista y con su interruptor (antes solo el estado, sin boton)
+            self.ch_datos = piezas.Interruptor("")
+            self.ch_datos.setChecked(self.est.get("metadatos_visibles", True) is not False)
+            self.ch_datos.setToolTip("Encendido, lo que se entiende de cada foto y video queda escrito dentro del archivo "
+                                     "original: título, comentarios, etiquetas y estrellas, que se ven, se ordenan y se "
+                                     "buscan en el Explorador de Windows. Solo se toca la cabecera (la imagen no cambia) "
+                                     "y la original queda guardada. Tus propias estrellas y etiquetas no se pisan.")
+            self.ch_datos.toggled.connect(self._cambio_datos)
+            # (1.9.3, MEDIDO en un armado real: 1 min en 4K H.265 = 152 MB y 91 s de render, contra ~71 MB y ~62 s en HD)
+            self.ch_4k = piezas.Interruptor("")
+            self.ch_4k.setChecked(bool(self.est.get("entrega_4k", False)))
+            self.ch_4k.setToolTip("Encendido, los videos (horizontal y vertical) salen en 4K: más detalle en una TV o en "
+                                  "YouTube. El render tarda como una vez y media y el video pesa el doble (~150 MB por "
+                                  "minuto). Para WhatsApp e Instagram no hace falta. Las plantillas de redes siguen en HD.")
+            self.ch_4k.toggled.connect(self._cambio_4k)
             lv.setSpacing(px(16))
             for txt, ch in (("Renderizar al terminar", self.ch_render), ("Igualar luz y color", self.ch_igualar),
                             ("Usar videos verticales", self.ch_vert),
+                            ("Etiquetas y estrellas en los archivos", self.ch_datos),
+                            ("Entregar en 4K", self.ch_4k),
                             ("Cerrar programas pesados al armar", self.ch_liberar),
+                            ("Cerrar Google y Claude al abrir", self.ch_google),
+                            ("Prioridad alta", self.ch_prioridad),
                             ("Proxies para editar", self.ch_proxies)):
                 fila = QHBoxLayout()
                 l = QLabel(txt, objectName="fila_aj")
@@ -2797,7 +2954,8 @@ def app():
                                  "bloquean en redes). Cada estilo trae su intro, romántica, fiesta y épica. "
                                  "«Plantilla» deja las canciones que trae la plantilla de DaVinci.")
                 # (1.8.5, la persona: «deja por default el estilo emotivo») mientras no elija otro: EMOTIVO
-                quiero = str(self.est.get("musica_estilo", "")).upper() if self.est.get("musica_estilo_persona")                     else ESTILO_DEFECTO
+                import musica_propia                 # (1.9.3) lo elegido para el tipo de evento de ahora
+                quiero = (musica_propia.estilo_guardado(self.est, self._tipo_musica()) or ESTILO_DEFECTO).upper()
                 actual = next((i + 1 for i, n in enumerate(self.estilos_musica) if quiero and quiero in n.upper()),
                               len(self.estilos_musica) + 1 if quiero == "PLANTILLA" else 0)
                 self.seg_musica = piezas.Segmentado(
@@ -2811,11 +2969,22 @@ def app():
             # (17-nov) Intro: el ritmo de las 8 fotos de la apertura, cada uno con su SFX (build_trailers.INTROS)
             ls.addSpacing(px(14))
             l_int = QLabel("Intro", objectName="sub_aj")
-            l_int.setToolTip("Cómo entran las 8 fotos del principio antes de que arranque el video: «Rampa» pareja, "
-                             "«Acelera» de lenta a rápida, «Frena» ráfaga que se detiene, «Latido» de dos en dos. "
-                             "Cada una lleva su efecto de sonido y la música entra con el impacto.")
-            self.intros =["rampa", "acelera", "frena", "latido"]
-            quiero_i = str(self.est.get("intro_tipo", "rampa")).lower()
+            l_int.setToolTip("Cómo entran las 8 fotos del principio antes de que arranque el video: «Zoom» cada foto se "
+                             "aleja suave y parejo, con cortes cada vez más seguidos; «Rampa» pareja, «Acelera» de lenta a rápida, «Frena» "
+                             "ráfaga que se detiene, «Latido» de dos en dos. Cada una lleva su efecto de sonido y la "
+                             "música entra con el impacto.")
+            self.intros = ["zoom", "rampa", "acelera", "frena", "latido"]
+            # (1.9.0, la persona: «crea una intro rapid zoom» y que quede POR DEFECTO) una sola vez: la elegida pasa a
+            # «Zoom» (se guardaba sola con la música, asi que no se sabe si «Rampa» la eligio ella); luego manda ella
+            if not self.est.get("intro_zoom_defecto"):
+                self.est["intro_tipo"], self.est["intro_zoom_defecto"] = "zoom", True
+                try:
+                    d = motor.leer_estado()
+                    d["intro_tipo"], d["intro_zoom_defecto"] = "zoom", True
+                    motor.guardar_estado(d)
+                except Exception as ex:
+                    registro.info("No se guardó la intro por defecto: %s" % ex)
+            quiero_i = str(self.est.get("intro_tipo", "zoom")).lower()
             self.seg_intro = piezas.Segmentado([n.capitalize() for n in self.intros],
                                                self.intros.index(quiero_i) if quiero_i in self.intros else 0)
             self.seg_intro.cambio.connect(lambda _i: self._guardar_musica())
@@ -2921,6 +3090,40 @@ def app():
             self._pintar_ruido_dv()
             QTimer.singleShot(2500, self._medir_cache)
             return w
+
+        def _cambio_rendimiento(self, clave, si):
+            """(23-nov) Ajustes > Rendimiento: se guarda ya (vale desde la proxima vez que se abra) y, al encender la
+            prioridad o el cierre, se aplica en el momento. El disco y los procesos, en un hilo."""
+            def hacer():
+                d = motor.leer_estado()
+                d[clave] = bool(si)
+                motor.guardar_estado(d)
+                if si and clave != "liberar_auto":
+                    import liberar
+                    if clave == "prioridad_alta":
+                        liberar.prioridad(registro.info)
+                    else:
+                        liberar.cerrar_google_y_claude(registro.info)
+            qt_kit.correr_en_hilo(self, hacer, lambda r, e: None, baja=True)
+
+        def _cambio_4k(self, si):
+            """(1.9.3) Ajustes > «Entregar en 4K»: estado «entrega_4k» (lo lee build_trailers al encolar el render)."""
+            def hacer():
+                d = motor.leer_estado()
+                d["entrega_4k"] = bool(si)
+                motor.guardar_estado(d)
+            self.est["entrega_4k"] = bool(si)
+            qt_kit.correr_en_hilo(self, hacer, lambda r, e: None, baja=True)
+
+        def _cambio_datos(self, si):
+            """(24-nov) Ajustes > «Etiquetas y estrellas en los archivos»: se guarda ya (estado «metadatos_visibles»,
+            el que mira analizar_material._metadatos_visibles). El disco, en un hilo."""
+            def hacer():
+                d = motor.leer_estado()
+                d["metadatos_visibles"] = bool(si)
+                motor.guardar_estado(d)
+            self.est["metadatos_visibles"] = bool(si)
+            qt_kit.correr_en_hilo(self, hacer, lambda r, e: None, baja=True)
 
         def _cambio_proxies(self, si):
             """Ajustes > «Proxies para editar»: se guarda ya; al encenderlo, la carpeta en Videos y los de antes ahi."""
@@ -3430,6 +3633,13 @@ def app():
 
         def _estimar(self, examen=None):
             """Segundos que tardara todo, con lo que hay (o lo que se acaba de soltar) y las versiones elegidas."""
+            partes = self._estimar_partes(examen)
+            return sum(partes.values()) if partes else None
+
+        def _estimar_partes(self, examen=None, aprendido=True):
+            """(23-nov) Lo mismo, paso por paso ({analizar, ia, armar, render, master, revisar}: progreso.py); deja en
+            self._nuevos_est los videos sin analizar (al analizar, cuentan ellos). aprendido=False: la cuenta sin
+            corregir con los trabajos anteriores (la que se guarda al terminar: motor.guardar_tiempos)."""
             try:
                 cuenta = (examen or {}).get("cuenta") or self.material.get("cuenta") or {}
                 n = int(cuenta.get("video", 0)) + int(cuenta.get("dron", 0))
@@ -3442,8 +3652,14 @@ def app():
                 if total:
                     nuevos = int(round(n * faltan / float(total)))
                     self._ya_analizado = faltan == 0
-                return motor.estimar_segundos(n, gb, self._versiones(), vert, getattr(self, "_con_render", True),
-                                              nuevos)
+                self._nuevos_est = n if nuevos is None else nuevos
+                try:                             # las plantillas de referencia marcadas tambien se arman (26 s c/u)
+                    hay = {i.get("nombre") for i in getattr(self.plantillas, "infos", [])}
+                    n_pl = len([x for x in self.plantillas.marcadas if x in hay])
+                except Exception:
+                    n_pl = 0
+                return motor.estimar_partes(n, gb, self._versiones(), vert, getattr(self, "_con_render", True), nuevos,
+                                            n_pl, aprendido)
             except Exception:
                 return None
 
@@ -3452,7 +3668,7 @@ def app():
             return [v for v, b in self.pills.items() if b.isChecked()]
 
         def _versiones_v(self):
-            """Versiones elegidas del formato vertical (9:16, solo videos verticales)."""
+            """Versiones elegidas del formato vertical (9:16; lo horizontal entra recortado a lo importante)."""
             return [v for v, b in self.pills_v.items() if b.isChecked()]
 
         def _texto_versiones(self):
@@ -3627,6 +3843,10 @@ def app():
                 registro.info("Chequeo de arranque:\n" + detalle)
             self._estado("Todo listo", "ok", "Chequeo de arranque: %d de %d en orden." % (len(res) - len(mal), len(res)))
             QTimer.singleShot(800, self._revisar_permisos)
+            if not getattr(self, "_liberado_al_abrir", False):       # (23-nov) Google y Claude fuera + prioridad alta
+                self._liberado_al_abrir = True
+                qt_kit.correr_en_hilo(self, lambda: __import__("liberar").al_abrir(registro.info),
+                                      lambda r, e: None, baja=True)
 
         # ---- (1.8.2, la persona: «un popup con todos los permisos... si ya tiene todos ya no sale») permisos.py
         def _revisar_permisos(self, despues=None):
@@ -3968,6 +4188,10 @@ def app():
                       "voz": {k: ch.isChecked() for k, ch in self.ch_voz.items()},
                       "usar_verticales": self.ch_vert.isChecked(), "musica_estilo": self._estilo_musica(),
                       "liberar_auto": self.ch_liberar.isChecked(),
+                      "cerrar_google_claude": self.ch_google.isChecked(),
+                      "prioridad_alta": self.ch_prioridad.isChecked(),
+                      "metadatos_visibles": self.ch_datos.isChecked(),
+                      "entrega_4k": self.ch_4k.isChecked(),
                       "intro_tipo": self._intro_tipo()})
             motor.guardar_estado(d)
             return dict(evento=d.get("evento_manual", ""), nombre_xv=d["nombre_xv"], fecha_lugar=d["fecha_lugar"],
@@ -4230,8 +4454,11 @@ def app():
                 vers = [motor.rutas.etiqueta_de(t) for t in motor.leer_estado().get("timelines") or []]
             self.versiones.poner_versiones(vers)
             self.versiones.poner_eta("")
-            if vers:
-                self.versiones.poner(vers[0], "armando", "Armando…" if funcion is None else "En cola")
+            if funcion is None:                          # (23-nov) «Armando…» recien al armar (antes, mientras analizaba)
+                for v in vers:
+                    self.versiones.poner(v, "cola", "En espera")
+            elif vers:
+                self.versiones.poner(vers[0], "armando", "En cola")
             self.panel_trabajo.show()
             if self.trabajo_qml is not None:          # (1.7) en QML aparecen solos (un efecto de Qt no le llega)
                 self.trabajo_qml.entrar()
@@ -4254,7 +4481,22 @@ def app():
                 pass
             self.linea.editable = False
             self._t_trabajo = time.time()
-            self._eta_previo = self._estimar()
+            # (23-nov, la persona: «se mantiene el tiempo igual y no sé si está avanzando») cada paso con lo que lleva,
+            # lo que hace ahora y lo que falta, por tiempo estimado de cada paso y la velocidad real (progreso.py)
+            import progreso
+            partes = self._estimar_partes() or {}
+            # (23-nov) la cuenta sin corregir, para aprender de este trabajo cuando termine bien (_cerrar_avance)
+            self._partes_base = (self._estimar_partes(aprendido=False) or {}) if funcion is None else {}
+            if funcion is not None:                      # renderizar lo editado: ni analiza ni arma (abre y renderiza)
+                partes = dict(partes, analizar=0.0, ia=0.0, armar=60.0)
+            self._funcion_trabajo = funcion
+            self._resto = None
+            self._progreso = progreso.Progreso(PASOS_VISTA, ETAPAS_VISTA, partes, vers, self._t_trabajo,
+                                               getattr(self, "_nuevos_est", 0) if funcion is None else 0)
+            self._eta_previo = sum(partes.values()) if partes else None
+            if self.trabajo_qml is not None:
+                self.trabajo_qml.poner_inicio(self._t_trabajo)
+                self.trabajo_qml.poner_ahora("Empezando…")
             self.trabajo = Trabajo(op, funcion)
             self.trabajo.linea.connect(self._linea)
             self.trabajo.avance.connect(self._avance)
@@ -4263,12 +4505,16 @@ def app():
             self.trabajo.finished.connect(self._liberar)
             self.trabajo.start()
             # (1.8.0, auditoria) «Listo a las» solo se recalculaba cuando llegaba avance: mientras DaVinci abria o
-            # renderizaba el de 30 min se quedaba viejo (decia 14:05 a las 14:20). Cada 20 s se vuelve a calcular
+            # renderizaba el de 30 min se quedaba viejo. (23-nov) Cada 2 s: el % de cada paso sigue andando entre
+            # aviso y aviso. Y con cada linea, a lo sumo cada 150 ms (_pedir_refresco)
             if getattr(self, "_reloj_eta", None) is None:
                 self._reloj_eta = QTimer(self)
-                self._reloj_eta.setInterval(20000)
-                self._reloj_eta.timeout.connect(lambda: self._poner_eta(self._prog))
+                self._reloj_eta.setInterval(2000)
+                self._reloj_eta.timeout.connect(self._refrescar_avance)
+                self._refresco = QTimer(self, singleShot=True, interval=150)
+                self._refresco.timeout.connect(self._refrescar_avance)
             self._reloj_eta.start()
+            self._refrescar_avance()
 
         # (texto del registro, % , texto, fase que empieza)
         LINEAS = [("Analizando material", 3, "Revisando fotos y videos", "timeline"),
@@ -4304,31 +4550,70 @@ def app():
             self.escena.progreso(f)
             self._poner_eta(f)
 
-        def _poner_eta(self, f):
-            """(1.5.7, la persona: «que me diga en cuánto tiempo va a estar listo») Lo que falta: al principio, lo
-            calculado por el material; a medida que avanza, cada vez mas lo que de verdad va tardando."""
-            t0 = getattr(self, "_t_trabajo", None)
-            if t0 is None or self.trabajo is None:
+        def _poner_eta(self, f=None):
+            """(1.5.7, la persona: «que me diga en cuánto tiempo va a estar listo») (23-nov) Lo que falta sale de
+            progreso.Progreso (_refrescar_avance): lo que le queda al paso que corre, a la velocidad a la que de
+            verdad va, mas lo estimado de los que vienen. Antes salia del % de toda la barra, que en el analisis con IA
+            se quedaba quieto 15 min: «faltan X min» casi no cambiaba."""
+            import progreso
+            resto = getattr(self, "_resto", None)
+            if self.trabajo is None or resto is None:
                 return
-            pasado = time.time() - t0
-            previo = getattr(self, "_eta_previo", None)
-            resto_previo = max(0.0, previo - pasado) if previo else None
-            resto_real = pasado * (1.0 - f) / f if f >= 0.06 else None
-            if resto_real is None and resto_previo is None:
-                return
-            if resto_real is None:
-                resto = resto_previo
-            elif resto_previo is None:
-                resto = resto_real
-            else:
-                w = min(1.0, max(0.0, (f - 0.06) / 0.5))            # cuanto mas avanza, mas manda lo real
-                resto = (1 - w) * resto_previo + w * resto_real
             if resto < 60:                               # (1.8.0) nunca una hora que ya paso
                 self.versiones.poner_eta("Terminando…")
                 return
             fin = time.strftime("%H:%M", time.localtime(time.time() + resto))
-            self.versiones.poner_eta("Listo a las <b>%s</b>  ·  <span style='color:%s;'>faltan %s</span>" % (
-                fin, TENUE, motor.texto_tiempo(resto).split(" (")[0].replace("unos ", "")))
+            self.versiones.poner_eta("Listo a las <b>%s</b>  ·  <span style='color:%s;'>%s</span>" % (
+                fin, TENUE, progreso.falta(resto)))
+
+        def _pedir_refresco(self):
+            r = getattr(self, "_refresco", None)
+            if r is not None and not r.isActive():
+                r.start()
+
+        def _refrescar_avance(self):
+            """(23-nov) Cada 2 s y con cada linea (a lo sumo cada 150 ms): la fila de pasos (detalle, aro y tiempo de
+            cada uno), la linea de lo que hace ahora, el progreso de todo y la hora de fin (progreso.Progreso)."""
+            pg = getattr(self, "_progreso", None)
+            if pg is None or self.trabajo is None:
+                return
+            e = pg.estado()
+            activo = e["activo"]
+            if activo and self.pasos.estado.get(activo) == "pendiente":
+                self.pasos.poner(activo, "activo")       # los de antes quedan hechos
+            self.pasos.poner_detalles({c: {k: d[k] for k in ("detalle", "tiempo", "pct", "desde")}
+                                       for c, d in e["pasos"].items()})
+            if self.trabajo_qml is not None:
+                self.trabajo_qml.poner_ahora(e["ahora"])
+            # la primera version dice «Armando…» cuando DaVinci ya esta armando (no mientras analiza)
+            if self._funcion_trabajo is None and (pg.davinci or pg.listas) and self.versiones.filas and \
+                    all(f.estado == "cola" for f in self.versiones.filas.values()):
+                primera = next(iter(self.versiones.filas))
+                self.versiones.filas[primera].poner("armando", "Armando…")
+            self._resto = e["resto"]
+            self._poner_prog(e["f"])                     # el boton y la escena; y la hora de fin (_poner_eta)
+
+        def _cerrar_avance(self, ahora="", bien=False):
+            """(23-nov) Al terminar o fallar: cada paso con lo que tardo, el reloj del pie parado. bien = termino bien:
+            lo que tardo cada paso queda guardado y el proximo estimado se corrige con eso (motor.factores_tiempo)."""
+            pg = getattr(self, "_progreso", None)
+            if pg is None:
+                return
+            pg.terminar()
+            base = getattr(self, "_partes_base", None)
+            if bien and base:
+                real = pg.tiempos()
+                qt_kit.correr_en_hilo(self, lambda: motor.guardar_tiempos(base, real), lambda r, e: None)
+            e = pg.estado()
+            self.pasos.poner_detalles({c: {k: d[k] for k in ("detalle", "tiempo", "pct", "desde")}
+                                       for c, d in e["pasos"].items()})
+            if self.trabajo_qml is not None:
+                self.trabajo_qml.poner_inicio(0)
+                self.trabajo_qml.poner_ahora(ahora)
+            self._progreso = None
+            for t in (getattr(self, "_reloj_eta", None), getattr(self, "_refresco", None)):
+                if t is not None:
+                    t.stop()
 
         def _paso_vista(self, texto):
             """(1.6.0) La fila de pasos avanza con lo que va diciendo el trabajo (nunca hacia atras)."""
@@ -4401,24 +4686,25 @@ def app():
         def _linea(self, m):
             self.registro.appendPlainText(m)
             registro.info(m)
-            self._paso_vista(m)
             self._versiones_vista(m)
+            pg = getattr(self, "_progreso", None)
+            if pg is not None:                           # (23-nov) el % de cada paso y la hora de fin: progreso.py
+                pg.linea(m)                              # (y el paso que corre: sabe que «Masterizar» no empieza
+                self._pedir_refresco()                   # mientras quede algo en la cola de render)
+            else:
+                self._paso_vista(m)
             a = re.match(r"\s+(\d+)/(\d+)\s+(\S.*)$", m)         # avance del analisis: «  12/65  DSC_0012.MP4»
-            if a and int(a.group(2)) > 0 and self._prog < 0.12:
-                i, n = int(a.group(1)), int(a.group(2))
-                self._poner_prog(0.03 + 0.08 * i / float(n))
-                self._sub("Analizando %d de %d · %s" % (i, n, a.group(3)[:40]))
+            if a and int(a.group(2)) > 0:
+                self._sub("Analizando %s de %s · %s" % (a.group(1), a.group(2), a.group(3)[:40]))
                 return
             if m.startswith("Esperando a"):              # (1.8.0) DaVinci tarda en abrir / una copia sigue: que se vea
                 self._sub(m)
                 return
-            for clave, pct, texto, fase in self.LINEAS:
+            for clave, pct, texto, fase in self.LINEAS:  # (la escena: la fase que empieza; el % ya no sale de aqui)
                 if clave in m:
                     if self.pasos_go.get(fase) != "hecho":
                         self._marcar(fase, "activo")
-                    if pct / 100.0 >= self._prog:
-                        self._poner_prog(pct / 100.0)
-                        self._sub(texto + "…")
+                    self._sub(texto + "…")
                     break
 
         def _avance(self, pct, texto):
@@ -4426,8 +4712,12 @@ def app():
                 self._marcar("resolve", "activo")
             elif pct >= 46:
                 self._marcar("sfx", "activo")
-            self._paso_vista(texto)
-            self._poner_prog(pct / 100.0)
+            pg = getattr(self, "_progreso", None)
+            if pg is not None:
+                pg.avance(pct, texto)
+                self._pedir_refresco()
+            else:
+                self._paso_vista(texto)
             self._sub(texto + "…")
 
         def _cancelar(self):
@@ -4545,7 +4835,11 @@ def app():
             # ventana a medio cambiar); al final se pinta una sola vez
             self.setUpdatesEnabled(False)
             try:
-                QApplication.instance().setStyleSheet(estilo_completo(s))
+                # (1.9.0, medido: 120 de los 170 ms al maximizar) la hoja va en la VENTANA, no en la app:
+                # QApplication.setStyleSheet re-pule cada widget una vez por cada antepasado (Qt recorre todos los
+                # estilados y, de cada uno, otra vez sus hijos); en la ventana, cada widget dos veces (24 ms). Las
+                # reglas de la ventana pisan a las de la app (cascada de Qt), asi que se ve igual.
+                self.setStyleSheet(estilo_completo(s))
                 for w in self.findChildren(QWidget):
                     if hasattr(w, "reescalar"):
                         w.reescalar()
@@ -4561,6 +4855,11 @@ def app():
                 self._acomodar()
             finally:
                 self.setUpdatesEnabled(True)
+            QTimer.singleShot(900, self._preparar_fotos)    # (1.9.0) lo que quedo pendiente, en reposo
+
+        def _hoja(self):
+            """La hoja de estilo de ahora: la de la ventana si ya se re-escalo (1.9.0), si no la de la app."""
+            return self.styleSheet() or QApplication.instance().styleSheet()
 
         def _sin_recorte(self):
             """(1.6.1) Pestañas y pastillas con sitio para su texto en negrita (piezas.sin_recorte)."""
@@ -4619,7 +4918,11 @@ def app():
                 elif f.estado in ("armada", "armando", "cola"):
                     f.poner("listo", "Armada en DaVinci", 1.0)
             self.versiones.b_cancelar.setEnabled(False)
-            self.versiones.poner_eta("Terminado a las <b>%s</b>" % time.strftime("%H:%M"))
+            import progreso
+            # (23-nov) cada paso con lo que tardo; el reloj, parado; y, si todo salio, se aprende de lo que tardo
+            self._cerrar_avance("", bien=bien)
+            self.versiones.poner_eta("Terminado a las <b>%s</b>  ·  <span style='color:%s;'>tardó %s</span>" % (
+                time.strftime("%H:%M"), TENUE, progreso.duracion(time.time() - getattr(self, "_t_trabajo", time.time()))))
             self._estado("Todo listo" if bien else "Revisa los videos", "ok" if bien else "warn")
 
             def cerrar():
@@ -4669,6 +4972,7 @@ def app():
             qt_kit.correr_en_hilo(self, lambda: indexar.indexar(registro.info, intellisearch=True), listo)
 
         def _fallo(self, texto):
+            self._cerrar_avance("Cancelado" if texto == CANCELADO else "Se detuvo: %s" % texto)
             activa = next((k for k, e in self.pasos_go.items() if e == "activo"), None)
             if activa:
                 self.escena.paso(activa, "error")
@@ -4692,8 +4996,9 @@ def app():
             self.boton.poner_estado("error", centro="Error")
             self._sub("No se pudo terminar: %s" % texto, "error")
             self._estado("Error", "error", texto)
-            self._avisar("Error: %s" % texto, "error")
+            self._avisar("Error: %s · el detalle, en el icono del registro (junto a minimizar)" % texto, "error")
             self.b_log.setChecked(True)
+            self._error_nuevo()                       # (23-nov) el punto rojo, ya (no a los 3 s)
 
         def _liberar(self):
             self.trabajo = None
@@ -4709,6 +5014,48 @@ def app():
 
         def _abrir_videos(self):
             rutas.abrir((self.resultado or {}).get("carpeta") or rutas.SALIDA)
+
+        # ---- (23-nov) el registro de errores: el icono junto a minimizar
+        def _ver_registro(self):
+            """Errores, avisos y todo el registro en un popup (vista_registro.VistaRegistro); lo de despues de la
+            ultima vez que se miro sale como «Nuevo». Al abrirlo se apaga el punto rojo."""
+            import vista_registro
+            # (sin «visto» guardado: lo de esta vez que se abrio el programa es lo nuevo)
+            visto = self.est.get("registro_visto", "") or self._registro_desde
+            self._registro_visto()
+            vista = vista_registro.VistaRegistro(self, 0, visto)
+            piezas.preguntar(self, "Registro", "", ("Cerrar",), "info", 0, contenido=vista, compacto=True)
+            self._registro_visto()                    # lo que llego con el popup abierto tambien se vio
+
+        def _registro_visto(self):
+            """Apaga el punto rojo y guarda la hora: lo de despues sera lo «Nuevo»."""
+            self.b_registro.marcar(False)
+            self.b_registro.setToolTip("Registro de errores")
+            self._errores_vistos = registro.errores()
+            est = motor.leer_estado()
+            est["registro_visto"] = self.est["registro_visto"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            motor.guardar_estado(est)
+
+        def _revisar_registro(self):
+            """Al abrir el programa: ¿hay un error en el registro de despues de la ultima vez que se miro? (en un hilo:
+            lee el archivo)."""
+            visto = self.est.get("registro_visto", "")
+
+            def ultimo():
+                return next((e for e in registro.errores_y_avisos() if e["tipo"] == "error"), None)
+
+            def listo(e, error):
+                if error is None and e is not None and "%s %s" % (e["fecha"], e["hora"]) > visto:
+                    self.b_registro.marcar(True)
+                    self.b_registro.setToolTip("Registro de errores: hay un error nuevo (%s)" % e["titulo"][:90])
+            qt_kit.correr_en_hilo(self, ultimo, listo)
+
+        def _error_nuevo(self):
+            """Cada 3 s, sin tocar el disco: si el programa anoto un error desde la ultima vez, el punto rojo."""
+            n = registro.errores()
+            if n > self._errores_vistos and not self.b_registro.marcado():
+                self.b_registro.marcar(True)
+                self.b_registro.setToolTip("Registro de errores: hay un error nuevo")
 
         def _clasificacion(self):
             if os.path.exists(rutas.CLASIFICACION):
@@ -4755,8 +5102,8 @@ def app():
             """Doble clic en un tipo de Intro: las 8 fotos entrando con ese ritmo y su sonido (vistas_ajustes.VistaIntro)."""
             import vistas_ajustes
             ritmos = {"rampa": [5] * 8, "acelera": [9, 7, 6, 5, 4, 4, 3, 2], "frena": [2, 3, 4, 4, 5, 6, 7, 9],
-                      "latido": [7, 3, 7, 3, 7, 3, 7, 3]}            # = build_trailers.INTROS
-            tipo = self.intros[n] if 0 <= n < len(self.intros) else "rampa"
+                      "latido": [7, 3, 7, 3, 7, 3, 7, 3], "zoom": [7, 6, 5, 5, 5, 4, 4, 4]}  # = build_trailers.INTROS
+            tipo = self.intros[n] if 0 <= n < len(self.intros) else "zoom"
             fotos = []
             try:
                 import analizar_material as am
@@ -4769,10 +5116,15 @@ def app():
             if not fotos:
                 fondo = os.path.join(rutas.RECURSOS, "fondo_titulo.jpg")
                 fotos = [fondo] if os.path.isfile(fondo) else []
-            sfx = os.path.join(rutas.RECURSOS, "sfx", "XV_RAMPA%s.wav" % ("" if tipo == "rampa" else "_" + tipo.upper()))
-            vista = vistas_ajustes.VistaIntro(ritmos.get(tipo, ritmos["rampa"]), fotos, sfx)
+            nombre = "XV_RAMPA%s.wav" % ("" if tipo == "rampa" else "_" + tipo.upper())
+            # (1.9.0) la del «zoom» lleva un riser con licencia: esta en rutas.AUDIO; si falta, la de siempre (como el armado)
+            sfx = next((r for r in (os.path.join(rutas.AUDIO, nombre), os.path.join(rutas.RECURSOS, "sfx", nombre),
+                                    os.path.join(rutas.RECURSOS, "sfx", "XV_RAMPA.wav")) if os.path.isfile(r)), None)
+            vista = vistas_ajustes.VistaIntro(ritmos.get(tipo, ritmos["zoom"]), fotos, sfx, zoom=(tipo == "zoom"))
             textos = {"rampa": "Pareja: una foto cada 5 cuadros.", "acelera": "Empieza lenta y se dispara hasta el impacto.",
-                      "frena": "Ráfaga que se va deteniendo en la última foto.", "latido": "De dos en dos, como un corazón."}
+                      "frena": "Ráfaga que se va deteniendo en la última foto.", "latido": "De dos en dos, como un corazón.",
+                      "zoom": "Cada foto se aleja suave y parejo, los cortes se aceleran y el sonido sube hasta que "
+                              "entra la música."}
             try:
                 piezas.preguntar(self, "Intro: %s" % tipo.capitalize(), textos.get(tipo, ""), ("Cerrar",), "info", 0,
                                  contenido=vista)

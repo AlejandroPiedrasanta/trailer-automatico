@@ -1,7 +1,8 @@
 // (1.7, parte 4) Pagina Tráilers: «Elige el estilo». (1.7.9, la persona eligio la propuesta B) La musica en PORTADAS
 // en carrusel: la del centro es la elegida (clic en una de los lados, arrastrar o la rueda del raton), con su ▶ para
 // oirla; un disco gira despacio solo en la elegida. La intro, en pastillas con sus 8 fotos latiendo a su ritmo.
-// Python (PaginaQML) pone d = {estilos, estilo, intros, intro} y hace accion("estilo"|"oir"|"intro"|"ver_intro", i).
+// Python (PaginaQML) pone d = {estilos, estilo, intros, intro, speed_ramp} y hace accion("estilo"|"oir"|"intro"|
+// "ver_intro", i) o accion("speed_ramp", si).
 import QtQuick
 
 Item {
@@ -47,9 +48,11 @@ Item {
         "plantilla": ["claqueta", "Las canciones de la plantilla", "#8C8A82", "#2E2E2C"]
     })
     readonly property var ritmos: ({ "rampa": [5, 5, 5, 5, 5, 5, 5, 5], "acelera": [9, 7, 6, 5, 4, 4, 3, 2],
-                                     "frena": [2, 3, 4, 4, 5, 6, 7, 9], "latido": [7, 3, 7, 3, 7, 3, 7, 3] })
-    readonly property var textosIntro: ({ "rampa": "Una foto cada 5 cuadros", "acelera": "De lenta a rápida",
-                                          "frena": "Ráfaga que se frena", "latido": "De dos en dos" })
+                                     "frena": [2, 3, 4, 4, 5, 6, 7, 9], "latido": [7, 3, 7, 3, 7, 3, 7, 3],
+                                     "zoom": [7, 6, 5, 5, 5, 4, 4, 4] })
+    readonly property var textosIntro: ({ "rampa": "Cada 5 cuadros", "acelera": "De lenta a rápida",
+                                          "frena": "Ráfaga que se frena", "latido": "De dos en dos",
+                                          "zoom": "Zoom continuo" })
 
     Column {
         id: col
@@ -143,11 +146,32 @@ Item {
         Item { width: 1; height: px(10) }
 
         // ---------------------------------------------------------------- la intro, en pastillas
-        Seccion { texto: "Intro"; icono: "brillo" }
+        Item {
+            width: col.width; height: px(64)
+            Seccion { anchors.verticalCenter: parent.verticalCenter; texto: "Intro"; icono: "brillo" }
+            // (1.9.1, la persona: «agrega la opción en Tráiler de speed ramp»; eligio «en los videos, pocas, en
+            // momentos clave») a la derecha del rotulo: debajo de las pastillas quedaba fuera de la vista
+            Row {
+                anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                spacing: px(18)
+                Image { anchors.verticalCenter: parent.verticalCenter; width: px(34); height: width
+                    source: "image://icono/reloj/E2B04F/" + width; sourceSize: Qt.size(width * 4, height * 4) }
+                Column {
+                    anchors.verticalCenter: parent.verticalCenter
+                    Text { text: "Speed ramp"; color: "white"; font.family: raiz.familia; font.pixelSize: px(30)
+                        font.weight: Font.DemiBold }
+                    Text { text: "Tomas de acción: rápido y cámara lenta en el golpe"; color: "#9DB0B6"
+                        font.family: raiz.familia; font.pixelSize: px(22) }
+                }
+                Interruptor { anchors.verticalCenter: parent.verticalCenter; escala: raiz.escala; si: !!raiz.d.speed_ramp
+                    onCambiado: (si) => raiz.accion("speed_ramp", si) }
+            }
+        }
         Row {
             id: filaIntros
             spacing: px(22)
-            readonly property real ancho: (col.width - spacing * 3) / 4
+            readonly property int cuantas: Math.max(4, raiz.introsL.length)      // (1.9.0) con «Zoom» son 5
+            readonly property real ancho: (col.width - spacing * (cuantas - 1)) / cuantas
             Repeater {
                 model: raiz.introsL
                 Pastilla {
@@ -406,7 +430,8 @@ Item {
             }
             Text {
                 x: px(30); y: px(80) + px(44)
-                width: parent.width - px(60) - (oirI.opacity > 0 ? px(70) : 0)
+                // (24-nov, VISTO: «Ráfaga que se fr…» al pasar el raton) va DEBAJO del boton ▶: no hay que hacerle sitio
+                width: parent.width - px(60)
                 text: o.descripcion; color: "#9DB0B6"; elide: Text.ElideRight
                 font.family: raiz.familia; font.pixelSize: px(24)
             }

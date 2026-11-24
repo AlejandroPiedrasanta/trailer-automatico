@@ -19,9 +19,9 @@ import random
 import re
 import time
 
-from PySide6.QtCore import Qt, QRectF, QPointF, QSize, Signal, QTimer, QVariantAnimation, QEasingCurve
+from PySide6.QtCore import Qt, QPoint, QRectF, QPointF, QSize, Signal, QTimer, QVariantAnimation, QEasingCurve
 from PySide6.QtGui import (QColor, QPainter, QPen, QFont, QFontDatabase, QFontMetricsF, QIcon, QImage,
-                           QLinearGradient, QPainterPath, QPixmap, QRadialGradient)
+                           QLinearGradient, QPainterPath, QPixmap, QRadialGradient, QRegion)
 from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
                                QVBoxLayout, QWidget)
 
@@ -226,6 +226,9 @@ def _dibujar(p, tipo, col, s, grosor=None):
     elif tipo == "x":
         L((0.20, 0.20), (0.80, 0.80))
         L((0.80, 0.20), (0.20, 0.80))
+    elif tipo == "copiar":                      # (23-nov, el registro) dos hojas, una sobre otra
+        R(0.36, 0.36, 0.50, 0.50, 0.09)
+        L((0.22, 0.64), (0.14, 0.56), (0.14, 0.22), (0.22, 0.14), (0.56, 0.14), (0.64, 0.22))
     elif tipo == "play":
         p.setPen(Qt.NoPen)
         p.setBrush(col)
@@ -543,12 +546,64 @@ class BotonIcono(QPushButton):
         self.setObjectName("cerrar" if rojo else "ctrl")
         self.setToolTip(ayuda)
         self.setCursor(Qt.PointingHandCursor)
+        self._punto, self._onda, self._anim = 0.0, -1.0, None
         self.reescalar()
 
     def reescalar(self):
         self.setFixedSize(px(72), px(60))
         self.setIconSize(QSize(px(34), px(34)))
         self.setIcon(qicono(self.tipo, "#F2F6F7", px(34)))
+
+    def marcado(self):
+        return self._punto > 0.5
+
+    def marcar(self, si=True):
+        """(23-nov, el icono del registro) Punto rojo arriba a la derecha = hay un error nuevo. Entra con un rebote y
+        dos ondas que se abren y se apagan; al quitarlo se encoge. Solo se repinta el boton."""
+        if self.marcado() == bool(si) and self._anim is None:
+            return
+        if self._anim is not None:
+            self._anim.stop()
+        a = QVariantAnimation(self, startValue=self._punto, endValue=1.0 if si else 0.0,
+                              duration=300 if si else 180,
+                              easingCurve=QEasingCurve(QEasingCurve.OutBack if si else QEasingCurve.InCubic))
+        a.valueChanged.connect(self._poner_punto)
+        a.finished.connect(lambda: self._ondas() if si else self._fin_anim())
+        self._anim = a
+        a.start()
+
+    def _poner_punto(self, v):
+        self._punto = float(v)
+        self.update()
+
+    def _ondas(self):
+        a = QVariantAnimation(self, startValue=0.0, endValue=1.999, duration=1700)
+        a.valueChanged.connect(lambda v: (setattr(self, "_onda", float(v) % 1.0), self.update()))
+        a.finished.connect(self._fin_anim)
+        self._anim = a
+        a.start()
+
+    def _fin_anim(self):
+        self._onda, self._anim = -1.0, None
+        self.update()
+
+    def paintEvent(self, e):
+        super().paintEvent(e)
+        if self._punto <= 0.01:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        c = QPointF(self.width() / 2.0 + px(16), self.height() / 2.0 - px(13))      # arriba a la derecha del icono
+        r = px(8) * self._punto
+        if self._onda >= 0:
+            k = self._onda
+            p.setPen(QPen(QColor(255, 107, 96, int(210 * (1.0 - k) ** 1.5)), max(1.0, px(2.4))))
+            p.setBrush(Qt.NoBrush)
+            p.drawEllipse(c, px(8) + px(15) * k, px(8) + px(15) * k)
+        p.setPen(QPen(QColor("#0B1A20"), max(1.0, px(3))))      # filo oscuro: se separa del trazo del icono
+        p.setBrush(QColor("#FF5A4F"))
+        p.drawEllipse(c, r, r)
+        p.end()
 
 
 class Interruptor(QCheckBox):
@@ -910,19 +965,28 @@ class Popup(QWidget):
     queda borroso y oscuro; al centro, una tarjeta de vidrio con filo dorado, el emblema, el titulo, el texto y los
     botones en pastilla (verde el principal). Enter = principal, Esc = el de cancelar. Se usa con preguntar()."""
 
-    def __init__(self, ventana, titulo, texto, botones, tipo="info", primario=0, escape=None, contenido=None):
+    def __init__(self, ventana, titulo, texto, botones, tipo="info", primario=0, escape=None, contenido=None,
+                 compacto=False):
         super().__init__(ventana)
         self.elegido = len(botones) - 1 if escape is None else escape
         self._escape, self._primario = self.elegido, primario
         self._bucle = None
         self.setFocusPolicy(Qt.StrongFocus)
+        self._foto = self._fondo = self._retrato = None
         try:                                        # lo de atras, borroso (achicar y agrandar: barato)
             foto = ventana.grab()
             chica = foto.scaled(max(1, foto.width() // 12), max(1, foto.height() // 12), Qt.IgnoreAspectRatio,
                                 Qt.SmoothTransformation)
-            self._fondo = chica.scaled(foto.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+            fondo = chica.scaled(foto.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+            p = QPainter(fondo)                     # (1.9.0) el velo oscuro ya puesto (antes, en cada cuadro)
+            p.fillRect(fondo.rect(), QColor(2, 10, 12, 165))
+            p.end()
+            self._foto, self._fondo = foto, fondo
+            # (1.9.0, medido: abierto se repintaba 70-116 veces por segundo con todo lo de abajo) pinta su rectangulo
+            # entero (la ventana nitida y encima la borrosa): el cielo y las paginas de abajo ya no se repintan
+            self.setAttribute(Qt.WA_OpaquePaintEvent)
         except Exception:
-            self._fondo = None
+            pass
         self._tapados = tapar_quick(ventana)        # (1.7) la barra en QML no se ve encima del popup
         self.setGeometry(ventana.rect())
         fuera = QVBoxLayout(self)
@@ -953,12 +1017,16 @@ class Popup(QWidget):
         v = QVBoxLayout(self.tarjeta)
         v.setContentsMargins(px(70), px(50), px(70), px(58))
         v.setSpacing(px(20))
-        self.emblema = _Emblema(tipo)
-        v.addWidget(self.emblema, 0, Qt.AlignHCenter)
-        t = QLabel(titulo, objectName="pt")
-        t.setAlignment(Qt.AlignCenter)
-        t.setWordWrap(True)
-        v.addWidget(t)
+        self.emblema = _Emblema(tipo, self.tarjeta)
+        if compacto:                                # (23-nov, el registro) sin emblema ni titulo: la pieza de dentro
+            self.emblema.hide()                     # trae su cabecera y le queda todo el alto para su lista
+            v.setContentsMargins(px(60), px(46), px(60), px(50))
+        else:
+            v.addWidget(self.emblema, 0, Qt.AlignHCenter)
+            t = QLabel(titulo, objectName="pt")
+            t.setAlignment(Qt.AlignCenter)
+            t.setWordWrap(True)
+            v.addWidget(t)
         if texto:
             c = QLabel(texto, objectName="px")
             c.setWordWrap(True)
@@ -991,33 +1059,60 @@ class Popup(QWidget):
         self._destello = _Destello(self.botones[primario]) if 0 <= primario < len(self.botones) else None
         # (1.6.1, la persona: «créales las animaciones, no quiero nada estático») entra subiendo y aclarandose, sale
         # desvaneciendose; abierto, el filo dorado respira, una luz recorre el aro del emblema y el boton verde brilla
-        from PySide6.QtWidgets import QGraphicsOpacityEffect
         self._a = 0.0                               # 0 = invisible, 1 = del todo a la vista
         self._saliendo = False
-        self._velo = QGraphicsOpacityEffect(self.tarjeta)
-        self._velo.setOpacity(0.0)
-        self.tarjeta.setGraphicsEffect(self._velo)
+        self._n = 0
         self._aparece = QVariantAnimation(self, startValue=0.0, endValue=1.0, duration=240,
                                           easingCurve=QEasingCurve.OutCubic)
         self._aparece.valueChanged.connect(self._paso)
         self._aparece.finished.connect(self._fin_anim)
         self._reloj = QTimer(self, interval=CUADRO_MS)
         self._reloj.timeout.connect(self._tic)
+        pol = self.tarjeta.sizePolicy()             # (quieta en su sitio mientras se anima su foto)
+        pol.setRetainSizeWhenHidden(True)
+        self.tarjeta.setSizePolicy(pol)
         self.show()
         self.raise_()
         fuera.activate()
         self._sitio = self.tarjeta.pos()
+        self._congelar()
         self._paso(0.0)
         self._aparece.start()
         self._reloj.start()
         if 0 <= primario < len(self.botones):
             self.botones[primario].setFocus()
 
+    def _congelar(self):
+        """(1.9.0, medido: cada cuadro de la entrada tardaba ~22 ms) La tarjeta entra y sale como UNA foto (con todo lo
+        de dentro): antes un efecto de opacidad la volvia a pintar entera, con la lista de canciones, en cada cuadro.
+        Mientras, la de verdad no se pinta (setUpdatesEnabled: sin esconderla, asi nada se entera)."""
+        if self._retrato is not None:
+            return
+        try:
+            t = self.tarjeta
+            dpr = t.devicePixelRatioF()
+            pm = QPixmap(max(1, int(round(t.width() * dpr))), max(1, int(round(t.height() * dpr))))
+            pm.setDevicePixelRatio(dpr)
+            pm.fill(Qt.transparent)
+            t.render(pm, QPoint(), QRegion(), QWidget.RenderFlag.DrawChildren)
+            self._retrato = pm
+            t.setUpdatesEnabled(False)
+        except Exception:
+            self._retrato = None
+
+    def _dy(self):
+        return int(round((1.0 - self._a) * px(54))) if self._retrato is not None else 0
+
+    def _anillo(self):
+        """Lo que cambia cuando respira el filo: la banda de luz alrededor de la tarjeta y sus esquinas redondeadas
+        (no la tarjeta entera: repintaba la lista de canciones 20 veces por segundo)."""
+        g = self.tarjeta.geometry()
+        r = px(64)
+        cruz = QRegion(g.adjusted(r, 0, -r, 0)).united(QRegion(g.adjusted(0, r, 0, -r)))
+        return QRegion(g.adjusted(-px(30), -px(30), px(30), px(30))).subtracted(cruz)
+
     def _paso(self, a):
         self._a = float(a)
-        if self._velo is not None:
-            self._velo.setOpacity(self._a)
-        self.tarjeta.move(self._sitio.x(), self._sitio.y() + int(round((1.0 - self._a) * px(54))))
         self.update()
 
     def _fin_anim(self):
@@ -1026,17 +1121,17 @@ class Popup(QWidget):
             self.hide()
             if self._bucle is not None:
                 self._bucle.quit()
-        else:                                       # ya entro: sin el efecto (pintar a traves de el cuesta)
-            self.tarjeta.setGraphicsEffect(None)
-            self._velo = None
-            self.tarjeta.move(self._sitio)
+        else:                                       # ya entro: la tarjeta de verdad (Qt la pinta una vez)
+            self._retrato = None
+            self.tarjeta.setUpdatesEnabled(True)
+            self.update()
 
     def _tic(self):
-        if self.isVisible() and not self.window().isMinimized():
+        if self.isVisible() and not self.window().isMinimized() and self._retrato is None:
             self.emblema.update()                   # el aro, a 60 por segundo (es chico)
-            self._n = (getattr(self, "_n", 0) + 1) % 3
-            if self._n == 0:                        # el filo que respira va lento: a 20 basta (repinta la tarjeta)
-                self.update(self.tarjeta.geometry().adjusted(-px(70), -px(70), px(70), px(70)))
+            self._n = (self._n + 1) % 3
+            if self._n == 0:                        # el filo que respira va lento: a 20 basta (solo su banda)
+                self.update(self._anillo())
             if self._destello is not None and (time.time() % 3.0) < 1.0:
                 self._destello.setGeometry(self._destello.parentWidget().rect())
                 self._destello.update()
@@ -1046,9 +1141,7 @@ class Popup(QWidget):
             return
         self.elegido = k
         self._saliendo = True
-        from PySide6.QtWidgets import QGraphicsOpacityEffect
-        self._velo = QGraphicsOpacityEffect(self.tarjeta)
-        self.tarjeta.setGraphicsEffect(self._velo)
+        self._congelar()                            # sale como foto (la lista pudo cambiar: foto nueva)
         self._aparece.stop()
         self._aparece.setDuration(140)
         self._aparece.setStartValue(self._a)
@@ -1079,28 +1172,43 @@ class Popup(QWidget):
     def mousePressEvent(self, e):
         e.accept()                                  # lo de atras no recibe clics
 
-    def paintEvent(self, _):
+    def paintEvent(self, e):
         p = QPainter(self)
         a = self._a
-        if self._fondo is not None:
-            p.setOpacity(a)
-            p.drawPixmap(self.rect(), self._fondo)
+        r = e.rect()
+        if self._fondo is not None:                 # (1.9.0) solo el trozo que se repinta, de las fotos ya hechas
+            k = self._fondo.width() / max(1.0, float(self.width()))
+            fuente = QRectF(r.x() * k, r.y() * k, r.width() * k, r.height() * k)
+            if a < 0.999:
+                p.drawPixmap(QRectF(r), self._foto, fuente)      # la ventana nitida debajo (entrando o saliendo)
+                p.setOpacity(a)
+            p.drawPixmap(QRectF(r), self._fondo, fuente)
             p.setOpacity(1.0)
-        p.fillRect(self.rect(), QColor(2, 10, 12, int(165 * a)))
-        g = QRectF(self.tarjeta.geometry())         # el resplandor dorado alrededor de la tarjeta, que respira
-        t = time.time()
-        late = 0.5 + 0.5 * math.sin(t * 2.0)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setBrush(Qt.NoBrush)
-        for k in range(6):
-            c = QColor(226, 176, 79, int((18 + 16 * late - (3 + 2 * late) * k) * a))
-            p.setPen(QPen(c, px(6) + k * px(7)))
-            p.drawRoundedRect(g, px(64), px(64))
+        else:
+            p.fillRect(r, QColor(2, 10, 12, int(165 * a)))
+        g = QRectF(self.tarjeta.geometry()).translated(0, self._dy())
+        # el resplandor dorado alrededor de la tarjeta, que respira. Lo de dentro de la tarjeta lo tapa ella: el aro
+        # del emblema y los botones (60 por segundo) no lo vuelven a dibujar (6 trazos gruesos: ~1,7 ms)
+        rr = QRectF(r)
+        tapado = g.adjusted(px(64), 0, -px(64), 0).contains(rr) or g.adjusted(0, px(64), 0, -px(64)).contains(rr)
+        if self._retrato is not None or not tapado:
+            late = 0.5 + 0.5 * math.sin(time.time() * 2.0)
+            p.setRenderHint(QPainter.Antialiasing)
+            p.setBrush(Qt.NoBrush)
+            for k in range(6):
+                c = QColor(226, 176, 79, int((18 + 16 * late - (3 + 2 * late) * k) * a))
+                p.setPen(QPen(c, px(6) + k * px(7)))
+                p.drawRoundedRect(g, px(64), px(64))
+        if self._retrato is not None:               # la tarjeta, en foto, mientras entra o sale
+            p.setOpacity(a)
+            p.drawPixmap(g.topLeft(), self._retrato)
 
 
-def preguntar(ventana, titulo, texto="", botones=("Entendido",), tipo="info", primario=0, escape=None, contenido=None):
+def preguntar(ventana, titulo, texto="", botones=("Entendido",), tipo="info", primario=0, escape=None, contenido=None,
+              compacto=False):
     """Popup moderno dentro de la ventana (Popup). Devuelve el numero del boton elegido (Esc = el ultimo o `escape`).
-    (1.7) Sin pieza propia, sale el de QML (barra_qml.PopupQML) si la ventana ya lo tiene y no hay otro abierto."""
+    (1.7) Sin pieza propia, sale el de QML (barra_qml.PopupQML) si la ventana ya lo tiene y no hay otro abierto.
+    compacto = sin emblema ni titulo (la pieza de dentro trae su cabecera: el registro)."""
     qml = getattr(ventana, "popup_qml", None)
     if contenido is None and qml is not None and not qml.abierto():
         ventana.popup_abierto = qml                 # las pruebas: pop.botones[i].click()
@@ -1108,7 +1216,7 @@ def preguntar(ventana, titulo, texto="", botones=("Entendido",), tipo="info", pr
             return qml.preguntar(titulo, texto, botones, tipo, primario, escape)[0]
         finally:
             ventana.popup_abierto = None
-    pop = Popup(ventana, titulo, texto, list(botones), tipo, primario, escape, contenido)
+    pop = Popup(ventana, titulo, texto, list(botones), tipo, primario, escape, contenido, compacto)
     ventana.popup_abierto = pop                     # las pruebas lo encuentran aqui (pop.botones[i].click())
     try:
         return pop.esperar()
@@ -1666,6 +1774,13 @@ class Pasos(QWidget):
 
     def activo(self):
         return next((c for c, _ in self.pasos if self.estado[c] == "activo"), None)
+
+    def poner_detalles(self, detalles):
+        """(23-nov) La misma API que barra_qml.PasosQML; la fila de widgets (si QML no carga) solo lo guarda: el
+        detalle de cada paso va como ayuda al pasar el raton."""
+        self.detalles = detalles
+        self.setToolTip("\n".join("%s: %s %s" % (n, (detalles.get(c) or {}).get("detalle", ""),
+                                                  (detalles.get(c) or {}).get("tiempo", "")) for c, n in self.pasos))
 
     def _anima(self):
         ahora = time.monotonic()

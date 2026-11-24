@@ -69,7 +69,12 @@ def tramos_fuera(videos, tipo_evento="xv"):
         limpios.append(c)
     if not limpios:
         return {}, set()
-    formatos = ("horizontal", "vertical") if any(not c.get("horizontal", True) for c in limpios) else ("horizontal",)
+    try:                                         # (23-nov) las personas de cada toma, como en el armado: con ellas se
+        import escenas_ia                        # sabe que camara «se ve» (build_trailers._enfoque_evento)
+        escenas_ia.aplicar_personas(limpios, None, tipo_evento)
+    except Exception:
+        pass
+    formatos =("horizontal", "vertical") if any(not c.get("horizontal", True) for c in limpios) else ("horizontal",)
     plan = {f: _planes({"items": limpios, "fecha": None}, tipo_evento, f, True)["Planificador"](limpios, FPS)
             for f in formatos}
     out, accidentales = {}, set()
@@ -192,6 +197,8 @@ def plan_ventana(analisis, tipo_evento="xv"):
             motivo = "La quitaste tú"
         elif accidental:
             motivo = "Desenfocada o movida"
+        elif i.get("otro_dia"):                  # (1.9.3) de otro evento: grabada despues del dia de este
+            motivo = "Grabada otro día (%s)" % i["otro_dia"]
         elif vision_ia is not None:
             _parte, m = vision_ia.parte_mala(i.get("ia"), i.get("tipo") == "dron")
             motivo = MOTIVOS_FUERA.get(m, motivo)
@@ -215,17 +222,12 @@ def plan_ventana(analisis, tipo_evento="xv"):
     except Exception as ex:
         out["error_plantillas"] = str(ex)
     # (19-nov, la persona: «si solo hay 10 o 20 escenas que las ponga, y abajo las que posiblemente sí y abajo las
-    # descartadas») por version: las tomas buenas que no entraron (en lo vertical, solo las grabadas en vertical)
-    verticales = {c for c, _t in out["versiones"] if c.startswith("V ")}
-    try:
-        verticales |= {p["nombre"] for p in plantilla_ref.lista() if p.get("vertical", True)}
-    except Exception:
-        pass
+    # descartadas») por version: las tomas buenas que no entraron (1.9.1: en lo vertical tambien las horizontales, que
+    # ahora entran recortadas a lo importante: build_trailers.HORIZONTAL_EN_VERTICAL)
     out["posibles"] = {}
     for clave, _t in out["versiones"]:
         usadas = {x.get("ruta") for x in out["planos"].get(clave) or []}
-        out["posibles"][clave] = [b for b in lista_buenas if b["ruta"] not in usadas
-                                  and (clave not in verticales or not b["horizontal"])]
+        out["posibles"][clave] = [b for b in lista_buenas if b["ruta"] not in usadas]
     return out
 
 

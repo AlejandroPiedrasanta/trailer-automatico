@@ -34,7 +34,7 @@ PISTA_MOMENTOS = "SFX MOMENTOS"
 VOL_PASO, VOL_OBTURADOR = -7.0, -12.0
 # el SFX de la rampa de cada tipo de intro, por el ritmo de sus fotos (los mismos de build_trailers.INTROS)
 RAMPAS = {"XV_RAMPA": (5,) * 8, "XV_RAMPA_ACELERA": (9, 7, 6, 5, 4, 4, 3, 2), "XV_RAMPA_FRENA": (2, 3, 4, 4, 5, 6, 7, 9),
-          "XV_RAMPA_LATIDO": (7, 3, 7, 3, 7, 3, 7, 3)}
+          "XV_RAMPA_LATIDO": (7, 3, 7, 3, 7, 3, 7, 3), "XV_RAMPA_ZOOM": (7, 6, 5, 5, 5, 4, 4, 4)}
 
 
 def _pista(tl, nombre):

@@ -9,8 +9,12 @@ actualizaciones (la musica y los SFX con licencia de recursos/audio no se public
   XV_BRILLO.wav ..... destellos agudos, como campanitas (titulo y tarjeta final)
   XV_PASO.wav ....... paso de aire corto y suave (capitulos, entrada de la foto final)
   XV_OBTURADOR.wav .. clic de camara (rafaga de fotos de la intro)
+  XV_RAMPA*.wav ..... la rampa de las 8 fotos de la intro, una por tipo (RAMPAS)
+  (1.9.0) XV_RAMPA_ZOOM.wav, la de la intro «Zoom», lleva el riser de la biblioteca CON LICENCIA: va a recursos/audio
+  (CON_LICENCIA), fuera de git y de la actualizacion publica
 
   python PROGRAMA/herramientas/hacer_sfx.py        los vuelve a crear (siempre salen iguales: semilla fija)
+  python PROGRAMA/herramientas/hacer_sfx.py XV_RAMPA_ZOOM    solo esos
 
 Los coloca armado/sfx.py (momentos) y los importa build_trailers (sfx_propios).
 """
@@ -156,16 +160,64 @@ def rampa(rng, cortes=(5,) * 8):
     return _normal(_estereo(izq, der), -4.0)
 
 
+# (1.9.0) los propios hechos con un sonido de la biblioteca CON LICENCIA van a recursos/audio (fuera de git y de la
+# actualizacion publica; para la Mac, cifrados con compilar/protegidos.py), no a recursos/sfx
+AUDIO = os.path.join(PROG, "recursos", "audio")
+RISER = "ES_Designed, Riser, Riser, Dark, Cinematic, Mechanical - Epidemic Sound.wav"
+
+
+def _leer(ruta):
+    import subprocess
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", ruta, "-ac", "2", "-ar", str(FS), "-f", "s16le", "-"],
+                         capture_output=True).stdout
+    return np.frombuffer(raw, "<i2").astype(np.float64).reshape(-1, 2) / 32767.0
+
+
+def _impacto(rng, fotos, largo):
+    """El impacto de las rampas (grave que cae, chasquido y platillo de aire) a los `fotos` segundos."""
+    t = _t(largo)
+    d = np.clip(t - fotos, 0.0, None)
+    ya = t >= fotos
+    fase = 2 * np.pi * np.cumsum(32.0 + 58.0 * np.exp(-d / 0.08)) / FS
+    grave = np.sin(fase) * np.exp(-d / 0.6) * np.minimum(1.0, d / 0.003) * ya
+    chasq = _paso_bajo(rng.standard_normal(len(t)), 2400.0) * np.exp(-d / 0.05) * ya
+    pl_i = (rng.standard_normal(len(t)) - _paso_bajo(rng.standard_normal(len(t)), 3000.0)) * np.exp(-d / 0.9) * ya
+    pl_d = (rng.standard_normal(len(t)) - _paso_bajo(rng.standard_normal(len(t)), 3000.0)) * np.exp(-d / 0.9) * ya
+    fin = np.minimum(1.0, (t[-1] - t) / 0.3)
+    return _estereo((grave + 0.5 * chasq + 0.12 * pl_i) * fin, (grave + 0.5 * chasq + 0.12 * pl_d) * fin)
+
+
+def zoom_continuo(rng, cortes=(7, 6, 5, 5, 5, 4, 4, 4)):
+    """(1.9.0, la persona eligio de 5 propuestas la «Continuo»; los barridos sintetizados de la primera no le gustaron)
+    El riser cinematografico de la biblioteca (Epidemic Sound, con licencia) con su climax (2,10 s) justo en el impacto
+    de las fotos, y encima el impacto de las rampas. None si falta el riser: sin el, sfx.momentos pone la rampa de
+    siempre."""
+    ruta = os.path.join(AUDIO, RISER)
+    if not os.path.isfile(ruta):
+        return None
+    fotos = sum(cortes) / 24.0
+    largo = fotos + 2.6
+    x = np.zeros((int(largo * FS), 2))
+    seg = _normal(_leer(ruta)[int((2.10 - fotos - 0.02) * FS):int(2.75 * FS)], -2.0)[:len(x)].copy()
+    fi, fo = int(0.15 * FS), int(0.25 * FS)
+    seg[:fi] *= np.linspace(0.0, 1.0, fi)[:, None]
+    seg[-fo:] *= np.linspace(1.0, 0.0, fo)[:, None]
+    x[:len(seg)] += seg
+    x += 0.9 * _normal(_impacto(rng, fotos, largo), -3.0)
+    return _normal(x, -4.0)
+
+
 # una rampa por tipo de intro (los mismos ritmos que build_trailers.INTROS; sfx.momentos elige por el ritmo de las fotos)
 RAMPAS = {"XV_RAMPA": (5,) * 8, "XV_RAMPA_ACELERA": (9, 7, 6, 5, 4, 4, 3, 2), "XV_RAMPA_FRENA": (2, 3, 4, 4, 5, 6, 7, 9),
           "XV_RAMPA_LATIDO": (7, 3, 7, 3, 7, 3, 7, 3)}
 SONIDOS = {"XV_GOLPE": golpe, "XV_SUBIDA": subida, "XV_BRILLO": brillo, "XV_PASO": paso, "XV_OBTURADOR": obturador}
 for _n, _c in RAMPAS.items():
     SONIDOS[_n] = (lambda rng, c=_c: rampa(rng, c))
+CON_LICENCIA = {"XV_RAMPA_ZOOM": zoom_continuo}      # -> recursos/audio (la intro «Zoom»: 7,6,5,5,5,4,4,4)
 
 
-def guardar(nombre, x):
-    ruta = os.path.join(DESTINO, nombre + ".wav")
+def guardar(nombre, x, destino=None):
+    ruta = os.path.join(destino or DESTINO, nombre + ".wav")
     datos = (np.clip(x, -1.0, 1.0) * 32767.0).astype("<i2")
     with wave.open(ruta, "wb") as w:
         w.setnchannels(2)
@@ -177,11 +229,19 @@ def guardar(nombre, x):
 
 def main():
     os.makedirs(DESTINO, exist_ok=True)
-    for k, (nombre, hacer) in enumerate(SONIDOS.items()):
+    solo = {a.upper() for a in sys.argv[1:]}          # (1.9.0) hacer_sfx.py XV_RAMPA_ZOOM: solo ese (misma semilla)
+    todos = [(n, h, DESTINO) for n, h in SONIDOS.items()] + [(n, h, AUDIO) for n, h in CON_LICENCIA.items()]
+    for k, (nombre, hacer, destino) in enumerate(todos):
+        if solo and nombre not in solo:
+            continue
         x = hacer(np.random.default_rng(2026 + k))
-        ruta = guardar(nombre, x)
-        print("%-16s %.2f s  pico %.1f dB  %d KB" % (nombre + ".wav", len(x) / float(FS),
-                                                    20 * np.log10(np.abs(x).max() + 1e-12), os.path.getsize(ruta) // 1024))
+        if x is None:
+            print("%-16s no se hizo: falta su sonido de la biblioteca (recursos/audio)" % (nombre + ".wav"))
+            continue
+        ruta = guardar(nombre, x, destino)
+        print("%-16s %.2f s  pico %.1f dB  %d KB  (%s)" % (nombre + ".wav", len(x) / float(FS),
+                                                          20 * np.log10(np.abs(x).max() + 1e-12),
+                                                          os.path.getsize(ruta) // 1024, os.path.basename(destino)))
     return 0
 
 

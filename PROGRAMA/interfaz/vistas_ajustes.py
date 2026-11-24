@@ -9,8 +9,9 @@ intro igual: doble click me da el ejemplo de cómo se ve».
     VistaIntro(cortes, fotos, sfx) las 8 fotos de la apertura entrando con ESE ritmo (y su efecto de sonido), en bucle
     sonar(ruta, desde, seg) / callar()
 
-El sonido no usa QtMultimedia (no va en el instalador): ffmpeg saca un trozo a WAV en un hilo y lo toca winsound
-(Windows) o afplay (Mac). Sin ffmpeg o sin sonido, las piezas siguen funcionando calladas.
+El sonido no usa QtMultimedia (no va en el instalador): en Windows lo toca MCI (MP3) o winsound (un WAV entero), siempre
+desde su propio hilo (_hilo_sonido: la ventana solo deja la orden); si MCI no puede, ffmpeg saca un trozo a WAV. En Mac,
+afplay. Sin sonido, las piezas siguen funcionando calladas.
 """
 import os
 import sys
@@ -21,20 +22,21 @@ import threading
 import subprocess
 
 from PySide6.QtCore import Qt, QRectF, QTimer, QSize
-from PySide6.QtGui import QColor, QPainter, QPen, QFont, QPainterPath, QImageReader, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPen, QFont, QPainterPath, QImageReader, QLinearGradient, QRadialGradient
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 
 import rutas
 import piezas
 from piezas import px
 
-_sonando = {"n": 0, "proc": None}
+_sonando = {"n": 0, "proc": None, "hasta": 0.0, "cola": None, "candado": threading.Lock()}
 PAPELES = {"INTRO": "apertura (con las fotos)", "ROMANTICA": "romántica (maquillaje, iglesia)", "FIESTA": "fiesta",
            "EPICA": "épica (final)"}
 
 
 def _mci(orden):
-    """Una orden al reproductor de Windows (MCI). Devuelve (codigo de error, respuesta)."""
+    """Una orden al reproductor de Windows (MCI). Devuelve (codigo de error, respuesta). Solo desde el hilo del
+    sonido (_hilo_sonido): cada orden tarda decenas de ms."""
     import ctypes
     buf = ctypes.create_unicode_buffer(256)
     err = ctypes.windll.winmm.mciSendStringW(orden, buf, 255, None)
@@ -42,79 +44,118 @@ def _mci(orden):
 
 
 def estado():
-    """«playing» mientras suena (Windows); '' si no."""
-    if os.name != "nt":
-        return "playing" if _sonando["proc"] is not None and _sonando["proc"].poll() is None else ""
-    try:
-        return _mci("status trailer_oir mode")[1]
-    except Exception:
-        return ""
+    """«playing» mientras suena el trozo pedido; '' si no (sin preguntarle a MCI: la ventana no espera)."""
+    return "playing" if time.time() < _sonando["hasta"] else ""
 
 
 def callar():
+    """Corta lo que suena. Vuelve al instante: lo hace el hilo del sonido."""
     _sonando["n"] += 1
-    try:
-        if os.name == "nt":
-            _mci("stop trailer_oir")
-            _mci("close trailer_oir")
-            import winsound
-            winsound.PlaySound(None, 0)
-        elif _sonando["proc"] is not None:
-            _sonando["proc"].kill()
-    except Exception:
-        pass
-    _sonando["proc"] = None
+    _sonando["hasta"] = 0.0
+    if _sonando["cola"] is not None:
+        _sonando["cola"].put(("callar",))
 
 
 def sonar(ruta, desde=0.0, seg=25.0):
     """Toca un trozo del archivo sin trabar la ventana. Otra llamada o callar() lo corta.
 
     (18-nov, la persona en el instalado: «hay un error en el pop up, no me deja reproducir») En Windows lo toca el
-    reproductor del sistema (MCI) directo del MP3 o WAV, desde el hilo de la ventana (son ordenes que vuelven al
-    instante): no depende de ffmpeg ni de hilos. Si MCI no puede, queda el camino de antes (ffmpeg + winsound)."""
-    callar()
-    turno = _sonando["n"]
+    reproductor del sistema (MCI) directo del MP3 o WAV; si MCI no puede, queda el camino de antes (ffmpeg + winsound).
+    (1.9.0, medido en la ventana real) Las ordenes MCI NO vuelven al instante: 15-135 ms cada una y, con el audio
+    ocupado, segundos (4,4 s trabada la ventana con la vista de la intro). Ahora van a un hilo que vive todo el
+    programa (el hilo que abre el MCI es el que lo toca); la ventana solo deja la orden en la cola."""
+    _sonando["n"] += 1
+    _sonando["hasta"] = time.time() + float(seg)
+    with _sonando["candado"]:
+        if _sonando["cola"] is None:
+            import queue
+            _sonando["cola"] = queue.SimpleQueue()
+            threading.Thread(target=_hilo_sonido, daemon=True, name="sonido").start()
+    _sonando["cola"].put(("sonar", ruta, float(desde), float(seg), _sonando["n"]))
+
+
+def _hilo_sonido():
+    abierto = [None]                              # el archivo que tiene abierto MCI (repetir el mismo no lo reabre)
+    while True:
+        orden = _sonando["cola"].get()
+        try:
+            if orden[0] == "callar":
+                _parar(abierto)
+            elif orden[1:] and orden[-1] == _sonando["n"]:      # nadie pidio otra cosa mientras esperaba
+                _tocar(abierto, *orden[1:])
+        except Exception:
+            pass
+
+
+def _parar(abierto, cerrar=True):
+    if os.name == "nt":
+        _mci("stop trailer_oir")
+        if cerrar:                                # cerrado: el archivo queda libre (Quitar lo puede mover)
+            _mci("close trailer_oir")
+            abierto[0] = None
+        import winsound
+        winsound.PlaySound(None, 0)
+    elif _sonando["proc"] is not None:
+        _sonando["proc"].kill()
+        _sonando["proc"] = None
+
+
+def _tocar(abierto, ruta, desde, seg, turno):
+    if os.name == "nt" and desde <= 0.0 and ruta.lower().endswith(".wav"):
+        try:                                      # (1.9.0) un WAV entero (el efecto de la intro): winsound empieza en
+            _parar(abierto)                       # ~1 ms; MCI tardaba ~150 ms en «play» y el sonido iba tarde
+            import winsound
+            winsound.PlaySound(ruta, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+            return
+        except Exception:
+            pass
     if os.name == "nt":
         try:
-            corto = ruta
-            try:                                  # MCI no quiere rutas largas ni con caracteres raros: la corta (8.3)
-                import ctypes
-                b = ctypes.create_unicode_buffer(600)
-                if ctypes.windll.kernel32.GetShortPathNameW(ruta, b, 600):
-                    corto = b.value
-            except Exception:
-                pass
-            err, _ = _mci('open "%s" type mpegvideo alias trailer_oir' % corto)
+            if abierto[0] == ruta:                # el efecto de la intro en bucle: solo volver a empezar (~25 ms)
+                _mci("stop trailer_oir")
+                err = 0
+            else:
+                _parar(abierto)
+                corto = ruta
+                try:                              # MCI no quiere rutas largas ni con caracteres raros: la corta (8.3)
+                    import ctypes
+                    b = ctypes.create_unicode_buffer(600)
+                    if ctypes.windll.kernel32.GetShortPathNameW(ruta, b, 600):
+                        corto = b.value
+                except Exception:
+                    pass
+                err, _ = _mci('open "%s" type mpegvideo alias trailer_oir' % corto)
+                if not err:
+                    abierto[0] = ruta
+                    _mci("set trailer_oir time format milliseconds")
             if not err:
-                _mci("set trailer_oir time format milliseconds")
                 a = int(desde * 1000)
                 err, _ = _mci("play trailer_oir from %d to %d" % (a, a + int(seg * 1000)))
                 if err:                           # mas corta que el trozo pedido: entera
                     err, _ = _mci("play trailer_oir from 0")
                 if not err:
                     return
-            _mci("close trailer_oir")
+            _parar(abierto)
         except Exception:
             pass
-
-    def correr():
-        try:
-            if sys.platform == "darwin":
-                _sonando["proc"] = subprocess.Popen(["afplay", "-t", "%.1f" % seg, ruta])
-                return
-            ffmpeg = shutil.which("ffmpeg")
-            if not ffmpeg or os.name != "nt":
-                return
-            wav = os.path.join(tempfile.gettempdir(), "trailer_oir_%d.wav" % (turno % 4))
-            subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-ss", "%.2f" % desde, "-t", "%.2f" % seg,
-                            "-i", ruta, "-ac", "2", "-ar", "44100", wav], capture_output=True, timeout=60,
-                           creationflags=rutas.SIN_VENTANA)
-            if turno == _sonando["n"] and os.path.exists(wav):       # nadie pidio otra cosa mientras tanto
-                import winsound
-                winsound.PlaySound(wav, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
-        except Exception:
-            pass
-    threading.Thread(target=correr, daemon=True, name="oir").start()
+    else:
+        _parar(abierto)
+    try:
+        if sys.platform == "darwin":
+            _sonando["proc"] = subprocess.Popen(["afplay", "-t", "%.1f" % seg, ruta])
+            return
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg or os.name != "nt":
+            return
+        wav = os.path.join(tempfile.gettempdir(), "trailer_oir_%d.wav" % (turno % 4))
+        subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-ss", "%.2f" % desde, "-t", "%.2f" % seg,
+                        "-i", ruta, "-ac", "2", "-ar", "44100", wav], capture_output=True, timeout=60,
+                       creationflags=rutas.SIN_VENTANA)
+        if turno == _sonando["n"] and os.path.exists(wav):       # nadie pidio otra cosa mientras tanto
+            import winsound
+            winsound.PlaySound(wav, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+    except Exception:
+        pass
 
 
 def _papel(nombre):
@@ -596,41 +637,80 @@ class ListaCanciones(CancionesEstilo):
         super().__init__(os.path.basename(carpeta), mp, None, parent)
 
 
+_FOTOS_INTRO = {}               # (1.9.0) ruta -> QImage ya leida (1280 px): otra intro con las mismas fotos no relee
+
+
+def _leer_foto(ruta):
+    """Una foto a 1280 px de ancho como mucho (en un hilo: QImageReader no frena la ventana). None si no se pudo."""
+    try:
+        lector = QImageReader(ruta)
+        lector.setAutoTransform(True)
+        tam = lector.size()
+        if tam.isValid() and tam.width() > 1280:
+            lector.setScaledSize(QSize(1280, int(tam.height() * 1280.0 / tam.width())))
+        img = lector.read()
+        return None if img.isNull() else img
+    except Exception:
+        return None
+
+
 class VistaIntro(QWidget):
     """El ejemplo de una intro: las 8 fotos entrando con su ritmo (cortes en cuadros a 24 por segundo), el impacto y un
     momento del «video»; se repite. Con su efecto de sonido en cada vuelta si se puede."""
     FPS = 24.0
     PAUSA_S = 1.6                # lo que se queda la ultima imagen (el «video») antes de repetir
 
-    def __init__(self, cortes, fotos, sfx=None, parent=None):
+    def __init__(self, cortes, fotos, sfx=None, parent=None, zoom=False):
         super().__init__(parent)
         self.cortes = [max(1, int(c)) for c in cortes]
         self.sfx = sfx if sfx and os.path.isfile(sfx) else None
+        self.zoom = zoom                             # (1.9.0) la intro «Zoom»: cada foto se aleja parejo
         self.setMinimumSize(px(900), px(590))        # el cuadro 16:9 + la tira del ritmo y sus letras
-        self._fotos = []
-        for r in list(fotos)[:len(self.cortes) + 1]:
-            try:
-                lector = QImageReader(r)
-                lector.setAutoTransform(True)
-                tam = lector.size()
-                if tam.isValid() and tam.width() > 1280:
-                    lector.setScaledSize(QSize(1280, int(tam.height() * 1280.0 / tam.width())))
-                img = lector.read()
-                if not img.isNull():
-                    self._fotos.append(QPixmap.fromImage(img))
-            except Exception:
-                pass
-        self._t0 = time.monotonic()
+        # (1.9.0, la persona: «la intro está fatal»; MEDIDO con sus fotos) leer las 9 fotos aqui congelaba la ventana
+        # 0,55 s al abrir. Se leen en otro hilo (QImageReader suelta el candado de Python) y quedan guardadas: la
+        # siguiente intro abre al instante. Mientras, el cuadro muestra un brillo que pasa.
+        self._rutas = list(fotos)[:len(self.cortes) + 1]
+        self._fotos, self._listo = [], False
+        self._t0 = self._espera0 = time.monotonic()
         self._vuelta = -1
+        if all(r in _FOTOS_INTRO for r in self._rutas):
+            self._poner()
+        else:
+            import qt_kit
+            faltan = [r for r in self._rutas if r not in _FOTOS_INTRO]
+            qt_kit.correr_en_hilo(self, lambda: {r: _leer_foto(r) for r in faltan}, self._leidas)
         self._reloj = QTimer(self, interval=piezas.CUADRO_MS)
         self._reloj.timeout.connect(self._tic)
         self._reloj.start()
+
+    def _leidas(self, res, _err):
+        for r, img in (res or {}).items():
+            _FOTOS_INTRO[r] = img
+        while len(_FOTOS_INTRO) > 10:                # las 9 de la ultima intro (4-10 MB cada una)
+            _FOTOS_INTRO.pop(next(iter(_FOTOS_INTRO)))
+        try:
+            self._poner()
+        except RuntimeError:                         # el popup ya se cerro
+            pass
+
+    def _poner(self):
+        self._fotos = [_FOTOS_INTRO[r] for r in self._rutas if _FOTOS_INTRO.get(r) is not None]
+        self._listo = True
 
     def _dur(self):
         return sum(self.cortes) / self.FPS + self.PAUSA_S
 
     def _tic(self):
         if not self.isVisible():
+            return
+        if not self._listo or not self.updatesEnabled():
+            # (1.9.0) fotos cargando o el popup todavia entrando (su tarjeta va en foto, Popup._congelar): la vuelta no
+            # empieza; asi la intro y su sonido arrancan JUNTOS desde la primera foto (antes sonaba con la imagen
+            # quieta y al verse ya iba por la segunda o tercera foto)
+            self._t0 = time.monotonic()
+            self._vuelta = -1
+            if self.updatesEnabled():
+                self.update()
             return
         vuelta = int((time.monotonic() - self._t0) / self._dur())
         if vuelta != self._vuelta:
@@ -664,17 +744,49 @@ class VistaIntro(QWidget):
         en_video = k >= len(self.cortes)
         u = 0.0 if en_video else (f - ini) / float(self.cortes[k])        # avance dentro de esta foto
         n = len(self._fotos)
-        if n:
+        if not self._listo:                          # (1.9.0) las fotos cargando: un brillo dorado que pasa
+            a = ((time.monotonic() - self._espera0) % 1.3) / 1.3
+            x = cuadro.left() - px(320) + a * (cuadro.width() + px(320))
+            luz = QLinearGradient(x, 0, x + px(320), 0)
+            luz.setColorAt(0.0, QColor(226, 176, 79, 0))
+            luz.setColorAt(0.5, QColor(226, 176, 79, 46))
+            luz.setColorAt(1.0, QColor(226, 176, 79, 0))
+            p.fillRect(cuadro, luz)
+        elif n:
             pm = self._fotos[min(k, n - 1) if n > len(self.cortes) else k % n]
-            z = 1.06 - 0.06 * u if not en_video else 1.0 + 0.03 * min(1.0, (f - ini) / (self.PAUSA_S * self.FPS))
-            esc = max(cuadro.width() / pm.width(), cuadro.height() / pm.height()) * z
-            tw, th = pm.width() * esc, pm.height() * esc
-            p.drawPixmap(QRectF(cuadro.center().x() - tw / 2, cuadro.center().y() - th / 2, tw, th), pm, QRectF(pm.rect()))
+            base = max(cuadro.width() / pm.width(), cuadro.height() / pm.height())
+            c = cuadro.center()
+
+            def dibujar(z, alfa=1.0):
+                tw, th = pm.width() * base * z, pm.height() * base * z
+                p.setOpacity(alfa)
+                p.drawImage(QRectF(c.x() - tw / 2, c.y() - th / 2, tw, th), pm, QRectF(pm.rect()))
+            if self.zoom and not en_video:
+                # (1.9.0, la «Continuo» que eligio la persona) como en el armado (build_trailers._zoom_rapido): de
+                # 1 + 0,045 x sus cuadros a su encuadre, parejo; una estela corta (obturador de 180°: medio cuadro de
+                # movimiento) y la viñeta fija
+                vel = 0.045                                   # = build_trailers.ZOOM_INTRO_VEL
+                z0 = 1.0 + vel * self.cortes[k]
+                z = z0 + (1.0 - z0) * u
+                dibujar(z)
+                p.setRenderHint(QPainter.SmoothPixmapTransform, False)
+                for j, alfa in ((1, 0.28), (2, 0.16)):
+                    dibujar(z + vel * 0.25 * j, alfa)
+                p.setRenderHint(QPainter.SmoothPixmapTransform, True)
+                p.setOpacity(1.0)
+                borde = QRadialGradient(c, max(cuadro.width(), cuadro.height()) * 0.62)
+                borde.setColorAt(0.55, QColor(0, 0, 0, 0))
+                borde.setColorAt(1.0, QColor(0, 0, 0, 64))     # = ZOOM_INTRO_BORDES (0,25)
+                p.fillRect(cuadro, borde)
+            else:
+                dibujar(1.06 - 0.06 * u if not en_video else
+                        1.0 + 0.03 * min(1.0, (f - ini) / (self.PAUSA_S * self.FPS)))
+            p.setOpacity(1.0)
         else:
             p.fillRect(cuadro, QColor.fromHsv((k * 37) % 360, 120, 110))
-        if not en_video and u < 0.35:                                   # el destello de cada corte
+        if self._listo and not self.zoom and not en_video and u < 0.35:  # el destello de cada corte (el zoom: seco)
             p.fillRect(cuadro, QColor(255, 255, 255, int(150 * (1.0 - u / 0.35))))
-        if en_video and (f - ini) < 5:                                   # el impacto: donde entra la musica
+        if self._listo and en_video and (f - ini) < 5:                   # el impacto: donde entra la musica
             p.fillRect(cuadro, QColor(255, 255, 255, int(220 * (1.0 - (f - ini) / 5.0))))
         p.setClipping(False)
         p.setPen(QPen(QColor(217, 177, 92, 200), max(1.0, px(3))))

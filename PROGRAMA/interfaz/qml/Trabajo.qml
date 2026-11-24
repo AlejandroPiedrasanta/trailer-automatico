@@ -9,13 +9,27 @@ Item {
     id: raiz
     property real escala: 0.6
     property string familia: "Segoe UI"
-    property var pasos: []            // [{clave, nombre, estado}]
+    property var pasos: []            // [{clave, nombre, estado, detalle, tiempo, pct, desde}]
     property var versiones: []        // [{etq, estado, texto, pct, detalle}]
     property string eta: ""
     property string cancelarTexto: "Cancelar"
     property bool cancelarActivo: true
+    // (23-nov, la persona: «no sé si está avanzando... que indique el proceso de cada paso») lo que hace ahora, desde
+    // cuando trabaja (ms de la epoca; 0 = ya no) y el reloj que cuenta los segundos (aqui: Python no avisa cada segundo)
+    property string ahora: ""
+    property double inicio: 0
+    property double ahoraMs: Date.now()
     signal cancelarClic()
     function px(v) { return Math.round(v * escala) }
+    function reloj(ms) {
+        var s = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60
+        return (h > 0 ? h + ":" + (m < 10 ? "0" : "") + m : "" + m) + ":" + (x < 10 ? "0" : "") + x
+    }
+    Timer {
+        interval: 1000; repeat: true; triggeredOnStart: true
+        running: raiz.inicio > 0 && raiz.visible
+        onTriggered: raiz.ahoraMs = Date.now()
+    }
 
     // (1.7.8, auditoria de animaciones) Python manda una lista NUEVA en cada aviso: con la lista directa como modelo el Repeater
     // rehacia todas las filas y nada se animaba (la barra saltaba, el brillo y el arco volvian a 0, la palomita no
@@ -29,13 +43,14 @@ Item {
         if (m.count !== l.length) { m.clear(); for (var i = 0; i < l.length; i++) m.append(_norm(l[i], campos)) }
         else for (var j = 0; j < l.length; j++) m.set(j, _norm(l[j], campos))
     }
-    onPasosChanged: _sync(mPasos, pasos, { "clave": "", "nombre": "", "estado": "pendiente" })
+    onPasosChanged: _sync(mPasos, pasos, { "clave": "", "nombre": "", "estado": "pendiente", "detalle": "",
+                                           "tiempo": "", "pct": -1.0, "desde": 0.0 })
     onVersionesChanged: _sync(mVers, versiones, { "etq": "", "estado": "cola", "texto": "", "pct": 0.0, "detalle": "" })
 
     readonly property color oro: "#E2B04F"
     readonly property color verde: "#22C47E"
     readonly property color tenue: "#9DB0B6"
-    implicitHeight: filaPasos.height + px(40) + tarjeta.height
+    implicitHeight: tarjeta.y + tarjeta.height
 
     // al empezar a trabajar: los pasos y las versiones aparecen subiendo (Python llama entrar())
     function entrar() { raiz.opacity = 0; baja.y = (typeof quieto !== "undefined" && quieto) ? 0 : px(14); entra.restart() }
@@ -50,7 +65,7 @@ Item {
     Item {
         id: filaPasos
         width: parent.width
-        height: px(118)
+        height: px(200)                   // (23-nov) + el detalle y el tiempo de cada paso
         readonly property int n: raiz.pasos.length
         readonly property real margen: px(80)
         readonly property real r: px(25)
@@ -156,7 +171,9 @@ Item {
                     color: paso.e === "hecho" ? raiz.verde : paso.e === "activo" ? "#1C180C"
                          : paso.e === "error" ? "#3A1414" : "transparent"
                     border.width: paso.e === "hecho" ? 0 : px(4)
-                    border.color: paso.e === "activo" ? raiz.oro : paso.e === "error" ? "#E5534B"
+                    // (23-nov) con cuenta, el filo del activo queda tenue y encima se llena el aro de su avance
+                    border.color: paso.e === "activo" ? (model.pct >= 0 ? Qt.rgba(0.886, 0.69, 0.31, 0.34) : raiz.oro)
+                                : paso.e === "error" ? "#E5534B"
                                 : Qt.rgba(150 / 255, 165 / 255, 175 / 255, paso.e === "saltado" ? 0.25 : 0.55)
                     Behavior on color { ColorAnimation { duration: 300 } }
                     SequentialAnimation on scale {
@@ -193,7 +210,27 @@ Item {
                             radiusX: filaPasos.r * 1.36; radiusY: filaPasos.r * 1.36; startAngle: 0; sweepAngle: 80 }
                     }
                 }
+                // (23-nov) el avance del paso que corre: un aro que se llena sobre el circulo (solo si hay cuenta)
+                Shape {
+                    id: aro
+                    readonly property real meta: paso.e === "activo" && model.pct >= 0 ? model.pct : 0
+                    property real visto: meta
+                    Behavior on visto { NumberAnimation { duration: 700; easing.type: Easing.OutCubic } }
+                    opacity: paso.e === "activo" && model.pct >= 0 ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                    visible: opacity > 0.01
+                    width: filaPasos.r * 2; height: width
+                    x: (paso.width - width) / 2; y: px(4)
+                    ShapePath {
+                        strokeColor: "#FFE3A0"; strokeWidth: px(4); fillColor: "transparent"
+                        capStyle: ShapePath.RoundCap
+                        PathAngleArc { centerX: filaPasos.r; centerY: filaPasos.r
+                            radiusX: filaPasos.r - px(2); radiusY: filaPasos.r - px(2)
+                            startAngle: -90; sweepAngle: 360 * Math.max(0.002, Math.min(1, aro.visto)) }
+                    }
+                }
                 Text {
+                    id: nombrePaso
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: filaPasos.r * 2 + px(22)
                     text: model.nombre
@@ -202,6 +239,66 @@ Item {
                          : paso.e === "error" ? "#FF8A80" : raiz.tenue
                     Behavior on color { ColorAnimation { duration: 300 } }
                 }
+                // (23-nov) debajo: lo que lleva («40 de 57», «62 %», «654 archivos») y su tiempo (el activo cuenta)
+                Text {
+                    id: detallePaso
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: paso.width - px(8); horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
+                    y: nombrePaso.y + px(44)
+                    text: model.detalle
+                    font.family: raiz.familia; font.pixelSize: px(26); font.weight: Font.DemiBold
+                    color: paso.e === "activo" ? "#E9C77A" : paso.e === "error" ? "#FF8A80" : "#B9C6C9"
+                    opacity: text ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+                }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: detallePaso.y + px(34)
+                    text: paso.e === "activo" && model.desde > 0 ? raiz.reloj(raiz.ahoraMs - model.desde) : model.tiempo
+                    font.family: raiz.familia; font.pixelSize: px(24)
+                    color: raiz.tenue
+                    opacity: text ? 0.95 : 0
+                    Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ (23-nov) lo que esta haciendo ahora
+    Item {
+        id: filaAhora
+        y: filaPasos.height + px(4)
+        width: parent.width
+        height: px(56)
+        opacity: raiz.ahora ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Row {
+            anchors.centerIn: parent
+            spacing: px(16)
+            Rectangle {                        // late mientras trabaja: esta vivo aunque una linea tarde en llegar
+                id: latido
+                anchors.verticalCenter: parent.verticalCenter
+                width: px(14); height: width; radius: width / 2
+                color: raiz.oro
+                readonly property bool vivo: raiz.inicio > 0 && raiz.visible && !(typeof quieto !== "undefined" && quieto)
+                SequentialAnimation on opacity {
+                    running: latido.vivo; loops: Animation.Infinite
+                    NumberAnimation { to: 0.25; duration: 700; easing.type: Easing.InOutSine }
+                    NumberAnimation { to: 1.0; duration: 700; easing.type: Easing.InOutSine }
+                }
+            }
+            Text {
+                id: textoAhora
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.min(implicitWidth, filaAhora.width - px(220))
+                elide: Text.ElideRight
+                text: raiz.ahora
+                font.family: raiz.familia; font.pixelSize: px(30)
+                color: "#DDE6E8"
+                // cada cosa nueva entra aclarandose (se nota que cambio)
+                onTextChanged: if (!(typeof quieto !== "undefined" && quieto)) entraAhora.restart()
+                NumberAnimation on opacity { id: entraAhora; running: false; from: 0.3; to: 1; duration: 260
+                                             easing.type: Easing.OutCubic }
             }
         }
     }
@@ -209,7 +306,7 @@ Item {
     // ------------------------------------------------------------------ las versiones
     Rectangle {
         id: tarjeta
-        y: filaPasos.height + px(40)
+        y: filaAhora.y + filaAhora.height + px(22)
         width: parent.width
         height: columna.height + px(16) + px(26)
         radius: px(28)
@@ -243,7 +340,10 @@ Item {
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         width: pie.width - px(46) - botonCancelar.width - px(40)      // (1.7.9) «Cancelar» al mismo borde que las palomitas
-                        text: raiz.eta; textFormat: Text.RichText
+                        // (23-nov) «Lleva 12:34 · Listo a las 21:05 · faltan 18 min»: el reloj cuenta cada segundo
+                        text: (raiz.inicio > 0 ? "Lleva <b>" + raiz.reloj(raiz.ahoraMs - raiz.inicio) + "</b>"
+                               + (raiz.eta ? "  ·  " : "") : "") + raiz.eta
+                        textFormat: Text.RichText
                         color: "#F1F5F6"; font.family: raiz.familia; font.pixelSize: px(36)
                     }
                     Rectangle {

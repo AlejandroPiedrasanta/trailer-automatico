@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 medir_fluidez.py - (1.8.9, la persona: «aún tiene trabones o tirones, no está nada fluido») Mide la ventana REAL:
-recorre Inicio -> Tráilers (carrusel y popup de canciones) -> Plantillas -> Ajustes -> Inicio -> cambiar de tamaño y
-anota los huecos del hilo de la ventana (> 20 ms sin atender), la pila de Python durante cada hueco (si no hay pila
-propia, es Qt pintando), los cuadros por segundo de cada pieza QML y el CPU por fase.
+recorre Inicio -> Tráilers (carrusel; popups de canciones, de la intro y un aviso) -> Plantillas -> Ajustes -> Inicio
+-> cambiar de tamaño -> maximizar y restaurar, y anota los huecos del hilo de la ventana (> 20 ms sin atender), la pila
+de Python durante cada hueco (si no hay pila propia, es Qt pintando), los cuadros por segundo de cada pieza QML y el CPU
+por fase. (1.9.0) Al final, «CONGELONES > 50 ms»: cada uno con lo que lo empezo > … > donde estaba. Medir con el
+equipo tranquilo (Get-Process ffmpeg): otro programa renderizando da congelones que no son de aqui.
 
   python PROGRAMA/herramientas/medir_fluidez.py [recorrido|musica]      (abre la ventana ~40 s, con datos aparte)
 
@@ -37,6 +39,8 @@ class Guion:
         self.fases = [("arranque", 0.0, time.process_time())]
         self.latido = self.t0
         self.huecos = []
+        self.grandes = []                                   # [(t, fase, ms, latido)] de los > 50 ms
+        self.por_hueco = collections.defaultdict(collections.Counter)
         self.pilas = collections.defaultdict(collections.Counter)
         self.cuadros = collections.defaultdict(list)
         self.main_id = threading.get_ident()
@@ -58,25 +62,42 @@ class Guion:
         gap = (ahora - self.latido) * 1000.0
         if gap > 20.0:
             self.huecos.append((round(ahora - self.t0, 2), self.fase, round(gap, 1)))
+            if gap > 50.0:                                  # (1.9.0) cada congelon grande, con sus pilas
+                self.grandes.append((round(self.latido - self.t0, 2), self.fase, round(gap, 1), self.latido))
         self.latido = ahora
+
+    @staticmethod
+    def _resumir(pila):
+        """La pila (de dentro hacia fuera) en una linea: lo que la empezo (justo despues de app) … donde esta."""
+        fuera = list(reversed(pila))
+        corte = max((i for i, x in enumerate(fuera) if x[2] in ("app", "<module>", "main")), default=-1)
+        propia = ["%s:%d %s" % x for x in fuera[corte + 1:]]
+        if not propia:
+            return "(Qt por dentro: pinta, acomoda o crea QML; sin Python)"
+        if len(propia) > 7:
+            propia = propia[:4] + ["…"] + propia[-3:]
+        return " > ".join(propia)
 
     def _vigia(self):
         while self.vivo:
             time.sleep(0.010)
-            if time.perf_counter() - self.latido > 0.030:
+            inicio = self.latido
+            if time.perf_counter() - inicio > 0.030:
                 # sin cambiar de hilo mientras se recorre la pila del otro (si no, sus cuadros pueden desaparecer)
                 antes = sys.getswitchinterval()
                 sys.setswitchinterval(1.0)
                 try:
                     f = sys._current_frames().get(self.main_id)
                     pila = []
-                    while f is not None and len(pila) < 6:
-                        pila.append("%s:%d %s" % (os.path.basename(f.f_code.co_filename), f.f_lineno, f.f_code.co_name))
+                    while f is not None and len(pila) < 40:
+                        pila.append((os.path.basename(f.f_code.co_filename), f.f_lineno, f.f_code.co_name))
                         f = f.f_back
                 finally:
                     sys.setswitchinterval(antes)
                 if pila:
-                    self.pilas[self.fase][" <- ".join(pila)] += 1
+                    clave = self._resumir(pila)
+                    self.pilas[self.fase][clave] += 1
+                    self.por_hueco[inicio][clave] += 1
 
     def _conectar_qml(self):
         from PySide6.QtQuickWidgets import QQuickWidget
@@ -172,11 +193,18 @@ class Guion:
             (1.0, "carrusel 4", lambda: self._estilo(4)),
             (1.5, "popup canciones", lambda: QTimer.singleShot(0, lambda: w._ver_canciones(4))),
             (3.0, "cerrar popup", self._cerrar_popup),
+            (1.5, "popup intro", lambda: QTimer.singleShot(0, lambda: w._ver_intro(0))),
+            (2.5, "cerrar intro", self._cerrar_popup),
+            (1.5, "popup aviso", lambda: QTimer.singleShot(0, lambda: w._popup("Un aviso corto para medir.",
+                                                                                titulo="Prueba de fluidez"))),
+            (2.0, "cerrar aviso", self._cerrar_popup),
             (1.5, "a Plantillas", lambda: w._ir("Plantillas")),
             (3.0, "a Ajustes", lambda: w._ir("Ajustes")),
             (3.0, "a Inicio", lambda: w._ir("Inicio")),
             (3.0, "redimensionar", lambda: w.setGeometry(g0.x(), g0.y(), int(g0.width() * 0.8), int(g0.height() * 0.85))),
             (1.5, "volver tamaño", lambda: w.setGeometry(g0)),
+            (2.0, "maximizar", w.showMaximized),
+            (2.0, "restaurar", w.showNormal),
             (2.5, "fin", self._terminar),
         ]
         t = 0.0
@@ -217,7 +245,16 @@ class Guion:
                     nom, c, fps, p50, p95, mx))
             for pila, k in pil[:3]:
                 lineas.append("     pila x%-3d %s" % (k, pila[:260]))
+        if self.grandes:                                    # (1.9.0) cada congelon grande y lo que lo hizo
+            lineas.append("")
+            lineas.append("CONGELONES > 50 ms (cuando, fase, cuanto, que hacia el hilo de la ventana):")
+        for t, fase, ms, latido in self.grandes:
+            lineas.append("  %6.2f s  %-16s %6.1f ms" % (t, fase, ms))
+            for pila, k in self.por_hueco.get(latido, collections.Counter()).most_common(3):
+                lineas.append("        x%-3d %s" % (k, pila[:300]))
         datos["huecos"] = self.huecos
+        datos["grandes"] = [(t, f, ms, self.por_hueco.get(lt, collections.Counter()).most_common(3))
+                            for t, f, ms, lt in self.grandes]
         with open(os.path.join(self.salida, "fluidez.json"), "w", encoding="utf-8") as f:
             json.dump(datos, f, ensure_ascii=False, indent=1)
         with open(os.path.join(self.salida, "fluidez.txt"), "w", encoding="utf-8") as f:

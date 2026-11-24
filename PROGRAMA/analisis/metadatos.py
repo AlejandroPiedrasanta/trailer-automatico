@@ -39,9 +39,34 @@ def _t(seg):
     return "%d:%02d" % (int(seg) // 60, int(seg) % 60)
 
 
-def _imagen(item):
+def _estrellas(item, sirve, ref=None):
+    """(24-nov) De 1 a 5 estrellas, para ordenar y buscar en el Explorador de Windows. Con la «belleza» de la IA (1-10):
+    la mitad, hacia arriba. Sin ella (las fotos de un evento grande no pasan por la IA): 3, +1 si sale la persona
+    festejada, +1 / -1 por su nitidez contra la tipica del evento, -1 si tiene luces quemadas; ojos cerrados, a lo
+    sumo 2. Lo que no sirve: 1."""
+    if not sirve:
+        return 1
+    b = (item.get("ia") or {}).get("belleza")
+    if isinstance(b, (int, float)) and b > 0:
+        return max(1, min(5, int((min(10, b) + 1) // 2)))
+    e = 3
+    if item.get("prota"):
+        e += 1
+    nit, tipica = item.get("nitidez"), (ref or {}).get("nitidez")
+    if isinstance(nit, (int, float)) and tipica:
+        e += 1 if nit >= 1.3 * tipica else -1 if nit < 0.55 * tipica else 0
+    if isinstance(item.get("quemado"), (int, float)) and item["quemado"] >= 0.10:
+        e -= 1
+    if (item.get("mirada") or {}).get("ojos_cerrados"):
+        e = min(e, 2)
+    return max(1, min(5, e))
+
+
+def _imagen(item, ref=None):
     """(texto, etiquetas) de como se ve: exposicion, luces quemadas, contraste, color, enfoque y estabilidad.
-    Los limites salen de lo medido en eventos reales (XV 8-nov: luz mediana 0,41; nitidez 26; temblor 0,85)."""
+    Los limites salen de lo medido en eventos reales (XV 8-nov: luz mediana 0,41; nitidez 26; temblor 0,85).
+    ref: {"nit": la nitidez tipica de SU camara} (24-nov, boda de JUTIAPA: la GoPro gran angular mide 14,6 y sus tomas
+    buenas salian como «enfoque suave o desenfocado»: el enfoque se nombra contra lo suyo, como en el armado)."""
     partes, et = [], []
     color = item.get("color") or []
     if color and not isinstance(color[0], (list, tuple)):          # en una foto es una sola medida, no una serie
@@ -74,7 +99,11 @@ def _imagen(item):
         partes.append("contraste %s" % ("bajo" if con < 0.19 else "alto" if con > 0.31 else "medio"))
     nit = _med(vista.get("nit") or [])
     if nit is not None:
-        nombre = "nítido" if nit >= 35 else "normal" if nit >= 15 else "suave o desenfocado"
+        tipica = (ref or {}).get("nit")
+        if tipica:
+            nombre = "nítido" if nit >= 1.3 * tipica else "normal" if nit >= 0.6 * tipica else "suave o desenfocado"
+        else:
+            nombre = "nítido" if nit >= 35 else "normal" if nit >= 15 else "suave o desenfocado"
         partes.append("enfoque %s (nitidez %d)" % (nombre, round(nit)))
         et.append("enfoque " + nombre)
     tem = _med(item.get("temblor") or [])
@@ -134,7 +163,7 @@ def _sonido(item, voz):
     return "; ".join(partes), et
 
 
-def campos_de(item, voz=None, caras=None, receta=None):
+def campos_de(item, voz=None, caras=None, receta=None, ref=None):
     """Lo que se escribe de una toma analizada (item del analisis): titulo, comentario, descripcion y etiquetas.
     voz: lo que DaVinci entendio al escucharla (escenas_ia: «pasajes»); caras: las personas reconocidas (personas.json).
     (18-nov, la persona: «mejora más los metadatos: nivel de exposición, si hay sonido o voz útil, más metadatos
@@ -169,8 +198,9 @@ def campos_de(item, voz=None, caras=None, receta=None):
         m = max(motivos, key=motivos.get)
         cont.append("%d %% de la toma no sirve (%s)" % (round(100.0 * len(malos) / len(inst)), nombres.get(m, m)))
     sirve = not (ia.get("util") is False or item.get("descartar"))
-    cont.append("SIRVE" if sirve else "NO SIRVE")
-    imagen, et_i = _imagen(item)
+    por = str(item.get("por_descarte") or "").replace("ia: ", "")    # (1.9.3) por que quedo fuera, si se sabe
+    cont.append("SIRVE" if sirve else ("NO SIRVE (%s)" % por if por else "NO SIRVE"))
+    imagen, et_i = _imagen(item, ref)
     sonido, et_s = ("", []) if item.get("tipo") == "foto" else _sonido(item, voz)
     caras = caras if caras is not None else item.get("caras")
     personas = []
@@ -204,8 +234,18 @@ def campos_de(item, voz=None, caras=None, receta=None):
     comentario = " | ".join("%s: %s" % (n, t) for n, t in grupos if t) + " | " + MARCA
     todas = ([momento] if momento else []) + etiquetas + sorted(clave) + et_i + et_s + \
         (["festejada"] if item.get("prota") else []) + (["sirve"] if sirve else ["no sirve"])
-    return {"titulo": escena or momento, "comentario": comentario, "descripcion": momento,
-            "etiquetas": "; ".join(dict.fromkeys(todas))}
+    titulo = escena
+    if not titulo:
+        # (1.9.3) sin lo que ve la IA (con mas de 200 fotos no las mira: MAX_FOTOS_IA) el titulo decia solo
+        # «MAQUILLAJE»: ahora el momento, que es y a quien se ve, con lo que el analisis si sabe
+        que = {"foto": "foto", "dron": "toma aérea"}.get(item.get("tipo"), "toma")
+        if item.get("prota"):
+            que += " de la festejada"
+        elif caras:
+            que += " con %d persona%s" % (len(caras), "" if len(caras) == 1 else "s")
+        titulo = "%s · %s" % (momento.capitalize(), que) if momento else que.capitalize()
+    return {"titulo": titulo, "comentario": comentario, "descripcion": momento,
+            "etiquetas": "; ".join(dict.fromkeys(todas)), "estrellas": str(_estrellas(item, sirve, ref))}
 
 
 def _atomos(b, ini, fin):
@@ -252,14 +292,106 @@ def _arriba(ruta):
     return out
 
 
+# ------------------------------------------------------------------ (24-nov) lo que el Explorador de Windows SI muestra
+# La persona (24-nov): «mejora los metadatos a los archivos originales». Windows no lee «keyw» como Etiquetas ni sabe
+# de «belleza 7 de 10»: en un MP4/MOV las Etiquetas y la Clasificacion (estrellas) de Propiedades > Detalles —y de las
+# columnas, el orden y la busqueda del Explorador— salen del atomo «Xtra» de udta (WM/Category y WM/SharedUserRating).
+# Cada entrada: largo(4) · largo del nombre(4) · nombre · cuantos valores(4) · [largo(4) · tipo(2) · dato]; tipo 8 =
+# texto UTF-16LE acabado en cero, tipo 19 = entero de 64 bits. Lo nuestro se marca en una entrada propia (XTRA_MARCA):
+# si la persona pone SUS estrellas o SUS etiquetas en el Explorador, no se le pisan.
+XTRA_MARCA = "TrailerAutomatico"
+XTRA_ESTRELLAS, XTRA_ETIQUETAS = "WM/SharedUserRating", "WM/Category"
+PORCIENTO = {1: 1, 2: 25, 3: 50, 4: 75, 5: 99}          # como guarda Windows de 1 a 5 estrellas
+
+
+def _xtra_entrada(nombre, valores):
+    n = nombre.encode("ascii")
+    cuerpo = struct.pack(">I", len(n)) + n + struct.pack(">I", len(valores))
+    for tipo, dato in valores:
+        cuerpo += struct.pack(">IH", 6 + len(dato), tipo) + dato
+    return struct.pack(">I", 4 + len(cuerpo)) + cuerpo
+
+
+def _xtra_texto(t):
+    return (8, str(t).encode("utf-16-le") + b"\x00\x00")
+
+
+def _xtra_leer(cuerpo):
+    """{nombre: (entrada tal cual, [(tipo, dato)])} de un atomo Xtra, en su orden. ValueError si no se entiende."""
+    out, pos = {}, 0
+    while pos + 12 <= len(cuerpo):
+        n, ln = struct.unpack(">II", cuerpo[pos:pos + 8])
+        if n < 12 + ln or pos + n > len(cuerpo):
+            raise ValueError("Xtra con estructura rara")
+        nombre = cuerpo[pos + 8:pos + 8 + ln].decode("ascii", "replace")
+        q = pos + 8 + ln
+        cuantos = struct.unpack(">I", cuerpo[q:q + 4])[0]
+        q += 4
+        vals = []
+        for _ in range(cuantos):
+            lv, tipo = struct.unpack(">IH", cuerpo[q:q + 6])
+            if lv < 6 or q + lv > pos + n:
+                raise ValueError("Xtra con estructura rara")
+            vals.append((tipo, cuerpo[q + 6:q + lv]))
+            q += lv
+        out[nombre] = (cuerpo[pos:pos + n], vals)
+        pos += n
+    if pos != len(cuerpo):
+        raise ValueError("Xtra con estructura rara")
+    return out
+
+
+def _xtra_nuestro(entradas):
+    """(estrellas que pusimos o None, True si las etiquetas son nuestras, estrellas de OTRO o None)."""
+    marca = entradas.get(XTRA_MARCA)
+    texto = marca[1][0][1].decode("utf-16-le", "replace").rstrip("\x00") if marca and marca[1] else ""
+    a = dict(x.split("=", 1) for x in texto.split(";") if "=" in x)
+    puse = int(a["estrellas"]) if a.get("estrellas", "").isdigit() else None
+    hay = entradas.get(XTRA_ESTRELLAS)
+    pct = struct.unpack("<Q", hay[1][0][1][:8])[0] if hay and hay[1] and len(hay[1][0][1]) >= 8 else None
+    mias = puse is not None and pct == PORCIENTO.get(puse)
+    return (puse if mias else None), a.get("etiquetas") == "1", (None if (pct is None or mias) else pct)
+
+
+def _xtra_nuevo(viejo, campos):
+    """El cuerpo del atomo Xtra con nuestras estrellas y etiquetas; lo de otros (y lo que puso la persona) se conserva.
+    None = no se entiende el que hay: no se toca."""
+    try:
+        entradas = _xtra_leer(viejo) if viejo else {}
+    except (ValueError, struct.error):
+        return None
+    puse, etq_mias, ajenas = _xtra_nuestro(entradas)
+    est = int(campos["estrellas"]) if str(campos.get("estrellas") or "").isdigit() else None
+    etq = [e.strip() for e in str(campos.get("etiquetas") or "").split(";") if e.strip()]
+    nuevas = {k: v[0] for k, v in entradas.items() if k != XTRA_MARCA}
+    marca = []
+    if est in PORCIENTO and ajenas is None:                      # (sin estrellas de la persona)
+        nuevas[XTRA_ESTRELLAS] = _xtra_entrada(XTRA_ESTRELLAS, [(19, struct.pack("<Q", PORCIENTO[est]))])
+        marca.append("estrellas=%d" % est)
+    elif puse is not None and ajenas is None:
+        marca.append("estrellas=%d" % puse)
+    if etq and (XTRA_ETIQUETAS not in entradas or etq_mias):     # (sin etiquetas de la persona)
+        nuevas[XTRA_ETIQUETAS] = _xtra_entrada(XTRA_ETIQUETAS, [_xtra_texto(e) for e in etq])
+        marca.append("etiquetas=1")
+    elif etq_mias:
+        marca.append("etiquetas=1")
+    if marca:
+        nuevas[XTRA_MARCA] = _xtra_entrada(XTRA_MARCA, [_xtra_texto(";".join(marca))])
+    return b"".join(nuevas.values())
+
+
 def _moov_nuevo(moov, campos):
-    """La cabecera con nuestras etiquetas en udta/meta/ilst (lo que ya hubiera ahi de otros se conserva)."""
+    """La cabecera con nuestras etiquetas en udta/meta/ilst (lo que ya hubiera ahi de otros se conserva) y, para el
+    Explorador de Windows, las Etiquetas y las estrellas en udta/Xtra."""
     nuestras = {CLAVES[k]: v for k, v in campos.items() if k in CLAVES and v}
     hijos = _atomos(moov, 8, len(moov))
     udta = next((h for h in hijos if h[0] == b"udta"), None)
-    otros_udta, items_viejos, hdlr = b"", b"", None
+    otros_udta, items_viejos, hdlr, xtra = b"", b"", None, None
     if udta is not None:
         for t, p, n, cab in _atomos(moov, udta[1] + udta[3], udta[1] + udta[2]):
+            if t == b"Xtra" and xtra is None:
+                xtra = moov[p + cab:p + n]
+                continue
             if t != b"meta":
                 otros_udta += moov[p:p + n]
                 continue
@@ -275,7 +407,11 @@ def _moov_nuevo(moov, campos):
                 otros_udta += moov[p:p + n]          # un «meta» que no es de etiquetas: se deja tal cual
     hdlr = hdlr or _atomo(b"hdlr", struct.pack(">II4s4sIIH", 0, 0, b"mdir", b"appl", 0, 0, 0)[:25])
     ilst = _atomo(b"ilst", items_viejos + b"".join(_dato(k, v) for k, v in nuestras.items()))
-    udta_n = _atomo(b"udta", otros_udta + _atomo(b"meta", struct.pack(">I", 0) + hdlr + ilst))
+    cuerpo_xtra = _xtra_nuevo(xtra or b"", campos)
+    if cuerpo_xtra is None:                                    # un Xtra que no se entiende: queda como estaba
+        cuerpo_xtra = xtra or b""
+    udta_n = _atomo(b"udta", otros_udta + _atomo(b"meta", struct.pack(">I", 0) + hdlr + ilst)
+                    + (_atomo(b"Xtra", cuerpo_xtra) if cuerpo_xtra else b""))
     cuerpo = b"".join(udta_n if h is udta else moov[h[1]:h[1] + h[2]] for h in hijos)
     if udta is None:
         cuerpo += udta_n
@@ -322,10 +458,21 @@ def _jpg_cabecera(b):
     raise ValueError("JPEG sin imagen")
 
 
-def _bloque_xmp(campos, con_palabras):
+RATING_RE = r'xmp:Rating(="|>)\s*(-?\d)'             # las estrellas de la foto: como atributo o como elemento
+
+
+def _bloque_xmp(campos, con_palabras, estrellas=None, propias=True):
+    """estrellas (1-5): las que ponemos (quedan anotadas en trailer:estrellas); propias = van en ESTE bloque (si la foto
+    ya traia «xmp:Rating» en otro bloque, se cambia alli: _escribir_jpg)."""
     alt = '<rdf:Alt><rdf:li xml:lang="x-default">%s</rdf:li></rdf:Alt>'
-    x = ['<rdf:Description rdf:about="" ' + ESPACIO + ' xmlns:dc="http://purl.org/dc/elements/1.1/" '
-         'xmlns:exif="http://ns.adobe.com/exif/1.0/" xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/">']
+    x = ['<rdf:Description rdf:about="" ' + ESPACIO + (' trailer:estrellas="%d"' % estrellas if estrellas else "")
+         + ' xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:exif="http://ns.adobe.com/exif/1.0/" '
+         'xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/" xmlns:xmp="http://ns.adobe.com/xap/1.0/" '
+         'xmlns:MicrosoftPhoto="http://ns.microsoft.com/photo/1.0/">']
+    if estrellas:                                    # (24-nov) las estrellas de Propiedades > Detalles y del Explorador
+        if propias:
+            x.append("<xmp:Rating>%d</xmp:Rating>" % estrellas)
+        x.append("<MicrosoftPhoto:Rating>%d</MicrosoftPhoto:Rating>" % PORCIENTO[estrellas])
     if campos.get("titulo"):
         x.append("<dc:title>" + alt % _xml(campos["titulo"]) + "</dc:title>")
         x.append("<photoshop:Headline>%s</photoshop:Headline>" % _xml(campos["titulo"]))
@@ -353,6 +500,14 @@ def _leer_jpg(ruta):
                 if not r0:
                     return out
                 blo = r0.group(0)
+                # (24-nov) nuestras estrellas, y si la foto lleva OTRAS (las puso la persona o su programa)
+                mias = re.search(r'trailer:estrellas="(\d)"', blo)
+                ajena = re.search(RATING_RE, re.sub(BLOQUE_RE, "", t, flags=re.S))
+                extra = {}
+                if mias and (ajena is None or ajena.group(2) == mias.group(1)):
+                    extra["estrellas"] = mias.group(1)
+                elif ajena is not None and ajena.group(2) not in ("0", "-"):
+                    extra["estrellas_ajenas"] = "1"
 
                 def uno(etq):
                     r = re.search(r"<%s>.*?<rdf:li[^>]*>(.*?)</rdf:li>" % etq, blo, re.S)
@@ -362,7 +517,7 @@ def _leer_jpg(ruta):
                 if pal:
                     out["etiquetas"] = "; ".join(x.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
                                                  for x in re.findall(r"<rdf:li>(.*?)</rdf:li>", pal.group(1)))
-                return {k: v for k, v in out.items() if v}
+                return dict({k: v for k, v in out.items() if v}, **extra)
     except (ValueError, OSError):
         pass
     return out
@@ -374,12 +529,25 @@ def _escribir_jpg(ruta, campos):
         b = f.read()
     segs, sos = _jpg_cabecera(b)
     xmp = next(((p, n) for m, p, n in segs if m == 0xE1 and b[p + 4:p + 4 + len(XMP_ID)] == XMP_ID), None)
+    est = int(campos["estrellas"]) if str(campos.get("estrellas") or "") in ("1", "2", "3", "4", "5") else None
     if xmp is not None:
         texto = b[xmp[0] + 4 + len(XMP_ID):xmp[0] + xmp[1]].decode("utf-8")
+        viejo = re.search(BLOQUE_RE, texto, re.S)
+        mias = re.search(r'trailer:estrellas="(\d)"', viejo.group(0)) if viejo else None
         texto = re.sub(BLOQUE_RE, "", texto, flags=re.S)
         if "</rdf:RDF>" not in texto:
             return None
-        bloque = _bloque_xmp(campos, "<dc:subject" not in texto)       # las palabras clave que ya traiga, quedan
+        # (24-nov) las estrellas: la camara suele dejar «xmp:Rating="0"» (sin estrellas) en SU bloque: se cambia ahi
+        # (dos «xmp:Rating» en un paquete no valen). Si lleva de 1 a 5 y no las pusimos nosotros, son de la persona:
+        # no se tocan.
+        ajena, propias = re.search(RATING_RE, texto), True
+        if est and ajena is not None:
+            if ajena.group(2) in ("0", "-") or (mias and ajena.group(2) == mias.group(1)):
+                texto = texto[:ajena.start(2)] + str(est) + texto[ajena.end(2):]
+                propias = False
+            else:
+                est = None
+        bloque = _bloque_xmp(campos, "<dc:subject" not in texto, est, propias)   # las palabras que ya traiga, quedan
         texto = texto.replace("</rdf:RDF>", bloque + "</rdf:RDF>", 1)
         if len(texto.encode("utf-8")) > 65000:                       # sin el relleno en blanco del paquete
             texto = re.sub(r"[ \t\r\n]{3,}", "\n", texto)
@@ -387,7 +555,7 @@ def _escribir_jpg(ruta, campos):
     else:
         texto = ('<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/">'
                  '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">%s</rdf:RDF></x:xmpmeta>'
-                 '<?xpacket end="w"?>' % _bloque_xmp(campos, True))
+                 '<?xpacket end="w"?>' % _bloque_xmp(campos, True, est))
         tras = [s for s in segs if s[0] in (0xE0, 0xE1)]               # despues del JFIF y del EXIF
         ini = fin = (tras[-1][1] + tras[-1][2]) if tras else 2
     carga = XMP_ID + texto.encode("utf-8")
@@ -433,6 +601,17 @@ def leer(ruta):
             f.seek(p)
             moov = f.read(n)
         udta = next(h for h in _atomos(moov, 8, len(moov)) if h[0] == b"udta")
+        try:                                                   # (24-nov) las estrellas que se ven en Windows
+            x = next(h for h in _atomos(moov, udta[1] + udta[3], udta[1] + udta[2]) if h[0] == b"Xtra")
+            puse, _, ajenas = _xtra_nuestro(_xtra_leer(moov[x[1] + x[3]:x[1] + x[2]]))
+            if puse is not None:
+                out["estrellas"] = str(puse)
+            if ajenas is not None:
+                out["estrellas_ajenas"] = "1"
+        except StopIteration:
+            pass
+        except (ValueError, struct.error):                     # un Xtra que no se entiende no se toca: como si fuera
+            out["estrellas_ajenas"] = "1"                      # de la persona (asi no se intenta en cada pasada)
         meta = next(h for h in _atomos(moov, udta[1] + udta[3], udta[1] + udta[2]) if h[0] == b"meta")
         ilst = next(h for h in _atomos(moov, meta[1] + meta[3] + 4, meta[1] + meta[2]) if h[0] == b"ilst")
         al_reves = {v: k for k, v in CLAVES.items()}
@@ -445,13 +624,26 @@ def leer(ruta):
     return out
 
 
+def al_dia(ruta, campos, ya=None):
+    """True si el archivo YA lleva eso (no hay que escribirlo): titulo, comentario y, salvo que la persona haya puesto
+    las suyas, las estrellas; en los videos tambien las etiquetas. Los espacios de mas no cuentan."""
+    ya = leer(ruta) if ya is None else ya
+    junto = lambda t: " ".join(str(t or "").split())
+    claves = ["titulo", "comentario"] + ([] if ruta.lower().endswith(EXT_FOTO) else ["etiquetas"])
+    if any(junto(ya.get(k)) != junto(campos.get(k)) for k in claves):
+        return False
+    return bool(ya.get("estrellas_ajenas")) or junto(ya.get("estrellas")) == junto(campos.get("estrellas"))
+
+
 def escribir(ruta, campos):
-    """Pone las etiquetas en el archivo. campos: {"titulo", "comentario", "descripcion", "etiquetas"} (textos).
-    True si quedaron escritas (o ya estaban iguales); False si el archivo no es de los que se pueden tocar sin riesgo."""
+    """Pone las etiquetas en el archivo. campos: {"titulo", "comentario", "descripcion", "etiquetas", "estrellas"}
+    (textos; estrellas «1» a «5»). True si quedaron escritas (o ya estaban iguales); False si el archivo no es de los
+    que se pueden tocar sin riesgo."""
     if ruta.lower().endswith(EXT_FOTO):
-        campos = {k: " ".join(str(v).split()) for k, v in campos.items() if k in ("titulo", "comentario", "etiquetas") and v}
+        campos = {k: " ".join(str(v).split()) for k, v in campos.items()
+                  if k in ("titulo", "comentario", "etiquetas", "estrellas") and v}
         ya = _leer_jpg(ruta)
-        if ya and all(ya.get(k) == v for k, v in campos.items() if k != "etiquetas"):
+        if ya and al_dia(ruta, campos, ya):
             return True
         st = os.stat(ruta)
         r = _escribir_jpg(ruta, campos)
@@ -468,8 +660,9 @@ def escribir(ruta, campos):
         return bool(_leer_jpg(ruta).get("comentario") == campos.get("comentario"))
     if not ruta.lower().endswith(EXT):
         return False
-    campos = {k: str(v) for k, v in campos.items() if k in CLAVES and v}
-    if leer(ruta) == campos:
+    campos = {k: str(v) for k, v in campos.items() if (k in CLAVES or k == "estrellas") and v}
+    ya = leer(ruta)
+    if al_dia(ruta, campos, ya) and ya.get("descripcion", "") == campos.get("descripcion", ""):
         return True
     arriba = _arriba(ruta)
     tipos = [a[0] for a in arriba]
@@ -499,7 +692,7 @@ def escribir(ruta, campos):
         f.flush()
         os.fsync(f.fileno())
     os.utime(ruta, ns=(st.st_atime_ns, st.st_mtime_ns))
-    return leer(ruta) == campos
+    return al_dia(ruta, campos)
 
 
 def restaurar(ruta):

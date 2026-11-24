@@ -131,13 +131,28 @@ class PasosQML:
         self._v = vista
         self.pasos = list(pasos)
         self.estado = dict(estado) if estado else {c: "pendiente" for c, _ in self.pasos}
+        self.detalles = {}                       # (23-nov) clave -> {detalle, tiempo, pct, desde} (interfaz/progreso.py)
 
     def _enviar(self):
-        self._v.raiz.setProperty("pasos", [{"clave": c, "nombre": n, "estado": self.estado[c]} for c, n in self.pasos])
+        filas = []
+        for c, n in self.pasos:
+            d = self.detalles.get(c) or {}
+            filas.append({"clave": c, "nombre": n, "estado": self.estado[c], "detalle": d.get("detalle", ""),
+                          "tiempo": d.get("tiempo", ""), "pct": float(d.get("pct", -1.0)),
+                          "desde": float(d.get("desde", 0.0))})
+        self._v.raiz.setProperty("pasos", filas)
 
     def reiniciar(self):
         self.estado = {c: "pendiente" for c, _ in self.pasos}
+        self.detalles = {}
         self._enviar()
+
+    def poner_detalles(self, detalles):
+        """(23-nov) Lo que lleva cada paso: {clave: {detalle, tiempo, pct (0-1; -1 sin cuenta), desde (ms)}}. Solo se
+        manda si cambio algo (se llama cada 2 s y con cada linea)."""
+        if detalles != self.detalles:
+            self.detalles = {c: dict(d) for c, d in detalles.items()}
+            self._enviar()
 
     def poner(self, clave, estado):
         if clave not in self.estado:
@@ -237,6 +252,15 @@ class TrabajoQML:
         self.raiz.entrar()
         QTimer.singleShot(0, self._alto)
 
+    def poner_ahora(self, texto):
+        """(23-nov) La linea de lo que esta haciendo (bajo los pasos)."""
+        if self.raiz.property("ahora") != (texto or ""):
+            self.raiz.setProperty("ahora", texto or "")
+
+    def poner_inicio(self, t):
+        """(23-nov) Desde cuando trabaja (segundos de la epoca): el pie cuenta «Lleva 12:34». None/0 = ya no."""
+        self.raiz.setProperty("inicio", float(t) * 1000.0 if t else 0.0)
+
     def _alto(self):
         # (medido: si cambia de alto mientras esta escondido, QQuickWidget sigue pintando en el lienzo de antes y
         # todo sale estirado) ya a la vista, se le cambia el alto de nuevo para que rehaga su lienzo
@@ -318,11 +342,12 @@ class PopupQML:
         v = self.v
         botones = list(botones)
         escape = len(botones) - 1 if escape is None else escape
-        try:                                        # lo de atras, borroso (achicar y agrandar: barato)
+        try:                                        # lo de atras, borroso (achicar: barato)
             foto = v.grab()
-            chica = foto.scaled(max(1, foto.width() // 12), max(1, foto.height() // 12), Qt.IgnoreAspectRatio,
-                                Qt.SmoothTransformation)
-            self.fondo.pm = chica.scaled(foto.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+            # (1.9.0) va CHICA: la tarjeta de video la estira suave al tamaño de la ventana (Image smooth, gratis);
+            # agrandarla aqui costaba 3-20 ms y subir a la tarjeta una imagen de 10 MB
+            self.fondo.pm = foto.scaled(max(1, foto.width() // 12), max(1, foto.height() // 12), Qt.IgnoreAspectRatio,
+                                        Qt.SmoothTransformation)
         except Exception:
             self.fondo.pm = None
         tapados = piezas.tapar_quick(v)             # la barra y el trabajo (tambien QML) no se ven encima
@@ -375,7 +400,7 @@ class PaginaQML:
         self.t = QTimer(self.widget, interval=400)
         self.t.timeout.connect(self.sincronizar)
         self.t.start()
-        self.reescalar()
+        self.reescalar(ya=True)
         self.sincronizar(forzar=True)
 
     def _accion(self, nombre, valor):
@@ -398,6 +423,8 @@ class PaginaQML:
             pass
         if not forzar and not vis:
             return
+        if vis and getattr(self, "_escala_vieja", False):
+            self.reescalar(ya=True)
         try:
             d = self.leer()
             txt = self._json.dumps(d, sort_keys=True, ensure_ascii=False)
@@ -409,6 +436,8 @@ class PaginaQML:
 
     def entrar(self, dx=0):
         """dx: (1.7.8) +1 la pagina entra desde la derecha (pestaña de mas adelante), -1 desde la izquierda."""
+        if getattr(self, "_escala_vieja", False):
+            self.reescalar(ya=True)
         self.sincronizar(forzar=True)
         self.raiz.entrar(dx)
         QTimer.singleShot(0, self._alto)
@@ -420,6 +449,14 @@ class PaginaQML:
             q.setFixedHeight(h + 1)
         q.setFixedHeight(h)
 
-    def reescalar(self):
+    def reescalar(self, ya=False):
+        # (1.9.0, medido) cada pagina re-acomoda todo su QML (7-20 ms): la escondida, al entrar (entrar()). Se mira su
+        # pagina, no el QQuickWidget: con un popup abierto (tapar_quick) la de la vista tambien esta escondida; si
+        # igual quedo pendiente, sincronizar() la pone al volver a verse
+        padre = self.widget.parentWidget()
+        if not ya and not (padre.isVisible() if padre is not None else self.widget.isVisible()):
+            self._escala_vieja = True
+            return
+        self._escala_vieja = False
         self.raiz.setProperty("escala", piezas.ESCALA)
         self._alto()

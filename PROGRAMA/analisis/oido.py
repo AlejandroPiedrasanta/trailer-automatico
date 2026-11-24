@@ -277,7 +277,7 @@ def escuchar(tomas, log=print):
     por_ruta = {d["ruta"]: d for d in tomas}
     log("El oído (earshot) escucha %d tomas (%.0f min de audio): aplausos, vítores, risas, discursos, música..." % (
         len(tomas), sum(d.get("dur", 0.0) for d in tomas) / 60.0))
-    t0, hechas = time.time(), [0]
+    t0, hechas, dicho = time.time(), [0], [time.time()]
 
     def recibir(m):
         if m.get("listo"):
@@ -296,7 +296,9 @@ def escuchar(tomas, log=print):
         else:
             d["oido"] = dict({"v": VERSION, "paso": PASO_S, "ventana": VENTANA_S}, **m.get("series", {}))
         hechas[0] += 1
-        if hechas[0] % 10 == 0 or hechas[0] == len(tomas):
+        # (23-nov, «que no se quede parado») cada 10 tomas eran ~2,5 min sin decir nada: tambien cada 6 s
+        if hechas[0] % 10 == 0 or hechas[0] == len(tomas) or time.time() - dicho[0] >= 6.0:
+            dicho[0] = time.time()
             log("  oído %d/%d  %s: %s" % (hechas[0], len(tomas), d.get("nombre", ""),
                                           ", ".join(NOMBRE[g] for g in _oyo(d)) or m.get("error") or "nada especial"))
     # (18-nov) «afinar»: las ventanas solapadas solo se escuchan donde una vecina oyo algo (PISO o mas) de lo que cuenta

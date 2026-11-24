@@ -60,17 +60,48 @@ VERSIONES = [
 INTRO_CORTES = [5] * 8                  # 8 fotos de 5 frames (24 fps): las unicas fotos del video
 # (17-nov, la persona: «en Ajustes, escoger los tipos de intro, ya sea la speed ramp u otras, con su SFX y musica») El
 # ritmo de las 8 fotos de la apertura; todos suman 40 cuadros (el impacto de la musica y del SFX cae ahi, al arrancar
-# el video). Cada uno tiene su SFX (hacer_sfx.RAMPAS -> recursos/sfx/XV_RAMPA*.wav; sfx.momentos lo elige por el ritmo).
+# el video). Cada uno tiene su SFX (hacer_sfx.RAMPAS -> recursos/sfx/XV_RAMPA*.wav; el del «zoom» lleva un riser con
+# licencia y va en recursos/audio; sfx.momentos lo elige por el ritmo y, si falta, pone XV_RAMPA).
 INTROS = {"rampa": [5] * 8,                      # pareja: una foto cada 5 cuadros
           "acelera": [9, 7, 6, 5, 4, 4, 3, 2],   # empieza lenta y se dispara hasta el impacto
           "frena": [2, 3, 4, 4, 5, 6, 7, 9],     # rafaga que se va deteniendo en la ultima foto
-          "latido": [7, 3, 7, 3, 7, 3, 7, 3]}    # de dos en dos, como un corazon
+          "latido": [7, 3, 7, 3, 7, 3, 7, 3],    # de dos en dos, como un corazon
+          # (1.9.0, la persona: «crea una intro rapid zoom», referencia «Efecto de alejamiento rápido en DaVinci
+          # Resolve», 0-6 s; eligio «8 fotos que aceleran» y que sea la de por defecto) cada foto se aleja a velocidad
+          # pareja (zoom_rapido: un Transform de Fusion con desenfoque de movimiento), cortes cada vez mas seguidos
+          "zoom": [7, 6, 5, 5, 5, 4, 4, 4]}
+INTRO_TIPO = "zoom"
 try:
     import motor as _motor_intro
-    INTRO_CORTES = list(INTROS.get(str(os.environ.get("TRAILER_INTRO") or
-                                       _motor_intro.leer_estado().get("intro_tipo") or "rampa").lower(), INTRO_CORTES))
+    INTRO_TIPO = str(os.environ.get("TRAILER_INTRO") or _motor_intro.leer_estado().get("intro_tipo") or "zoom").lower()
+    INTRO_CORTES = list(INTROS.get(INTRO_TIPO, INTRO_CORTES))
 except Exception:
     pass
+INTRO_ZOOM = INTRO_TIPO == "zoom"
+# (1.9.1, la persona: «agrega la opción en Tráiler de speed ramp»; eligio «en los videos» y «pocas, en momentos clave»)
+# Interruptor «Speed ramp» de la pagina Tráilers (estado «speed_ramp», de fabrica apagado). TRAILER_SPEED_RAMP=0/1 lo
+# fuerza (pruebas). Ver marcar_rampas.
+SPEED_RAMP = False
+try:
+    import motor as _motor_rampa
+    SPEED_RAMP = bool(_motor_rampa.leer_estado().get("speed_ramp", False))
+except Exception:
+    pass
+if os.environ.get("TRAILER_SPEED_RAMP") in ("0", "1"):
+    SPEED_RAMP = os.environ["TRAILER_SPEED_RAMP"] == "1"
+RAMPAS_POR_VERSION = {"1min": 2, "3min": 3, "15min": 6, "30min": 10}
+RAMPA_ZONAS = ("APERTURA", "FIESTA")
+RAMPA_ETIQUETAS = {"entrada", "baile", "primer_baile", "brindis", "pastel", "risas", "beso", "cortejo"}
+RAMPA_MIN_S, RAMPA_MAX_S = 2.2, 9.0   # largo en la linea (si el plano es corto, se junta con el siguiente; en el de
+#                                       30 min los planos duran 4-8 s: con 5 de tope salia 1 rampa de 10)
+RAMPA_RAPIDO = 2.5                    # el tramo rapido, al 250 % (con mezcla de cuadros: deja estela)
+RAMPA_RAPIDO_S = (0.2, 0.42)          # cuanto dura el tramo rapido (s)
+RAMPA_LENTO_DESDE = (0.40, 0.70)      # donde puede empezar la camara lenta (parte del plano), en un golpe si lo hay
+# (1.9.0) el zoom «Continuo»: la persona lo eligio de 5 propuestas; el primero (empezaba a 1,45 y se abria de golpe al
+# final, con obturador de 360° y bordes que se oscurecian) «debe ser mas fluido»
+ZOOM_INTRO_VEL = 0.045            # cuanto se aleja por cuadro, parejo: cada foto empieza a 1 + 0,045 x sus cuadros
+ZOOM_INTRO_OBTURADOR = 180.0      # desenfoque de movimiento como el de una camara (con 360 se embarraba)
+ZOOM_INTRO_BORDES = 0.25          # viñeta fija: cuanto mas oscuros quedan los bordes (0 = nada)
 ZONAS = ["MAQUILLAJE", "IGLESIA", "FIESTA"]
 COLORES = {"MAQUILLAJE": "Purple", "IGLESIA": "Green", "FIESTA": "Pink", "DESCARTADOS": "Brown"}
 PISTA_VIDEOS, PISTA_FOTOS, PISTA_TEXTOS, PISTA_WHOOSH = "VIDEOS", "FOTOS INTRO", "TEXTOS", "SFX WHOOSH"
@@ -97,6 +128,10 @@ LENTO_PARTE_ZONA = 0.45       # como mucho esta parte de las camaras lentas en u
 LENTO_TEMBLOR_MAX = 1.5       # temblor medio maximo para ir lento si la toma es de 48 fps o mas (lento natural)
 LENTO_TEMBLOR_WARP = 0.8      # (16-nov) y si es de 24-30 fps (Speed Warp inventa cuadros: con movimiento, deforma)
 LENTO_BARRIDO_WARP = 2.0      # px por cuadro de barrido medio maximo para Speed Warp
+# (1.9.3, MEDIDO en DaVinci con el 15 min de la boda de JUTIAPA, GoPro 5,3K HEVC: 2.000 cuadros todos en camara lenta
+# = 103 s con Speed Warp «Better» y 42-55 s con «Faster»; el mismo tramo sin lentos ~22 s. Cuadro a cuadro, con zoom,
+# no se ve diferencia: las lentas van solo en tomas firmes) «Faster»; TRAILER_SPEED_WARP=better vuelve al de antes
+SPEED_WARP_MEJOR = os.environ.get("TRAILER_SPEED_WARP", "").lower() == "better"
 # El FINAL: desde un poco antes del marcador CIERRE hasta el ultimo cuadro va UNA sola imagen con la tarjeta final
 # encima: la mejor foto del evento con zoom lento (Planificador.foto_final) o, si no hay foto que valga, el mejor
 # plano de video en camara lenta (Planificador.heroe). Antes caia el plano que tocara (espaldas bailando).
@@ -141,7 +176,9 @@ FOCO_MIN = 0.20               # enfoque respecto al tipico de ESA camara: por de
 # (antes 0,55 / 0,25 / 6,0 / 3,0), regla propia para el dron (FOCO_DRON, BARRIDO_DRON: antes no se le pedia enfoque) y
 # el «estorbo» fuera en TODAS las versiones, sin volver a admitirlo cuando falta material.
 FOCO_ABS_MIN = 0.62           # por debajo de esta parte del enfoque tipico de la mejor camara: borrosa, fuera
-FOCO_ABS_VERTICAL = 0.75      # lo vertical dentro del horizontal se ve chico y con los lados rellenos: mas exigente
+CAMARA_PROPIA_PARTE = 0.25    # (23-nov) una camara con esta parte de lo medido del evento y caras en la mitad de sus
+CAMARA_PROPIA_CARAS = 0.5     # tomas se mide contra su propio enfoque tipico, no contra la mejor (_enfoque_evento)
+FOCO_ABS_VERTICAL = 0.75     # lo vertical dentro del horizontal se ve chico y con los lados rellenos: mas exigente
 FOCO_ABS_BIEN = 0.9           # desde aqui no resta puntaje
 QUEMADO_MAX = 0.20            # parte de la imagen con las luces reventadas desde la que la toma no se usa
 QUEMADO_SUAVE = 0.02          # desde aqui ya resta puntaje: se prefiere otra toma del mismo momento
@@ -210,11 +247,32 @@ PESO_VERTICAL = 0.5               # en lo horizontal un video vertical ocupa sol
 #                                   imagen desenfocada): entra solo si es muy buena o si ya no quedan horizontales (16-nov)
 # Formato de la entrega (lo elige el apartado de la pantalla de Inicio):
 #   "horizontal" = 16:9, lo de siempre: entran los videos horizontales y los verticales.
-#   "vertical"   = 9:16 para celular, con las mismas duraciones: SOLO los videos grabados en vertical.
+#   "vertical"   = 9:16 para celular, con las mismas duraciones: lo grabado en vertical y (1.9.1) lo horizontal
+#                  recortado a lo importante.
 VERTICAL = str(globals().get("FORMATO") or "").lower().startswith("v")
+# (1.9.1, la persona: «si escojo plantillas, igual armas con lo de video en horizontal adaptado a vertical para llenar
+# las plantillas; pule más eso y en los videos largos hazlo mejor») Su XV 2026-11-15 no tenia ni un video vertical: las
+# plantillas 9:16 salieron con 2-3 tomas de dron y los verticales no se podian armar. En 9:16 entran tambien los
+# videos HORIZONTALES: se ve la franja de lo importante (vertical.py: la festejada al centro, sin cortar caras; en los
+# planos largos la franja la sigue). Valen menos que uno grabado en vertical (se ve un tercio de su ancho) y, si la
+# toma es HD (607 px estirados a 1080: blando), menos todavia.
+HORIZONTAL_EN_VERTICAL = bool(globals().get("HORIZONTALES_EN_VERTICAL", True))
+PESO_HORIZONTAL_V = 0.6
+PESO_HORIZONTAL_V_HD = 0.3
+
+
+def peso_formato(v):
+    """Lo que vale una toma por su forma en el formato que se arma (1 = la del formato)."""
+    if not VERTICAL:
+        return 1.0 if v.get("horizontal", True) else PESO_VERTICAL
+    if not v.get("horizontal", True):
+        return 1.0
+    corto = min(float(v.get("ancho") or 1920), float(v.get("alto") or 1080))
+    return PESO_HORIZONTAL_V if corto * 9.0 / 16.0 >= 1000 else PESO_HORIZONTAL_V_HD
 FORMATO = "vertical" if VERTICAL else "horizontal"
 ETIQUETA_VERTICAL = "VERTICAL"    # la linea se llama «XV 2026-11-08 - VERTICAL 1min»
-VERTICAL_MATERIAL_MIN = 1.0       # video vertical que hace falta: al menos lo que dura la version (medido: con
+VERTICAL_MATERIAL_MIN = 1.0       # video que sirve en 9:16 (1.9.1: vertical + horizontal) que hace falta: al menos lo
+#                                   que dura la version (medido con solo verticales: con
                                   # 17 min de video, la de 30 min repetia la mitad de los planos y la de 15, 4 de cada 10)
 
 
@@ -496,7 +554,14 @@ def decisiones(items):
     return out
 
 
-PREPARATIVOS_VISTOS = r"maquill|peina|peinad|arregl|ajust|vistiendo|se viste|revisa su vestido|se pone el vestido"
+PREPARATIVOS_VISTOS = r"maquill|peina|peinad|vistiendo|se viste|se pone el vestido"
+# (1.9.1, la persona: «en los videos largos hazlo mejor»; XV 2026-11-15: «La festejada se arregla el vestido» a las
+# 16:16, entre el discurso y el canto, la regla la mandaba a los preparativos y el capitulo de MAQUILLAJE salia con esa
+# toma 76 veces en el de 15 min y 121 en el de 30) arreglarse o ajustarse el vestido tambien pasa en la fiesta: esas
+# palabras solo cuentan si la hora no deja la toma en medio de otro momento (tomas de un mismo momento antes Y despues,
+# a menos de ENTRE_MIN)
+PREPARATIVOS_DUDOSOS = r"arregl|ajust|revisa su vestido"
+ENTRE_MIN = 20
 
 
 def _sin_acentos(t):
@@ -515,10 +580,12 @@ class Planificador:
         verticales = USAR_VIDEOS_VERTICALES or len(horizontales) < 3 or utiles_h < 45
         n_vert = len(validos) - len(horizontales)
         fotos = [i for i in items if i["tipo"] == "foto" and not i.get("descartar")]
-        if VERTICAL:                                     # 9:16: solo lo grabado en vertical
+        if VERTICAL:                                     # 9:16: lo grabado en vertical
             # (19-nov, la persona: «testea con tomas aéreas de dron... si es vertical, vertical») y el dron, recortado
-            # al centro: un vuelo 4K llena el 9:16 de sobra (1215 x 2160) y el paisaje aguanta el recorte
-            self.vids = [i for i in validos if not i.get("horizontal", True) or i["tipo"] == "dron"]
+            # al centro: un vuelo 4K llena el 9:16 de sobra (1215 x 2160) y el paisaje aguanta el recorte;
+            # (1.9.1) y lo horizontal, por la franja de lo importante (pesa menos: peso_formato)
+            self.vids = [i for i in validos if not i.get("horizontal", True) or i["tipo"] == "dron"
+                         or HORIZONTAL_EN_VERTICAL]
             fotos_v = [i for i in fotos if not i.get("horizontal", True)]
             if len(fotos_v) > len(INTRO_CORTES):         # alcanzan para la intro y el final
                 fotos = fotos_v
@@ -541,11 +608,22 @@ class Planificador:
                 print("Hay %d fotos horizontales: la intro se completa con fotos verticales recortadas." % len(fotos_h))
         # (1.8.7, NUESTRA BODA: la camara C puesta en hora por el sonido dejo «una joven con corona se maquilla» en
         # medio de la iglesia) el orden del dia gana a la IA por la hora; pero si la IA VIO preparativos claros (se
-        # maquilla, la peinan, le ajustan o revisa el vestido) la toma es de los preparativos
+        # maquilla, la peinan, se viste) la toma es de los preparativos. (1.9.1) Si solo se arregla o ajusta el
+        # vestido, cuenta solo si la hora no la deja en medio de otro momento; y lo que un armado anterior ya habia
+        # pasado asi a preparativos (queda guardado en el analisis) vuelve a su momento
         for i in validos + fotos:
             ia = i.get("ia") or {}
-            if ia.get("momento") == "MAQUILLAJE" and i.get("momento") != "MAQUILLAJE" and not i.get("tramos") and \
-                    re.search(PREPARATIVOS_VISTOS, _sin_acentos(ia.get("escena") or "")):
+            if i.get("tramos") or ia.get("momento") != "MAQUILLAJE":
+                continue
+            escena = _sin_acentos(ia.get("escena") or "")
+            clara = bool(re.search(PREPARATIVOS_VISTOS, escena))
+            if not clara and i.get("por") == "ia (preparativos que se ven)":
+                m = self._momento_vecinas(i, validos)
+                if m and m != "MAQUILLAJE":
+                    i["momento"], i["por"] = m, "ia (orden del dia)"
+                continue
+            if i.get("momento") != "MAQUILLAJE" and (clara or (re.search(PREPARATIVOS_DUDOSOS, escena)
+                                                              and not self._momento_vecinas(i, validos))):
                 i["momento"], i["por"] = "MAQUILLAJE", "ia (preparativos que se ven)"
         # (1.8.7, NUESTRA BODA: la recepcion en casa, el pastel y el primer baile —la IA vio «fiesta» en 25 tomas—
         # quedaron como IGLESIA por el orden del dia y el capitulo de la ceremonia tenia 8 min del mismo cuarto)
@@ -596,12 +674,30 @@ class Planificador:
     def _enfoque_evento(self, vids):
         """(16-nov) Enfoque tipico de la MEJOR camara del evento (sin el dron, que ve paisajes; con al menos 30 s
         medidos): contra eso se mide tambien cada toma, para que lo borroso del celular no pase por «normal»."""
-        por = {}
+        por, tomas = {}, {}
         for v in vids:
             if v["tipo"] != "dron":
                 por.setdefault(self._camara(v), []).extend((v.get("vista") or {}).get("nit") or [])
+                tomas.setdefault(self._camara(v), []).append(v)
         tipicos = [_mediana(x) for x in por.values() if len(x) >= 60] or [_mediana(x) for x in por.values() if x]
-        return max(tipicos) if tipicos else 0.0
+        mejor = max(tipicos) if tipicos else 0.0
+        # (23-nov, boda de JUTIAPA, VISTO en la hoja de cuadros: 29 de 40 videos de la GoPro —el maquillaje, los votos,
+        # el brindis, bien enfocados— quedaban fuera por «desenfocados»: su enfoque tipico es 14,6 y el de la Nikon, que
+        # grabo 10 tomas con tele, 37,1; el gran angular siempre mide menos) La camara que grabo buena parte del evento
+        # y en la que SE VE a la gente (la IA de caras encontro personas en la mitad de sus tomas o mas, y la de vista
+        # no las dio por inutiles) se mide contra LO SUYO. El celular de noche del 16-nov (gente como manchas: sin
+        # caras) sigue midiendose contra la mejor.
+        self._ref_camara = {}
+        total = sum(len(x) for x in por.values())
+        for k, x in por.items():
+            propio = _mediana(x) if x else 0.0
+            vs = tomas[k]
+            vistas = [v for v in vs if (v.get("ia") or {}).get("util") is not None]
+            if (0 < propio < mejor and len(vs) >= 3 and len(x) >= CAMARA_PROPIA_PARTE * total
+                    and sum(1 for v in vs if v.get("caras")) >= CAMARA_PROPIA_CARAS * len(vs)
+                    and sum(1 for v in vistas if v["ia"].get("util") is not False) >= 0.8 * len(vistas)):
+                self._ref_camara[k] = propio
+        return mejor
 
     def vista(self, v):
         """([(a, b)] tramos que NO se usan, [factor 0-1 de cada medio segundo]) por lo que se ve en la toma:
@@ -616,7 +712,7 @@ class Planificador:
         giro, pico, eje = vi.get("giro") or [], vi.get("pico") or [], vi.get("eje") or []
         tem, col = v.get("temblor") or [], v.get("color") or []
         dron = v["tipo"] == "dron"
-        ref_ev = self._ref_evento if not dron else 0.0
+        ref_ev = (self._ref_camara.get(self._camara(v)) or self._ref_evento) if not dron else 0.0
         abs_min = FOCO_ABS_VERTICAL if (not VERTICAL and not v.get("horizontal", True)) else FOCO_ABS_MIN
         # (16-nov) lo que la IA vio que no sirve en la revision cuadro por cuadro (techo, piso, de cabeza, gente sin
         # cabeza o sin ninguna cara): fuera ese tramo (medio paso antes y despues de cada cuadro malo)
@@ -764,8 +860,7 @@ class Planificador:
         cal = v.get("calidad") or []
         emo = self.emocion(v)
         _, factor = self.vista(v)
-        gente = self.gente(v) * self.lo_que_ve(v) * (PESO_VERTICAL if not VERTICAL and not v.get("horizontal", True)
-                                                     else 1.0)
+        gente = self.gente(v) * self.lo_que_ve(v) * peso_formato(v)
         tramo_ia = self.ia_tramos(v, len(cal))
         mov = [1.0] * len(cal)
         if v["tipo"] == "dron":                  # (1.8.7) un paneo parejo vale mas que el dron quieto o colgado
@@ -1089,7 +1184,7 @@ class Planificador:
         for f in sel:
             self.fotos_usadas.add(f["ruta"])
         sel.sort(key=lambda f: f["hora"])
-        return [{"tipo": "foto", "item": f, "dur_f": d} for f, d in zip(sel, INTRO_CORTES)]
+        return [{"tipo": "foto", "item": f, "dur_f": d, "intro": True} for f, d in zip(sel, INTRO_CORTES)]
 
     def capacidad_f(self, momento, corte):
         """(1.5.7) Frames de planos DISTINTOS que da el material bueno de ese momento con ese largo de corte (lo que
@@ -1109,6 +1204,16 @@ class Planificador:
             # cada plano sale de UN tramo bueno: con 2 planos por toma, lo que dan sus 2 tramos mas largos
             tramos = sorted((b - a for a, b in self.utiles(v, [momento]) if b - a >= lo), reverse=True)
             total += sum(min(t, pieza) for t in tramos[:tope])
+        return int(total * self.fps)
+
+    def material_f(self, momento):
+        """(1.9.1) Frames de TODO el material bueno de ese momento, sin el tope de planos por toma: lo que se puede
+        mostrar sin que se vea dos veces lo mismo (repartir_zonas reparte con esto el tiempo que nadie llena)."""
+        total = 0.0
+        for v in self.vids:
+            if v.get("momento") != momento and not any(m == momento for _, _, m in v.get("tramos") or []):
+                continue
+            total += sum(b - a for a, b in self.utiles(v, [momento]))
         return int(total * self.fps)
 
     def zona(self, momentos, dur_f, corte, rng, dron_primero, con_fotos=False):
@@ -1144,8 +1249,7 @@ class Planificador:
         for v, ls in cand:
             largo = sum(b - a for a, b in ls)
             peso = largo * (0.2 + self.puntaje(v, 0, v["dur"]))
-            if not VERTICAL and not v.get("horizontal", True):
-                peso *= PESO_VERTICAL            # (18-nov) lo vertical dentro del horizontal, solo si falta material
+            peso *= peso_formato(v)              # (18-nov) lo vertical en el horizontal (1.9.1: y al reves), si falta
             if v["ruta"] in (getattr(self, "otras_plantillas", None) or ()):
                 peso *= 0.2                      # (1.8.7) ya salio en otra plantilla: solo si no hay otra cosa
             pesos.append(peso)
@@ -1294,6 +1398,30 @@ class Planificador:
                 piezas.insert(0, dron)
         self.separar(piezas)
         return piezas, reusos
+
+    @staticmethod
+    def _momento_vecinas(i, todos, minutos=ENTRE_MIN):
+        """(1.9.1) El momento de las tomas que hay justo antes Y justo despues de esta por la hora (a menos de
+        `minutos`, de cualquier camara; sin contar las que la IA paso a preparativos), si es uno solo; si no, None."""
+        try:
+            h = _hora(i)
+        except (KeyError, TypeError, ValueError):
+            return None
+        lim = datetime.timedelta(minutes=minutos)
+        antes, despues = set(), set()
+        for o in todos:
+            if o is i or o.get("por") == "ia (preparativos que se ven)" or not o.get("momento"):
+                continue
+            try:
+                ho = _hora(o)
+            except (KeyError, TypeError, ValueError):
+                continue
+            if h - lim <= ho < h:
+                antes.add(o["momento"])
+            elif h < ho <= h + lim:
+                despues.add(o["momento"])
+        comun = antes & despues
+        return next(iter(comun)) if len(comun) == 1 else None
 
     def cabe_escena(self, v, f, sumar=False):
         """(1.8.7) La escena continua de la toma v aun tiene sitio para f cuadros (ESCENA_MAX_PARTE del capitulo)."""
@@ -1491,19 +1619,26 @@ class Planificador:
         if not cand:
             return None
         pruebas, vistas = [], {}
-        for _ in range(48 if tope else 24):
+        for _ in range(48 if tope else 60):
             v, (a, b) = rng.choice(cand)
             x = rng.uniform(a, b - l)
+            p = self.puntaje(v, x, l)
             if tope:
                 if v["ruta"] not in vistas:
                     vistas[v["ruta"]] = self.escenas_de(v)
                 if self.escena_llena(self.huella(v, x + l / 2.0), vistas[v["ruta"]]):
                     continue
-            pruebas.append((self.puntaje(v, x, l), v, x))
+            else:
+                # (1.9.1, XV 2026-11-15: el 019, la entrada, 59 veces en el de 30 min) el ultimo recurso tampoco repite
+                # LO MISMO: antes no se anotaba lo reusado y la mejor parte de la mejor toma salia una y otra vez. Pesa
+                # menos lo que ya salio (esa parte, y esa toma cuantas mas veces salio)
+                encima = any(x < y1 and x + l > y0 for y0, y1 in self.usados.get(v["ruta"], []))
+                p *= (0.25 if encima else 1.0) / (1.0 + 0.5 * self.usos.get(v["ruta"], 0))
+            pruebas.append((p, v, x))
         if not pruebas:
             return None
         _, v, x = max(pruebas, key=lambda t: t[0])
-        return self._pieza(v, x, lf, marcar=tope)
+        return self._pieza(v, x, lf)                     # (1.9.1) tambien el ultimo recurso queda anotado
 
     def multicamara(self, piezas, maximo=MULTICAM_MAX):
         """(1.5.7) Angulos alternos en los momentos clave: si un plano emotivo (el beso, los votos, el pastel...) tiene
@@ -1678,11 +1813,13 @@ def cdl_para(pieza, objetivo, sat_objetivo=None, fps=24.0):
     col = v.get("color") or []
     if not col or pieza["tipo"] == "foto":
         return None
-    i0 = max(0, int(pieza["ini"] / PASO_CALIDAD))
     # (1.8.0, auditoria) el tramo de la toma que SE VE: en camara lenta (vel 0,4) se usa menos toma; antes se medía
-    # 2,5 veces mas y un cambio de luz posterior podia entrar en la mediana del color
-    usa_s = pieza["dur_f"] / float(fps or 24.0) * float(pieza.get("vel") or 1.0)
-    i1 = min(len(col), max(i0 + 1, int(math.ceil((pieza["ini"] + usa_s) / PASO_CALIDAD))))
+    # 2,5 veces mas y un cambio de luz posterior podia entrar en la mediana del color. (1.9.1) Los tres tramos de un
+    # speed ramp, con TODO su tramo: el mismo color (si no, se notaria el cambio a la mitad de la toma)
+    ini_c, usa_s = pieza.get("rampa_tramo") or (pieza["ini"], pieza["dur_f"] / float(fps or 24.0) *
+                                                 float(pieza.get("vel") or 1.0))
+    i0 = max(0, int(ini_c / PASO_CALIDAD))
+    i1 = min(len(col), max(i0 + 1, int(math.ceil((ini_c + usa_s) / PASO_CALIDAD))))
     m = col[i0:i1] or col
     luz = _mediana([s[0] for s in m])
     negro = _mediana([s[1] for s in m])
@@ -1764,7 +1901,7 @@ def zonas_de(marcadores, total_f, intro_f, fps=24):
     return zonas
 
 
-def repartir_zonas(zonas, capacidad, fps):
+def repartir_zonas(zonas, capacidad, fps, bruto=None):
     """(1.5.7, la persona: «aplica todo»: zonas segun el material) Las zonas de los momentos duran lo que marca la
     plantilla; si un momento no tiene material para su zona (la boda del 7-nov: 5,6 min de iglesia para una zona de
     ~8 min en la version de 30, y nada de preparativos), su zona se achica a lo que alcanza sin repetir tomas y lo que
@@ -1772,39 +1909,85 @@ def repartir_zonas(zonas, capacidad, fps):
     nada desaparece (ni su capitulo). La apertura no se toca.
     (1.8.7, NUESTRA BODA: en el de 30 min la ceremonia pasaba a 20 min y la fiesta a 3) Cada momento queda entre la
     MITAD y 1,5 VECES lo que marca la plantilla: la historia sigue equilibrada aunque a todos les falte material (lo que
-    falta lo llenan planos mas largos y fotos de ese momento)."""
+    falta lo llenan planos mas largos y fotos de ese momento).
+    (1.9.1, la persona: «en los videos largos hazlo mejor»; XV 2026-11-15, sin ceremonia en iglesia) el tiempo de la
+    IGLESIA, que no tenia nada, se iba al unico capitulo que aun «podia crecer», el MAQUILLAJE, aunque su material daba
+    para 70 s: 249 s en el de 15 min y 498 en el de 30, llenos de la misma toma; la fiesta, con material de sobra, se
+    quedaba en su 1,5x. Ahora: (1) si un momento no tiene NADA, los demas pueden crecer en proporcion (su 1,5x se
+    escala: un XV sin iglesia tiene la ceremonia en el salon); (2) lo que sobra va primero a los que tienen planos
+    distintos de sobra (capacidad) y luego segun el material bueno que les QUEDA (bruto: Planificador.material_f, sin
+    el tope de 2 planos por toma; con la capacidad, que en el de 15 min usa cortes cortos, la fiesta contaba 193 s y el
+    maquillaje se llevaba 141 s de sus 8 videos), asi el que ya no tiene material casi no crece; (3) (la persona: «sí,
+    que baje») el momento que no tiene planos distintos ni para la mitad de su zona baja hasta lo que tiene (como
+    mucho a un cuarto) y no crece, salvo que asi otro pasara su 1,5x (NUESTRA BODA: entonces la mitad, como antes)."""
     mov = [(n, a, b) for n, a, b in zonas if n in capacidad]
     if len(mov) < 2:
         return zonas
+    bruto = dict(capacidad, **(bruto or {}))
     largo = {n: b - a for n, a, b in mov}
     total = sum(largo.values())
     vacios = {n for n in largo if capacidad[n] <= 0}
     if len(vacios) == len(largo):
         return zonas
-    piso = {n: 0 if n in vacios else largo[n] // 2 for n in largo}
-    techo = {n: 0 if n in vacios else int(largo[n] * 1.5) for n in largo}
-    nuevo = {n: min(techo[n], max(piso[n], capacidad[n])) for n in largo}
-    for _ in range(4):
+    llenos = [n for n in largo if n not in vacios]
+    escala = total / float(max(1, total - sum(largo[n] for n in vacios)))      # (1.9.1) sin un momento, crecen
+    techo = {n: 0 if n in vacios else int(largo[n] * 1.5 * escala) for n in largo}
+
+    def calcular(relajar):
+        """El largo de cada momento. relajar (1.9.1, la persona: «sí, que baje»): el que no tiene planos distintos ni
+        para la mitad de su zona baja hasta lo que tiene (como mucho a un cuarto) y no crece; su tiempo va a los demas."""
+        piso = {n: 0 if n in vacios else largo[n] // 2 for n in largo}
+        bajos = set()
+        if relajar:
+            for n in llenos:
+                p = max(capacidad[n], largo[n] // 4)
+                if p < piso[n]:
+                    piso[n] = p
+                    bajos.add(n)
+        nuevo = {n: min(techo[n], max(piso[n], capacidad[n])) for n in largo}
+
+        def dar(dif, crecen, peso, limite):
+            """Reparte dif entre `crecen` segun su peso, sin pasar `limite` (None: sin limite). Devuelve lo que falta."""
+            for _ in range(6):
+                vivos = [n for n in crecen if limite is None or nuevo[n] < limite[n]]
+                if dif < fps or not vivos:
+                    break
+                pt = float(sum(peso[n] for n in vivos)) or 1.0
+                dado = 0
+                for n in vivos:
+                    x = int(dif * peso[n] / pt)
+                    if limite is not None:
+                        x = min(x, limite[n] - nuevo[n])
+                    nuevo[n] += x
+                    dado += x
+                dif -= dado
+                if dado <= 0:
+                    break
+            return dif
         dif = total - sum(nuevo.values())
-        if abs(dif) < fps:
-            break
-        if dif > 0:                  # sobra tiempo: a los que aun pueden crecer (mas al que mas material le sobra)
-            crecen = [n for n in largo if n not in vacios and nuevo[n] < techo[n]]
-            sin_techo = not crecen
-            if sin_techo:
-                crecen = [n for n in largo if n not in vacios]
-            peso = {n: max(1, capacidad[n] - nuevo[n], largo[n] // 4) for n in crecen}
-            pt = float(sum(peso.values()))
-            for n in crecen:
-                x = int(dif * peso[n] / pt)
-                nuevo[n] += x if sin_techo else min(x, techo[n] - nuevo[n])
-        else:                        # el material da para mas: los que pasan su largo vuelven hacia el
+        if dif >= fps:               # sobra tiempo: a los que tienen planos distintos de sobra, luego segun el material
+            crecen = [n for n in llenos if n not in bajos] or llenos        # bueno que les queda (hasta su techo) y,
+            con_sobra = [n for n in crecen if capacidad[n] > nuevo[n]]      # si todos estan en su techo, a todos
+            dif = dar(dif, con_sobra, {n: max(1, capacidad[n] - nuevo[n]) for n in llenos},          # (como antes)
+                      {n: min(techo[n], capacidad[n]) for n in llenos})
+            dif = dar(dif, crecen, {n: max(1, bruto[n] - nuevo[n]) for n in llenos}, techo)
+            dar(dif, crecen, {n: max(1, bruto[n] - nuevo[n], largo[n] // 4) for n in llenos}, None)
+        for _ in range(4):           # el material da para mas: los que pasan su largo vuelven hacia el
+            dif = total - sum(nuevo.values())
+            if dif > -fps:
+                break
             exceso = {n: nuevo[n] - largo[n] for n in largo if nuevo[n] > largo[n]}
             if not exceso:
                 exceso = {n: nuevo[n] - piso[n] for n in largo if nuevo[n] > piso[n]}
             et = float(sum(exceso.values())) or 1.0
             for n, e in exceso.items():
                 nuevo[n] -= min(e, int(-dif * e / et))
+        return nuevo
+    nuevo = calcular(True)
+    if any(nuevo[n] > techo[n] + fps for n in llenos):
+        # bajar uno haria que otro pase su 1,5x (NUESTRA BODA: la ceremonia a 20 min y la fiesta a 3): la mitad de
+        # siempre como minimo, como antes
+        nuevo = calcular(False)
     nuevo[mov[-1][0]] += total - sum(nuevo.values())          # lo que quedo por redondeo
     if all(abs(nuevo[n] - largo[n]) < fps for n in largo):
         return zonas
@@ -1852,6 +2035,8 @@ def colocar(mp, secuencia, pool, fps):
             for x, (_, p) in zip(r, lote):
                 if p.get("vel", 1.0) < 1.0:
                     p["lento_ok"] = poner_lento(x, p)
+                elif p.get("vel", 1.0) > 1.0:            # (1.9.1) el tramo rapido de un speed ramp
+                    p["rapido_ok"] = poner_rapido(x, p)
                 ajustar(x, p["dur_f"])
                 if de_cabeza(p.get("item")):
                     # (1.8.7, NUESTRA BODA: 4 planos salian al reves) el celular grabado de cabeza trae «rotacion
@@ -1887,12 +2072,17 @@ def colocar(mp, secuencia, pool, fps):
             if p.get("sincro"):                  # se le ve hablar con su voz: a velocidad real
                 vel = 1.0
                 p.pop("vel", None)
-            elif CONFORMAR_30_A_24 and vel >= 1.0 and fps == 24 and 28.0 <= float(vf or 0) <= 31.0:
+            elif CONFORMAR_30_A_24 and vel >= 1.0 and fps == 24 and 28.0 <= float(vf or 0) <= 31.0 and \
+                    not p.get("rampa"):              # (1.9.1) los tramos de un speed ramp van a su velocidad
                 vel = p["vel"] = fps / float(vf)     # 30 c/s en 24: al 80 % se ven todos los cuadros, sin saltos
                 p["conformado"] = True
             # lento: Resolve conserva el largo en la timeline y usa menos fuente (desde el inicio); se centra la
-            # parte que se ve en el medio de la ventana elegida
-            s = int(round((p["ini"] + d / float(fps) * (1.0 - vel) / 2.0) * vf))
+            # parte que se ve en el medio de la ventana elegida. (1.9.1) Los tramos de un speed ramp, justo donde
+            # dicen (van seguidos en la toma)
+            if p.get("ini_exacto"):
+                s = int(round(p["ini"] * vf))
+            else:
+                s = int(round((p["ini"] + d / float(fps) * (1.0 - vel) / 2.0) * vf))
             n = max(1, int(math.ceil(d * vf / float(fps) - 1e-6)))
             lote.append(({"mediaPoolItem": c, "startFrame": s, "endFrame": s + n - 1,
                           "mediaType": 1, "trackIndex": pista, "recordFrame": pos}, p))
@@ -1913,7 +2103,150 @@ def poner_lento(x, p):
     if ok and (p["item"].get("fps") or 30) < 48 and not p.get("conformado"):
         try:
             x.SetProperty("RetimeProcess", resolve.RETIME_OPTICAL_FLOW)
-            x.SetProperty("MotionEstimation", resolve.MOTION_EST_SPEED_WARP_BETTER)
+            x.SetProperty("MotionEstimation", resolve.MOTION_EST_SPEED_WARP_BETTER if SPEED_WARP_MEJOR else
+                          getattr(resolve, "MOTION_EST_SPEED_WARP_FASTER", resolve.MOTION_EST_SPEED_WARP_BETTER))
+        except Exception:
+            pass
+    return ok
+
+
+def marcar_rampas(zonas, fps, ver, golpes, plan):
+    """(1.9.1, la persona: «agrega la opción en Tráiler de speed ramp»; eligio «en los videos» y «pocas, en momentos
+    clave») SPEED RAMP: en unas pocas tomas de accion (la entrada, el baile, el brindis...) el plano va a velocidad
+    normal, se ACELERA de golpe y cae en CAMARA LENTA justo en un golpe de la musica, como en los trailers de boda de
+    ahora. DaVinci no deja curvas de velocidad por script (TimelineItem.SetSpeed es UNA velocidad por clip): el plano
+    se parte en tres tramos SEGUIDOS de la misma toma (normal / RAMPA_RAPIDO con mezcla de cuadros / lento como la
+    camara lenta de siempre), sin fundidos entre ellos (transiciones), sin acercamientos ni estabilizador distintos, con
+    el mismo color (cdl_para) y la misma franja 9:16 (adaptar_vertical): se ve como una sola toma que cambia de
+    velocidad. Si el plano es corto (los de 1 y 3 min duran 1-2 s) se junta con el siguiente y la camara lenta empieza
+    en el corte que habia, que ya cae en un golpe (al_ritmo). Solo en tomas firmes (Speed Warp deforma lo que tiembla)
+    con material bueno de sobra. Va despues de marcar_efectos. Devuelve cuantas puso."""
+    if not SPEED_RAMP:
+        return 0
+    cuantas = RAMPAS_POR_VERSION.get(ver["sufijo"], 2)
+    separacion = int(float(ver["seg"]) / (cuantas + 1) / 2.0 * fps)      # que no queden juntas
+    golpes = sorted(golpes or [])
+    def rango(p):
+        """Lo que ocupa el plano en su toma (un lento, toda su ventana: lo que se ve va centrado en ella)."""
+        ini = float(p.get("ini") or 0.0)
+        return (ini, ini + p["dur_f"] / float(fps) * max(1.0, float(p.get("vel") or 1.0)))
+    usados = {}                                    # ruta -> [(ini, fin)] de todos los planos de la version
+    for _n, _a, _b, piezas in zonas:
+        for p in piezas:
+            if p.get("tipo") != "foto" and p.get("item"):
+                usados.setdefault(p["item"]["ruta"], []).append(rango(p))
+
+    def libre(v, a, b, propio):
+        """El tramo [a, b] de la toma es bueno (utiles) y ningun otro plano de la version lo usa."""
+        if not any(u0 <= a + 1e-3 and b <= u1 + 1e-3 for u0, u1 in plan.utiles(v)):
+            return False
+        return not any(x0 < b and a < x1 for x0, x1 in usados.get(v["ruta"], []) if (x0, x1) not in propio)
+
+    def no_sirve(p):
+        # (un plano que iba en camara lenta tambien sirve: la rampa termina en esa misma camara lenta)
+        return (p.get("tipo") != "video" or p.get("sincro") or p.get("habla") or p.get("heroe")
+                or p.get("final") or p.get("intro") or p.get("rampa") or p.get("multicam") or p.get("estabilizar")
+                or p.get("dron_clave") or de_cabeza(p.get("item")))
+    cand = []
+    for zi, (nombre, z0, _z1, piezas) in enumerate(zonas):
+        if nombre not in RAMPA_ZONAS:
+            continue
+        inicios = _inicios(piezas, z0)
+        for k, p in enumerate(piezas):
+            if no_sirve(p) or (k + 1 < len(piezas) and piezas[k + 1].get("multicam")):
+                continue
+            v = p["item"]
+            D, junta = p["dur_f"], 0
+            if D < RAMPA_MIN_S * fps:                     # corto: se junta con el siguiente (un plano menos)
+                q = piezas[k + 1] if k + 1 < len(piezas) else None
+                if q is None or q.get("sincro") or q.get("habla") or q.get("final") or q.get("heroe") or \
+                        q.get("rampa") or q.get("multicam") or q.get("intro") or \
+                        (k + 2 < len(piezas) and piezas[k + 2].get("multicam")):
+                    continue
+                D, junta = D + q["dur_f"], 1
+            if not (RAMPA_MIN_S * fps <= D <= RAMPA_MAX_S * fps):
+                continue
+            # donde empieza la camara lenta: el corte que habia (si se junto: ya cae en un golpe) o un golpe entre el
+            # 40 y el 70 % del plano
+            if junta:
+                lento_desde, al_golpe = p["dur_f"], True
+            else:
+                lo_f, hi_f = int(D * RAMPA_LENTO_DESDE[0]), int(D * RAMPA_LENTO_DESDE[1])
+                en_golpe = [g - inicios[k] for g in golpes if lo_f <= g - inicios[k] <= hi_f]
+                lento_desde = min(en_golpe, key=lambda x: abs(x - D * 0.52)) if en_golpe else int(D * 0.52)
+                al_golpe = bool(en_golpe)
+            d2 = int(round(min(RAMPA_RAPIDO_S[1], max(RAMPA_RAPIDO_S[0], lento_desde / float(fps) * 0.3)) * fps))
+            d1, d3 = lento_desde - d2, D - lento_desde
+            if d1 < int(0.35 * fps) or d3 < int(0.8 * fps):
+                continue
+            vf = float(v.get("fps") or 30)
+            vel3 = 0.4 if vf >= 48 else 0.5
+            ini1 = float(p.get("ini") or 0.0)
+            ini2 = ini1 + d1 / float(fps)
+            ini3 = ini2 + d2 / float(fps) * RAMPA_RAPIDO
+            fin = ini3 + d3 / float(fps) * vel3
+            propio = {rango(p)}
+            if not libre(v, ini1, fin, propio):
+                continue
+            # la camara lenta en una toma firme (con Speed Warp, lo que tiembla o barre se deforma)
+            natural = vf >= 48
+            pan = [math.hypot(x[0], x[1]) for x in (v.get("vista") or {}).get("pan") or []]
+            if plan.media(v.get("temblor") or [], ini3, fin - ini3) > (LENTO_TEMBLOR_MAX if natural else LENTO_TEMBLOR_WARP) \
+                    or plan.media(pan, ini3, fin - ini3) > (BARRIDO_MAX / 2.0 if natural else LENTO_BARRIDO_WARP):
+                continue
+            ia = v.get("ia") or {}
+            clave = bool(set(ia.get("etiquetas") or []) & RAMPA_ETIQUETAS)
+            puntos = plan.media(plan.emocion(v), ini1, fin - ini1) + (0.6 if clave else 0.0) + \
+                (0.3 if v.get("prota") else 0.0) + 0.2 * float(ia.get("belleza") or 5) / 10.0 + \
+                (0.2 if al_golpe else 0.0)
+            cand.append((puntos, zi, k, junta, d1, d2, d3, vel3, ini1, ini2, ini3, fin, inicios[k]))
+    puestas, donde = 0, []
+    for puntos, zi, k, junta, d1, d2, d3, vel3, ini1, ini2, ini3, fin, pos in sorted(cand, key=lambda c: -c[0]):
+        if puestas >= cuantas:
+            break
+        if any(abs(pos - x) < separacion for x in donde):
+            continue
+        nombre, z0, z1, piezas = zonas[zi]
+        # (al partir otro plano de la zona los indices cambian, las posiciones en la linea no): se busca de nuevo
+        ins = _inicios(piezas, z0)
+        k = next((i for i, p in enumerate(piezas) if ins[i] == pos and not p.get("rampa")
+                  and abs(float(p.get("ini") or 0) - ini1) < 1e-6), None)
+        if k is None:
+            continue
+        p = piezas[k]
+        if junta:
+            q = piezas[k + 1] if k + 1 < len(piezas) else None
+            if q is None or any(q.get(c) for c in ("rampa", "sincro", "habla", "final", "heroe", "multicam", "intro")):
+                continue
+        # lo que ya tomo otra rampa de la misma toma
+        if not libre(p["item"], ini1, fin, {rango(p)}):
+            continue
+        usados.setdefault(p["item"]["ruta"], []).append((ini1, fin))
+        rid = "r%d_%d" % (zi, pos)
+        tramo = (ini1, fin - ini1)
+        base = {c: p[c] for c in p if c not in ("vel", "zoom", "estabilizar", "lento_natural", "conformado")}
+        comun = {"rampa_id": rid, "rampa_tramo": tramo, "ini_exacto": True, "estabilizar": False}
+        partes = [dict(base, dur_f=d1, ini=ini1, rampa=1, **comun),
+                  dict(base, dur_f=d2, ini=ini2, vel=RAMPA_RAPIDO, rampa=2, **comun),
+                  dict(base, dur_f=d3, ini=ini3, vel=vel3, rampa=3, **comun)]
+        piezas[k:k + 1 + junta] = partes
+        donde.append(pos)
+        puestas += 1
+    return puestas
+
+
+def poner_rapido(x, p):
+    """(1.9.1) El tramo rapido de un speed ramp: velocidad p['vel'] (2,5x) con mezcla de cuadros (deja la estela del
+    movimiento, como un barrido) en vez de saltar cuadros. Como la camara lenta: DaVinci conserva el largo del clip en
+    la linea y usa mas toma desde su inicio."""
+    try:
+        ok = bool(x.SetSpeed({"Percentage": round(p["vel"] * 100.0, 2), "PitchCorrection": False,
+                              "StretchKeyframesToFit": False, "RippleTimeline": False}))
+    except Exception:
+        ok = False
+    if ok:
+        try:
+            x.SetProperty("RetimeProcess", resolve.RETIME_FRAME_BLEND)
         except Exception:
             pass
     return ok
@@ -1927,8 +2260,11 @@ def marcar_acercados(zonas):
         veces = {}
         for p in piezas:
             it = p["item"]
-            if p["tipo"] != "video" or p.get("sincro") or (it.get("ancho") or 0) < ACERCAR_ANCHO_MIN:
-                continue
+            if p["tipo"] != "video" or p.get("sincro") or p.get("rampa") or (it.get("ancho") or 0) < ACERCAR_ANCHO_MIN:
+                continue                         # (1.9.1) un speed ramp no cambia de encuadre a la mitad
+            if VERTICAL and it.get("horizontal", True) and \
+                    min(float(it.get("ancho") or 0), float(it.get("alto") or 0)) * 9.0 / 16.0 / ACERCAR < 1080:
+                continue                         # (1.9.1) en 9:16 ya se ve un tercio: acercar mas lo estiraria
             k = veces.get(it["ruta"], 0)
             veces[it["ruta"]] = k + 1
             if k % 2 == 1:
@@ -2252,20 +2588,35 @@ def titulos_a_vertical(tl):
 
 def sfx_propios(mp, root):
     """Los efectos de sonido propios del programa (recursos/sfx/XV_*.wav) en el media pool (06 EFECTOS\\SFX PROPIOS):
-    {"XV_GOLPE": MediaPoolItem, ...}. Los importa la primera vez."""
-    carpeta = os.path.join(rutas.RECURSOS, "sfx")
-    try:
-        archivos = sorted(f for f in os.listdir(carpeta) if f.lower().endswith(".wav"))
-    except OSError:
+    {"XV_GOLPE": MediaPoolItem, ...}. Los importa la primera vez. (1.9.0) Tambien los propios hechos con un sonido de
+    la biblioteca con licencia (rutas.AUDIO/XV_*.wav, hacer_sfx.CON_LICENCIA: la rampa de la intro «Zoom»); con el
+    mismo nombre en los dos, manda ese. Por el nombre EXACTO: buscar_clip busca un pedazo y «XV_RAMPA» podia dar
+    XV_RAMPA_ZOOM."""
+    wavs = {}
+    for carpeta, solo_xv in ((os.path.join(rutas.RECURSOS, "sfx"), False), (rutas.AUDIO, True)):
+        try:
+            nombres = sorted(os.listdir(carpeta))
+        except OSError:
+            continue
+        for f in nombres:
+            if f.lower().endswith(".wav") and (not solo_xv or f.upper().startswith("XV_")):
+                wavs[os.path.splitext(f)[0]] = os.path.join(carpeta, f)
+    if not wavs:
         return {}
+    hay = {}
+    pila = [root]
+    while pila:                                    # un solo recorrido del media pool (antes, uno por sonido)
+        car = pila.pop()
+        for c in car.GetClipList() or []:
+            hay.setdefault(os.path.splitext(c.GetName() or "")[0].lower(), c)
+        pila.extend(car.GetSubFolderList() or [])
     res, faltan = {}, []
-    for f in archivos:
-        clave = os.path.splitext(f)[0]
-        c = buscar_clip(root, clave)
+    for clave, ruta in sorted(wavs.items()):
+        c = hay.get(clave.lower())
         if c is not None:
             res[clave] = c
         else:
-            faltan.append(os.path.join(carpeta, f))
+            faltan.append(ruta)
     if faltan:
         efe = carpeta_raiz(mp, root, "EFECTOS")
         dest = next((x for x in efe.GetSubFolderList() or [] if x.GetName() == "SFX PROPIOS"), None) or \
@@ -2308,6 +2659,92 @@ def enfoque_cine(puestos):
     return n
 
 
+def zoom_rapido(puestos):
+    """(1.9.0, la persona: «la intro está fatal» y «crea una intro rapid zoom»; referencia: «Efecto de alejamiento
+    rápido en DaVinci Resolve», 0-6 s; de 5 propuestas eligio la «Continuo») Cada foto de la intro se ALEJA a
+    velocidad pareja (ZOOM_INTRO_VEL por cuadro, de 1 + VEL x cuadros hasta su encuadre) con el desenfoque de
+    movimiento del propio Transform (obturador ZOOM_INTRO_OBTURADOR) y una viñeta fija (ZOOM_INTRO_BORDES); como los
+    cortes van 7-6-5-5-5-4-4-4, se siente que acelera sin tirones. Un Transform de Fusion («ZOOM_RAPIDO», un keyframe
+    por cuadro, como el estabilizador: va ANTES del primer render del clip). Devuelve cuantas fotos quedaron."""
+    n = 0
+    for p, x in puestos:
+        if p.get("intro") and p["tipo"] == "foto":
+            try:
+                n += bool(_zoom_rapido(x, int(p["dur_f"])))
+            except Exception as ex:
+                aviso("Zoom rápido de la intro: %s" % ex)
+    return n
+
+
+def _zoom_rapido(item, dur):
+    comp = item.GetFusionCompByIndex(1) if item.GetFusionCompCount() else None
+    comp = comp or item.AddFusionComp()
+    if comp is None:
+        return False
+    comp.Lock()
+    try:
+        mi, mo = comp.FindTool("MediaIn1"), comp.FindTool("MediaOut1")
+        if mi is None or mo is None:
+            return False
+        tr = comp.FindTool("ZOOM_RAPIDO")
+        nuevo = tr is None
+        if nuevo:                                 # detras de lo que ya llegara a MediaOut (si otro paso puso algo)
+            tr = comp.AddTool("Transform", -32768, -32768)
+            tr.SetAttrs({"TOOLS_Name": "ZOOM_RAPIDO"})
+            antes = mo.Input.GetConnectedOutput()
+            tr.ConnectInput("Input", antes.GetTool() if antes is not None else mi)
+        tr.SetInput("MotionBlur", 1)              # el desenfoque del zoom: de su propio movimiento
+        tr.SetInput("Quality", 8)
+        tr.SetInput("ShutterAngle", float(ZOOM_INTRO_OBTURADOR))
+        ultimo, oscuro = tr, comp.FindTool("ZOOM_OSCURO")
+        if nuevo and ZOOM_INTRO_BORDES > 0:       # la viñeta: una elipse suave e invertida oscurece los bordes
+            try:
+                el = comp.FindTool("ZOOM_BORDE") or comp.AddTool("EllipseMask", -32768, -32768)
+                el.SetAttrs({"TOOLS_Name": "ZOOM_BORDE"})
+                el.SetInput("Width", 1.2)         # (Fusion: ancho y alto de la mascara, en anchos de imagen)
+                el.SetInput("Height", 1.2 * (16.0 / 9.0 if VERTICAL else 9.0 / 16.0))
+                el.SetInput("SoftEdge", 0.35)
+                el.SetInput("Invert", 1)
+                oscuro = comp.FindTool("ZOOM_OSCURO") or comp.AddTool("BrightnessContrast", -32768, -32768)
+                oscuro.SetAttrs({"TOOLS_Name": "ZOOM_OSCURO"})
+                oscuro.ConnectInput("Input", tr)
+                oscuro.ConnectInput("EffectMask", el)
+                ultimo = oscuro
+            except Exception:
+                oscuro = None
+        if nuevo:
+            mo.ConnectInput("Input", ultimo)
+        # el cuadro 0 del comp es el primero del clip en la linea (como en estabilizar.aplicar); keys de -1 a dur+1:
+        # el desenfoque de movimiento mira medio cuadro antes y despues de cada uno
+        f0 = int((comp.GetAttrs() or {}).get("COMPN_RenderStart", 0) or 0)
+        ini = 1.0 + ZOOM_INTRO_VEL * dur
+        ks = {}
+        for f in range(-1, dur + 2):
+            u = min(1.0, max(0.0, f / float(dur)))
+            ks[f0 + f] = {1: ini + (1.0 - ini) * u}          # lineal: la misma velocidad en todas las fotos
+        tr.Size = comp.BezierSpline()
+        tr.Size.GetConnectedOutput().GetTool().SetKeyFrames(ks, True)
+        if oscuro is not None:
+            oscuro.SetInput("Gain", 1.0 - ZOOM_INTRO_BORDES)
+    finally:
+        comp.Unlock()
+    # (1.9.0, MEDIDO en DaVinci 21.2, proyecto «PRUEBA ZOOM») lo armado por script en un comp NO llega al render: el comp
+    # queda «no modificado» (COMPB_Modified) y DaVinci renderiza el que creo vacio (ni un Transform fijo a 3x se veia,
+    # en foto ni en video, ni con LoadFusionCompByName). Exportarlo y volver a importarlo lo hace suyo: ahi si se ve.
+    import tempfile
+    ruta = os.path.join(tempfile.gettempdir(), "trailer_zoom_%d_%d.comp" % (os.getpid(), id(item) % 100000))
+    try:
+        if not item.ExportFusionComp(ruta, 1) or item.ImportFusionComp(ruta) is None:
+            aviso("Zoom rápido: DaVinci no tomó el comp de una foto (queda quieta).")
+            return False
+        return True
+    finally:
+        try:
+            os.remove(ruta)                       # (el .comp temporal es nuestro, no material)
+        except OSError:
+            pass
+
+
 def estabilizar(puestos, fps=24, limite_s=None):
     """(16-nov) Estabilizador PROPIO (estabilizar.py) en los planos que tiemblan: mide el movimiento del tramo, quita
     solo el temblor (los paneos quedan), acerca lo minimo (hasta estabilizar.ZOOM_MAX) y lo pone como un Transform de
@@ -2347,6 +2784,7 @@ def estabilizar(puestos, fps=24, limite_s=None):
             continue
         if est.aplicar(x, c, fps, p.get("ini", 0.0), vel, log=aviso):
             n += 1
+            p["estab_zoom"] = c["zoom"]          # (1.9.1) la franja 9:16 lo tiene en cuenta (adaptar_vertical)
             antes.append(c["antes"])
             despues.append(c["despues"])
             zooms.append(c["zoom"])
@@ -2574,6 +3012,8 @@ def _mover_corte(piezas, k, delta, fps, minimo_s=0.8):
     if k + 1 >= len(piezas):
         return False
     a, b = piezas[k], piezas[k + 1]
+    if b.get("rampa"):                  # (1.9.1) un tramo de speed ramp empieza donde sigue la toma: no se corre
+        return False
     if any(x.get("final") or x.get("heroe") for x in (a, b)):
         return False
     if a["dur_f"] + delta < minimo_s * fps or b["dur_f"] - delta < minimo_s * fps:
@@ -2636,7 +3076,7 @@ def _otra_vez_quien_habla(v, piezas, z0, largo, plan, fps):
     for k in sorted(range(len(piezas)), key=lambda k: -ini[k]):           # la mas cercana al final primero
         p = piezas[k]
         if ini[k] < desde or ini[k] + p["dur_f"] > hasta or p["dur_f"] < int(HABLA_OTRA_VEZ_S * fps) or \
-                p.get("final") or p.get("heroe") or p.get("sincro") or p.get("dron_clave"):
+                p.get("final") or p.get("heroe") or p.get("sincro") or p.get("dron_clave") or p.get("rampa"):
             continue
         t = v["ini"] + (ini[k] - v["pos"]) / float(fps)
         d = p["dur_f"] / float(fps)
@@ -2649,6 +3089,91 @@ def _otra_vez_quien_habla(v, piezas, z0, largo, plan, fps):
             p.pop(clave, None)
         return True
     return False
+
+
+def _corto(it):
+    """El lado corto de la toma (px)."""
+    return min(float(it.get("ancho") or 1920), float(it.get("alto") or 1080))
+
+
+LINEA_V = [1080, 1920]           # (1.9.1) el tamaño de la linea 9:16 (lo pone poner_vertical)
+
+
+def _linea_v(it):
+    """(ancho, alto, proporcion de la toma) para encuadre.acercar en la linea 9:16."""
+    w, h = float(it.get("ancho") or 1920), float(it.get("alto") or 1080)
+    prop = max(w, h) / max(1.0, min(w, h)) if it.get("horizontal", True) else min(w, h) / max(1.0, max(w, h))
+    return LINEA_V[0], LINEA_V[1], prop
+
+
+def adaptar_vertical(puestos, fps, items):
+    """(1.9.1, la persona: «si escojo plantillas, igual armas con lo de video en horizontal adaptado a vertical...; pule
+    más eso y en los videos largos hazlo mejor») En 9:16, cada toma HORIZONTAL se ve por la franja de lo importante
+    (vertical.py): la festejada al centro y ninguna cara cortada por el borde. En los planos largos que lo necesitan
+    (vertical.MOVER_MIN_S) la franja la SIGUE: un Transform «REENCUADRE» de Fusion detras del estabilizador (la camara
+    lenta queda fija). Los que ya centro enfocar (quien habla, aereas) no se tocan. Devuelve (fijas, que siguen)."""
+    if not VERTICAL:
+        return 0, 0
+    orden = [(p, x) for p, x in puestos if p["tipo"] == "video" and p["item"].get("horizontal", True)
+             and not p.get("encuadre") and not de_cabeza(p["item"])]
+    if not orden:
+        return 0, 0
+    try:
+        vt = _modulo("vertical")
+        est = _modulo("estabilizar")
+    except Exception as ex:
+        aviso("Sin encuadre vertical (%s)" % ex)
+        return 0, 0
+    t0 = time.time()
+    vt.preparar(log=print)                      # la IA de vista en la GPU (si cabe) y su presupuesto de tiempo
+    ps = vt.protas(items, TIPO_EVENTO)
+    ancho_l, alto_l = LINEA_V
+    vels = [est.velocidad(x) for _, x in orden]
+
+    def tramo(p, vel):
+        # (1.9.1) los tres tramos de un speed ramp se miden juntos (todo su tramo): la misma franja fija en los tres
+        if p.get("rampa_tramo"):
+            return tuple(p["rampa_tramo"])
+        return (float(p.get("ini") or 0.0), p["dur_f"] / float(fps) * vel)
+
+    claves = {}
+    for (p, _x), vel in zip(orden, vels):
+        claves.setdefault((p["item"]["ruta"],) + tramo(p, vel), p["item"])
+
+    def medir(par):
+        clave, it = par
+        try:
+            return clave, vt.medir(it, clave[1], clave[2], ps, TIPO_EVENTO)
+        except Exception:
+            return clave, None
+    with ThreadPoolExecutor(ESTAB_PARALELO) as ex:
+        medidas = dict(ex.map(medir, claves.items()))
+    cams = []
+    for (p, _x), vel in zip(orden, vels):
+        it = p["item"]
+        try:
+            fr = vt.franja(float(it.get("ancho") or 1920), float(it.get("alto") or 1080), ancho_l, alto_l,
+                           float(p.get("zoom") or 1.0))
+            cams.append(vt.camino(medidas.get((it["ruta"],) + tramo(p, vel)), fr, p["dur_f"] / float(fps),
+                                  mover=not _lento_de_verdad(p) and not p.get("rampa")))
+        except Exception:
+            cams.append(None)
+    vt.guardar()
+    fijas = siguen = 0
+    for ((p, x), vel), cam in zip(zip(orden, vels), cams):
+        if not cam:
+            continue
+        it = p["item"]
+        w, h = float(it.get("ancho") or 1920), float(it.get("alto") or 1080)
+        z, zs = float(p.get("zoom") or 1.0), float(p.get("estab_zoom") or 1.0)
+        if "fija" in cam:
+            p["encuadre"] = (z, vt.pan_para(cam["fija"], w, h, ancho_l, alto_l, z, zs), 0.0)    # lo pone acercar()
+            fijas += 1
+        elif vt.aplicar_camino(x, cam, fps, float(p.get("ini") or 0.0), vel, zs, z,
+                               vt.franja(w, h, ancho_l, alto_l), aviso):
+            siguen += 1
+    print("9:16: %d tomas horizontales en %.0f s: %s." % (len(orden), time.time() - t0, vt.resumen(cams)))
+    return fijas, siguen
 
 
 def enfocar(zonas, fps):
@@ -2693,12 +3218,26 @@ def enfocar(zonas, fps):
                             if lejos < 0.95:
                                 z = max(z, 1.0 / (1.0 - lejos))
                             z = round(min(z, z_max), 3)
-                        pan, tilt = enc.acercar(c[0], c[1], z, (0.5, 0.42))
+                        if VERTICAL:
+                            # (1.9.1) en 9:16 la franja ya es un tercio del ancho (como un 3x a lo ancho): no se acerca
+                            # la 1.a vez y la 2.a un poco, si la toma lo da nitido; se corre hasta su cara
+                            z = 1.0 if p["habla"] != 2 or _corto(it) * 9.0 / 16.0 / ZOOM_HABLA[0] < 1080 \
+                                else ZOOM_HABLA[0]
+                            pan, tilt = enc.acercar(c[0], c[1], z, (0.5, 0.42), *_linea_v(it))
+                        else:
+                            pan, tilt = enc.acercar(c[0], c[1], z, (0.5, 0.42))
                         p["encuadre"] = (z, pan, tilt)
                         n_c += 1
                 elif p["tipo"] == "dron":
                     s = enc.sujeto_aereo(it["ruta"], medio)
-                    if s and (abs(s[0] - 0.5) > 0.12 or abs(s[1] - 0.5) > 0.12):
+                    if VERTICAL:
+                        # (1.9.1) en 9:16 la franja de la aerea se corre a lo importante sin acercar (como en las
+                        # plantillas, armar_ref._centrar_aereo): antes salia con la cuenta del 16:9 y casi no se movia
+                        if s and abs(s[0] - 0.5) > 0.03:
+                            pan, _t = enc.acercar(s[0], 0.5, 1.0, (0.5, 0.5), *_linea_v(it))
+                            p["encuadre"] = (1.0, pan, 0.0)
+                            n_a += 1
+                    elif s and (abs(s[0] - 0.5) > 0.12 or abs(s[1] - 0.5) > 0.12):
                         pan, tilt = enc.acercar(s[0], s[1], ZOOM_AEREO)
                         p["encuadre"] = (ZOOM_AEREO, pan, tilt)
                         n_a += 1
@@ -3351,6 +3890,10 @@ def transiciones(tl, pv, zonas, ver, puestos=()):
             if st + z0 <= corte:
                 zona = n
         pa, pb = pieza_en.get(a.GetStart()), pieza_en.get(corte)
+        if pa and pb and pa.get("rampa_id") and pa.get("rampa_id") == pb.get("rampa_id"):
+            continue                    # (1.9.1) dentro de un speed ramp: es la misma toma, sin fundido
+        if pa and pb and pa.get("intro") and pb.get("intro"):
+            continue                                     # (1.9.0) entre las fotos de la intro, corte seco: van al ritmo
         if corte in inicios and inicios[corte] != "APERTURA":
             tipo, dur = "Dip To Color Dissolve", tr["zona"]
         elif tr["suave"] and zona in tr["suaves_en"]:
@@ -3612,12 +4155,14 @@ def textos_plantilla(tl, perfil):
                 comp = None
             if comp is None:
                 continue
+            # (1.9.3, MEDIDO: recorrer cada entrada con GetAttrs eran 20.945 llamadas y 3 s al rearmar) el texto de Text+
+            # y Text3D esta siempre en «StyledText»: una llamada por herramienta (None en las demas)
             for herr in (comp.GetToolList(False) or {}).values():
-                for inp in (herr.GetInputList() or {}).values():
-                    iid = (inp.GetAttrs() or {}).get("INPS_ID", "")
-                    if not iid.endswith("StyledText"):
-                        continue
-                    actual = herr.GetInput(iid)
+                for iid in ("StyledText",):
+                    try:
+                        actual = herr.GetInput(iid)
+                    except Exception:
+                        actual = None
                     if not isinstance(actual, str):
                         continue
                     for clave_txt, clave in TEXTOS_FIJOS:
@@ -3861,15 +4406,41 @@ def whooshes(tl, mp, zonas, fps, clip, sobrio=False):
     return n
 
 
+_INDICE_CLIPS = {}      # id de la carpeta -> [(nombre en minusculas, clip)] en el orden de siempre (carpeta y luego hijas)
+
+
+def _indice_clips(carpeta):
+    out = []
+
+    def recorrer(f):
+        for c in f.GetClipList() or []:
+            out.append(((c.GetName() or "").lower(), c))
+        for s in f.GetSubFolderList() or []:
+            recorrer(s)
+    recorrer(carpeta)
+    return out
+
+
 def buscar_clip(carpeta, clave):
+    """El primer clip (la carpeta y luego sus hijas) cuyo nombre lleva `clave`. (23-nov, MEDIDO en DaVinci: cada
+    busqueda recorria el media pool entero, 21.737 GetName y 3,9 s por armado) El recorrido se guarda por carpeta
+    mientras dura este armado; si no aparece ahi, se recorre otra vez (pudo importarse despues)."""
     clave = clave.lower()
-    for c in carpeta.GetClipList() or []:
-        if clave in (c.GetName() or "").lower():
-            return c
-    for s in carpeta.GetSubFolderList() or []:
-        r = buscar_clip(s, clave)
-        if r:
-            return r
+    try:
+        uid = carpeta.GetUniqueId()
+    except Exception:
+        uid = None
+    fresco = uid is None or uid not in _INDICE_CLIPS
+    if fresco:
+        _INDICE_CLIPS[uid] = _indice_clips(carpeta)
+    for vuelta in range(2):
+        for n, c in _INDICE_CLIPS[uid]:
+            if clave in n:
+                return c
+        if fresco:
+            break
+        _INDICE_CLIPS[uid] = _indice_clips(carpeta)
+        fresco = True
     return None
 
 
@@ -4134,13 +4705,18 @@ def main():
     reporte["tipo"] = TIPO_EVENTO
     reporte["formato"] = FORMATO
     util_v = 0.0
-    if VERTICAL:                                     # solo acepta videos grabados en vertical
-        vert = [i for i in items if i["tipo"] != "foto" and not i.get("descartar") and not i.get("horizontal", True)]
-        util_v = sum(max(0.0, i.get("dur", 0) - sum(b - a for a, b in i.get("oscuros") or [])) for i in vert)
-        if not vert:
-            aviso("El formato vertical solo usa videos grabados en vertical y en el material no hay ninguno.")
+    if VERTICAL:                                     # lo vertical y (1.9.1) lo horizontal recortado a lo importante
+        def _util(i):
+            return max(0.0, i.get("dur", 0) - sum(b - a for a, b in i.get("oscuros") or []))
+        vids = [i for i in items if i["tipo"] != "foto" and not i.get("descartar")]
+        vert = [i for i in vids if not i.get("horizontal", True)]
+        horiz = [i for i in vids if i.get("horizontal", True) and (HORIZONTAL_EN_VERTICAL or i["tipo"] == "dron")]
+        util_v = sum(_util(i) for i in vert) + sum(_util(i) for i in horiz)
+        if not vert and not horiz:
+            aviso("El formato vertical no tiene videos que usar en el material.")
             return
-        print("Formato vertical (9:16): %d videos verticales, %s de video." % (len(vert), _min_seg(util_v)))
+        print("Formato vertical (9:16): %d videos verticales (%s) y %d horizontales recortados a lo importante (%s)."
+              % (len(vert), _min_seg(sum(_util(i) for i in vert)), len(horiz), _min_seg(sum(_util(i) for i in horiz))))
     f = datetime.date.fromisoformat(analisis["fecha"])
     fecha_txt = "%02d · %02d · %d" % (f.day, f.month, f.year)
     for i, z in enumerate(ZONAS, 1):                 # carpetas del media pool con los nombres del perfil
@@ -4155,7 +4731,7 @@ def main():
         if SOLO and ver["sufijo"] not in SOLO:
             continue
         if VERTICAL and util_v < ver["seg"] * VERTICAL_MATERIAL_MIN:
-            aviso("%s no se arma: hay %s de video vertical y hacen falta al menos %s." % (
+            aviso("%s no se arma: hay %s de video que sirve en 9:16 y hacen falta al menos %s." % (
                 etiqueta(ver), _min_seg(util_v), _min_seg(ver["seg"] * VERTICAL_MATERIAL_MIN)))
             continue
         if ver["plantilla"] not in tls:
@@ -4201,8 +4777,9 @@ def main():
             plan.usos, plan.escenas, plan.repetidos = {}, [], 0      # (1.8.7) tope de 2 por toma y por escena
             zonas, info_z, al_golpe = [], {}, 0
             capacidad = {m: plan.capacidad_f(m, ver["corte"]) for m in ZONAS}
+            bruto = {m: plan.material_f(m) for m in ZONAS}          # (1.9.1) todo el material bueno de cada momento
             for nombre, z0, z1 in repartir_zonas(zonas_de(tpl.GetMarkers() or {}, total_f, intro_f, fps), capacidad,
-                                                 fps):
+                                                 fps, bruto):
                 if nombre == "APERTURA":
                     # el resumen inicial muestra los mejores momentos: en las versiones largas NO los reserva,
                     # porque luego se cuentan completos en su zona (en 1 y 3 min si, para no repetir planos)
@@ -4326,13 +4903,21 @@ def main():
                 print("%s: %d planos en el orden que pusiste a mano." % (ver["sufijo"], movidos))
             lentos, estab = plan.marcar_efectos(zonas, fps, LENTOS.get(ver["sufijo"], 2),
                                                 LENTO_NATURAL.get(ver["sufijo"], 0.0))
+            rampas = 0
+            try:                                 # (1.9.1) speed ramp en unas pocas tomas de accion (Tráilers)
+                rampas = marcar_rampas(zonas, fps, ver, golpes, plan)
+                if SPEED_RAMP:
+                    print("%s: %d speed ramp%s (normal, rapido y camara lenta en el golpe)." % (
+                        ver["sufijo"], rampas, "" if rampas == 1 else "s"))
+            except Exception as ex:
+                aviso("%s: no se pudo poner el speed ramp (%s)" % (ver["sufijo"], ex))
             if plan.repetidos:
                 aviso("%s: %d planos pasan de 2 veces la misma toma (no alcanzaron ni las fotos)."
                       % (ver["sufijo"], plan.repetidos))
             planes.append((ver, tpl, intro, zonas))
             reporte["versiones"].append({"timeline": rutas.nombre_linea(evento, etiqueta(ver)), "zonas": info_z,
                                          "fotos_intro": len(intro), "cortes_al_ritmo": al_golpe,
-                                         "camara_lenta": lentos, "estabilizar": estab})
+                                         "camara_lenta": lentos, "estabilizar": estab, "speed_ramp": rampas})
             print("%s: %s | %d cortes al ritmo | %d en camara lenta | %d a estabilizar" % (ver["sufijo"], ", ".join(
                 "%s %d" % (n, z["videos"]) for n, z in info_z.items()), al_golpe, lentos, estab))
         return plan, planes
@@ -4351,13 +4936,19 @@ def main():
                         for i in range(1, project.GetTimelineCount() + 1)) if evento else True
     except Exception:
         ya_armado = True
+    # (23-nov, MEDIDO: el pase vertical exportaba el proyecto OTRA vez minutos despues del horizontal, 2,3 s en el de
+    # prueba y 14,4 s en EVENTOS CINEMA) un respaldo por armado (motor._armar_todo pone rutas._armado_id): el del
+    # primer pase ya guarda las lineas como estaban antes de tocar nada
+    marca = (project.GetName(), getattr(rutas, "_armado_id", None))
     try:
         pm.SaveProject()
-        if ya_armado:
+        if ya_armado and not (marca[1] and getattr(rutas, "_respaldo_armado", None) == marca):
             dir_r = rutas.RESPALDOS
             os.makedirs(dir_r, exist_ok=True)
-            pm.ExportProject(project.GetName(), os.path.join(
-                dir_r, "%s_%s.drp" % (project.GetName(), datetime.datetime.now().strftime("%Y-%m-%d_%H%M"))), False)
+            if pm.ExportProject(project.GetName(), os.path.join(
+                    dir_r, "%s_%s.drp" % (project.GetName(), datetime.datetime.now().strftime("%Y-%m-%d_%H%M"))),
+                    False):
+                rutas._respaldo_armado = marca
     except Exception as ex:
         aviso("No se pudo respaldar el proyecto (%s)" % ex)
 
@@ -4500,6 +5091,8 @@ def main():
         tam_v = None
         if VERTICAL:                            # la copia pasa a 9:16; la plantilla sigue como estaba
             tam_v = poner_vertical(tl)
+            if tam_v:
+                LINEA_V[:] = [int(tam_v[0]), int(tam_v[1])]
             if not tam_v:
                 aviso("%s: DaVinci no dejo poner la linea en vertical; no se arma." % nombre)
                 project.SetCurrentTimeline(tpl)
@@ -4628,6 +5221,13 @@ def main():
         if not VERTICAL:                                # lo vertical, entero y con los lados llenos
             info["verticales_enteros"] = vestir_verticales(puestos)
         info["estabilizados"] = estabilizar(puestos, fps)
+        if VERTICAL:                                    # (1.9.1) lo horizontal en 9:16: la franja de lo importante
+            try:
+                info["horizontales_9_16"] = adaptar_vertical(puestos, fps, items)
+            except Exception as ex:
+                aviso("%s: no se pudo encuadrar lo horizontal en 9:16 (%s); queda al centro." % (nombre, ex))
+        if INTRO_ZOOM:                                  # (1.9.0) la intro «Zoom» (Continuo): cada foto se aleja parejo
+            info["intro_zoom"] = zoom_rapido(puestos)
         if ENFOQUE_CINE:
             info["enfoque_cine"] = enfoque_cine(puestos)
         info["acercados"] = acercar(puestos)
@@ -4756,10 +5356,21 @@ def main():
                            "TargetDir": salida, "CustomName": rutas.nombre_video(nombre)}     # «VIDEO FINAL 1 MIN»
                 if tam_v:                        # el archivo sale en 9:16, del tamano de la linea
                     ajustes.update({"FormatWidth": tam_v[0], "FormatHeight": tam_v[1]})
+                # (1.9.3, Ajustes > «Entregar en 4K», MEDIDO: el mismo tiempo de render, 6,7 veces el peso y mas
+                # detalle en una pantalla 4K; DaVinci re-muestrea desde el original) el doble de cada lado
+                k4 = False
+                try:
+                    import motor as _motor
+                    k4 = bool(_motor.leer_estado().get("entrega_4k"))
+                except Exception:
+                    pass
+                if k4:
+                    w0, h0 = (tam_v[0], tam_v[1]) if tam_v else (1920, 1080)
+                    ajustes.update({"FormatWidth": w0 * 2, "FormatHeight": h0 * 2})
                 project.SetRenderSettings(ajustes)
                 info["render_en_cola"] = bool(project.AddRenderJob())
-                if tam_v:                        # la pagina Entrega vuelve al tamano horizontal de siempre
-                    project.SetRenderSettings({"FormatWidth": tam_v[1], "FormatHeight": tam_v[0]})
+                if tam_v or k4:                  # la pagina Entrega vuelve al tamano horizontal de siempre
+                    project.SetRenderSettings({"FormatWidth": 1920, "FormatHeight": 1080})
             except Exception as ex:
                 aviso("%s: no se pudo encolar el render (%s)" % (nombre, ex))
         if EDITABLE:                             # la plantilla de DaVinci de este video: EVENTO TERMINADO/PLANTILLAS DE LOS VIDEOS

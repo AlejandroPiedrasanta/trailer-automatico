@@ -44,6 +44,7 @@ LUMA_MEDIOS = 0.32                          # tope de la limpieza de luz fuera d
 NITIDEZ = {1: (0.55, 0.004), 2: (0.45, 0.005), 3: (0.32, 0.007), 4: (0.20, 0.010), 5: (0.10, 0.014)}
 TOPE_NITIDEZ = 0.035
 NIVEL_SIN_MEDIDA = 2                        # si un video no se pudo medir
+DRX_DESDE = 3                               # (1.9.3) el ajuste de DaVinci guardado, desde «ruido medio» (N3)
 
 
 def archivo(n):
@@ -320,7 +321,9 @@ def aplicar(item, intensidad, medida=None, drx=None):
     g = item.GetNodeGraph()
     if g is None:
         return None
-    if drx and int(intensidad) > 0:
+    # (1.9.3) el ruido de DaVinci (temporal: el mas limpio y el mas caro de renderizar) solo donde hace falta, en las
+    # tomas medidas con ruido medio o mas; las limpias siguen con el DCTL del programa (liviano)
+    if drx and int(intensidad) > 0 and nivel_para(medida, intensidad) >= DRX_DESDE:
         try:
             aplicado = g.ApplyGradeFromDRX(drx, 0)
         except Exception:

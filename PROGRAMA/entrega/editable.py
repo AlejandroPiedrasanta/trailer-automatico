@@ -595,13 +595,24 @@ def _hacer_y_enlazar(project, videos, log):
                 fpss[o] = cs[0].GetClipProperty("FPS") or None
             except Exception:
                 tcs[o] = None
+        # (23-nov, la persona: «que no se quede parado»; VISTO: 116 s en «Haciendo proxies…» sin decir nada) por donde va,
+        # al menos cada 6 s: al hacerlos y al enlazarlos
+        hechos, dicho = {}, time.time()
         with ThreadPoolExecutor(PARALELO) as ex:
-            hechos = dict(zip(videos, ex.map(lambda o: hacer_proxy(o, log, cod, tcs.get(o), fpss.get(o)), list(videos))))
+            for k, (o, p) in enumerate(zip(list(videos), ex.map(
+                    lambda o: hacer_proxy(o, log, cod, tcs.get(o), fpss.get(o)), list(videos))), 1):
+                hechos[o] = p
+                if time.time() - dicho >= 6.0 and k < len(videos):
+                    dicho = time.time()
+                    log("  proxies %d/%d" % (k, len(videos)))
         n = fallos = 0
-        for original, clips in videos.items():
+        for k, (original, clips) in enumerate(videos.items(), 1):
             p = hechos.get(original)
             if not p:
                 continue
+            if time.time() - dicho >= 6.0:
+                dicho = time.time()
+                log("  proxies enlazados %d/%d" % (k, len(videos)))
             for c in clips:
                 try:
                     ok = (c.GetClipProperty("Proxy Media Path") or "") == p and p not in _REHECHOS

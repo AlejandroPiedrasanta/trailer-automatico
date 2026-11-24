@@ -31,8 +31,9 @@ PROYECTOS_ANTERIORES = ["TRAILER DE XV"]   # nombre viejo: se sigue encontrando 
 VERSIONES = ["1min", "3min", "15min", "30min"]
 SEGUNDOS = {"1min": 60, "3min": 180, "15min": 900, "30min": 1800}      # lo que dura cada version
 ETIQUETA_VERTICAL = "VERTICAL"      # las lineas del formato vertical: «XV 2026-11-08 - VERTICAL 1min»
-SIN_VERTICALES = ("El formato vertical solo usa videos grabados en vertical (celular parado) y no alcanzan los que hay "
-                  "en el material. Suelta más videos verticales o arma el formato horizontal.")
+# (1.9.1) el formato vertical usa tambien lo horizontal, recortado a lo importante (build_trailers.HORIZONTAL_EN_VERTICAL)
+SIN_VERTICALES = ("El formato vertical no tiene video suficiente en el material para esa duración. Suelta más "
+                  "videos o arma una duración más corta.")
 # Voz original (pastor, brindis, discursos) sobre la musica: como viene cada version en Ajustes. En la de 30 min va
 # siempre y no se pregunta (igual que VOZ_DEFECTO / VOZ_SIEMPRE de build_trailers.py).
 VOZ_DEFECTO = {"1min": False, "3min": False, "15min": True, "30min": True}    # (18-nov) la de 30 tambien se puede apagar
@@ -109,7 +110,8 @@ def espacio_para_render(versiones):
     while d and not os.path.isdir(d):
         d = os.path.dirname(d)
     libre = shutil.disk_usage(d or rutas.BASE).free / 1e9
-    return libre, sum(GB_POR_VERSION.get(v, 2.2) for v in versiones or VERSIONES) * 2 + 1.0
+    k = 2.5 if leer_estado().get("entrega_4k") else 1.0      # (1.9.3, medido) en 4K H.265 pesa ~2,1 veces
+    return libre, sum(GB_POR_VERSION.get(v, 2.2) for v in versiones or VERSIONES) * 2 * k + 1.0
 
 
 def esperar_copias(log, max_s=180):
@@ -986,6 +988,12 @@ def _dvr():
     except ImportError as ex:
         raise RuntimeError("DaVinci Resolve está instalado pero no se pudo cargar su conexión (%s). Reinstala DaVinci "
                            "Resolve Studio o actualízalo." % ex)
+    if os.environ.get("TRAILER_PERFIL_DV") == "1":     # (23-nov) medir cada llamada a DaVinci: herramientas/perfil_davinci.py
+        try:
+            import perfil_davinci
+            perfil_davinci.instalar(DaVinciResolveScript)
+        except Exception:
+            pass
     return DaVinciResolveScript
 
 
@@ -1097,6 +1105,161 @@ def _cerrar_cuadros(titulos):
     return len(hechas)
 
 
+# --- bibliotecas de proyectos de DaVinci (dblist.conf) -------------------------------------------------------------
+# (23-nov, VISTO) La persona movio «E:\VFX-EDICION VIDEOS\DAVINCI RESOLVE\RECURSOS PREMIUN» a «E:\RECURSOS PREMIUN» y
+# con ella la biblioteca de DaVinci (GANCHOS PACK, donde vive EVENTOS CINEMA). DaVinci arranco SIN NINGUNA biblioteca
+# (davinci_resolve.log: «Cannot connect to ... database: path not found»), contesto a la API y se CAYO (volcado .dmp)
+# al pedirle el proyecto; el vigia lo cerro, se reintento, paso igual y salio «DaVinci se trabó en armado». Antes de
+# hablarle se mira su lista: la biblioteca que ya no esta donde dice y aparece movida se apunta ahi (con DaVinci
+# cerrado; copia de la lista en dblist.conf.antes-<fecha>); si no queda ninguna, se dice que pasa en vez de tumbarlo.
+_BIBLIOTECAS = {"listo": False, "avisado": False}
+_NO_MIRAR = {"windows", "program files", "program files (x86)", "programdata", "system volume information",
+             "recovery", "perflogs", "users", "applications", "library", "system"}
+
+
+def _dblist():
+    """La lista de bibliotecas de proyectos de DaVinci (dblist.conf), o None."""
+    if rutas.ES_WIN:
+        dirs = [os.path.join(os.environ.get("APPDATA", ""), "Blackmagic Design", "DaVinci Resolve", "Preferences")]
+    else:
+        dirs = [os.path.expanduser("~/Library/Preferences/Blackmagic Design/DaVinci Resolve"),
+                os.path.expanduser("~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Preferences")]
+    for d in dirs:
+        p = os.path.join(d, "dblist.conf")
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def _ruta_de_dblist(s):
+    """dblist.conf guarda «E\\carpeta» (sin los dos puntos: son su separador)."""
+    if rutas.ES_WIN and len(s) >= 2 and s[0].isalpha() and s[1] == "\\":
+        return s[0] + ":" + s[1:]
+    return s
+
+
+def _clave_ruta(p):
+    return os.path.normcase(os.path.normpath(p))
+
+
+def _raices_discos():
+    if rutas.ES_WIN:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        return [c + ":\\" for c in "CDEFGHIJKLMNOPQRSTUVWXYZ" if k32.GetDriveTypeW(c + ":\\") in (2, 3)]  # sin red
+    try:
+        vols = [os.path.join("/Volumes", v) for v in sorted(os.listdir("/Volumes"))]
+    except OSError:
+        vols = []
+    return vols + [os.path.expanduser("~")]
+
+
+def _buscar_biblioteca(vieja, usadas):
+    """Donde quedo una biblioteca que ya no esta en su carpeta: el final de su ruta («RECURSOS PREMIUN\\GANCHOS
+    PACK», «GANCHOS PACK»...) en la raiz de cada disco o una carpeta mas adentro, con su «Resolve Projects»."""
+    partes = [p for p in re.split(r"[\\/]+", vieja) if p]
+    disco = ""
+    if rutas.ES_WIN:
+        disco, partes = (partes[0].upper() + "\\") if partes else "", partes[1:]
+    elif partes[:1] in (["Volumes"], ["Users"]):
+        disco = "/" + "/".join(partes[:2])
+        partes = partes[2:]
+    if not partes:
+        return None
+    raices = sorted(_raices_discos(), key=lambda r: r.upper() != disco.upper())     # su mismo disco primero
+    bases = []
+    for r in raices:
+        bases.append(r)
+        try:
+            bases += [os.path.join(r, d) for d in sorted(os.listdir(r))
+                      if not d.startswith(("$", ".")) and d.lower() not in _NO_MIRAR]
+        except OSError:
+            pass
+    for k in range(len(partes)):                    # de la ruta entera (otro disco) a solo su carpeta
+        for b in bases:
+            cand = os.path.join(b, *partes[k:])
+            if _clave_ruta(cand) not in usadas and os.path.isdir(os.path.join(cand, "Resolve Projects")):
+                return cand
+    return None
+
+
+def _escribir_dblist(ruta, texto, cambios):
+    """cambios: {n de linea: carpeta nueva}. Lo de antes queda copiado al lado (no se borra nada)."""
+    import shutil
+    lineas = texto.splitlines(True)
+    for i, nueva in cambios.items():
+        cuerpo = lineas[i].rstrip("\r\n")
+        partes = cuerpo.split(":")
+        partes[1] = nueva[0] + nueva[2:] if rutas.ES_WIN and nueva[1:2] == ":" else nueva
+        lineas[i] = ":".join(partes) + lineas[i][len(cuerpo):]
+    copia, n = "%s.antes-%s" % (ruta, time.strftime("%Y%m%d-%H%M%S")), 1
+    while os.path.exists(copia if n == 1 else "%s-%d" % (copia, n)):
+        n += 1
+    shutil.copy2(ruta, copia if n == 1 else "%s-%d" % (copia, n))
+    tmp = ruta + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write("".join(lineas).encode("utf-8", "surrogateescape"))
+    os.replace(tmp, ruta)
+
+
+def _revisar_bibliotecas(log):
+    """Antes de hablarle a DaVinci (ver arriba). Una vez por sesion si todo esta bien; sin ninguna biblioteca que
+    DaVinci encuentre: error claro (RuntimeError)."""
+    if _BIBLIOTECAS["listo"]:
+        return
+    ruta = _dblist()
+    try:
+        with open(ruta, "rb") as f:
+            texto = f.read().decode("utf-8", "surrogateescape")
+    except (OSError, TypeError):            # sin lista (DaVinci nunca abierto): nada que mirar
+        _BIBLIOTECAS["listo"] = True
+        return
+    libs = []
+    for i, linea in enumerate(texto.splitlines()):
+        partes = linea.split(":")
+        if len(partes) >= 3 and partes[-1].strip().upper() == "DISK" and partes[1].strip():
+            libs.append((i, partes[0], _ruta_de_dblist(partes[1])))
+    faltan = [b for b in libs if not os.path.isdir(b[2])]
+    if not faltan:
+        _BIBLIOTECAS["listo"] = True
+        return
+    sirve = len(faltan) < len(libs)          # alguna si esta donde dice (la de siempre desde el 20-nov: REDES SOCIALES)
+    usadas = {_clave_ruta(p) for _, _, p in libs}
+    halladas = {}
+    for i, nombre, vieja in faltan:
+        nueva = _buscar_biblioteca(vieja, usadas)
+        if nueva:
+            halladas[i] = (nombre, vieja, nueva)
+            usadas.add(_clave_ruta(nueva))
+    if halladas:
+        import vigia_davinci
+        if vigia_davinci.abierto():
+            if sirve:                        # trabaja con otra que si encuentra: no se le cierra a la persona
+                if not _BIBLIOTECAS["avisado"]:
+                    _BIBLIOTECAS["avisado"] = True
+                    for nombre, vieja, nueva in halladas.values():
+                        log("AVISO: DaVinci no encuentra su biblioteca «%s» (estaba en %s; ahora está en %s). "
+                            "Ciérralo y vuelve a intentar: la apunto yo." % (nombre, vieja, nueva))
+                return
+            # sin ninguna biblioteca no hay proyecto abierto que perder, y pedirle el proyecto lo tumba (23-nov)
+            vigia_davinci.cerrar("DaVinci está abierto sin su biblioteca de proyectos")
+        try:
+            _escribir_dblist(ruta, texto, {i: h[2] for i, h in halladas.items()})
+        except OSError as ex:
+            log("AVISO: no pude corregir la lista de bibliotecas de DaVinci (%s)." % ex)
+            halladas = {}
+        for nombre, vieja, nueva in halladas.values():
+            log("DaVinci no encontraba su biblioteca de proyectos «%s» (estaba en %s): la apunté a %s, donde está "
+                "ahora." % (nombre, vieja, nueva))
+        sirve = sirve or bool(halladas)
+    if not sirve:
+        raise RuntimeError(
+            "DaVinci no encuentra su biblioteca de proyectos «%s» (estaba en %s): ¿moviste o renombraste esa carpeta? "
+            "Abre DaVinci y, en el Organizador de proyectos › Bibliotecas de proyectos, agrégala desde donde está "
+            "ahora; luego vuelve a intentar." % (faltan[0][1], faltan[0][2]))
+    _BIBLIOTECAS["listo"] = True
+
+
 class _Vigilante:
     """Mientras se abre el proyecto: si Resolve saca un cuadro que bloquea la API ("Crear proyecto"...),
     lo cancela para que la llamada no se quede esperando para siempre."""
@@ -1150,6 +1313,7 @@ def _conectar_resolve(log, quedarse=False):
     if abiertos:
         raise RuntimeError("DaVinci tiene abierto: %s. Cierralo y vuelve a intentar."
                            % ", ".join("«%s»" % t for t in abiertos))
+    _revisar_bibliotecas(log)
     dvr = _dvr()
     r = _conexion_viva()
     if r is None:
@@ -1176,7 +1340,7 @@ def _conectar_resolve(log, quedarse=False):
             # VUELTAS y cada scriptapp sin respuesta tarda ~4 s) y al reabrirlo contesto en 15 s: se cuenta en segundos
             r, t0, sin_proceso, dicho = None, time.time(), 0, 0
             while time.time() - t0 < segundos:
-                time.sleep(3)
+                time.sleep(1)                # (23-nov) eran 3: cada scriptapp sin respuesta ya tarda ~4 s por su cuenta
                 # (1.8.0, auditoria) «Cancelar» cortaba recien al terminar la espera (hasta 3-4 min) y la ventana decia
                 # lo mismo todo el rato: ahora corta enseguida y cada 15 s dice cuanto lleva
                 rutas.revisar_parada()
@@ -1286,6 +1450,14 @@ def _conectar_resolve(log, quedarse=False):
     if abiertos:
         raise RuntimeError("DaVinci sigue con %s abierto. Cierralo y vuelve a intentar."
                            % ", ".join("«%s»" % t for t in abiertos))
+    if _CONEXION.get("r") is not r:
+        # (23-nov, VISTO midiendo: DaVinci seguia en prioridad Normal) la prioridad alta se daba al empezar a armar,
+        # cuando DaVinci aun no estaba abierto: se le da al conectar (y a lo que haya abierto mientras)
+        try:
+            import liberar
+            liberar.prioridad(log)
+        except Exception:
+            pass
     _CONEXION["r"] = r
     return r
 
@@ -1390,7 +1562,7 @@ def reenlazar(project, log=print):
     recorrer(mp.GetRootFolder())
     if not perdidos:
         return 0
-    n, total = 0, len(perdidos)
+    n, total, t0 = 0, len(perdidos), time.time()
     # (1.5.7) archivos que se renombraron en su carpeta despues de importarlos: su nombre de hoy, por la lista de nombres
     renombres = nombres_de_hoy()
     quedan = []
@@ -1409,17 +1581,18 @@ def reenlazar(project, log=print):
     if movidas:                                 # (19-nov) el evento se movio de carpeta: cada clip en su sitio nuevo
         quedan, por_carpeta = [], {}
         for c, nombre in perdidos:
-            nueva = movidas.get(os.path.dirname(c.GetClipProperty("File Path") or ""))
+            vieja = c.GetClipProperty("File Path") or ""
+            nueva = movidas.get(os.path.dirname(vieja))
+            # (23-nov) movido Y renombrado despues de importarlo: en la carpeta nueva esta con su nombre de hoy
+            hoy = os.path.basename(renombres.get(os.path.normcase(os.path.abspath(vieja))) or "")
             if nueva and os.path.exists(os.path.join(nueva, nombre)):
                 por_carpeta.setdefault(nueva, []).append((c, nombre))
+            elif nueva and hoy and os.path.exists(os.path.join(nueva, hoy)):
+                por_carpeta.setdefault(nueva, []).append((c, hoy))
             else:
                 quedan.append((c, nombre))
         for d, grupo in por_carpeta.items():
-            for c, nombre in grupo:
-                try:
-                    n += bool(c.ReplaceClip(os.path.join(d, nombre)))
-                except Exception:
-                    pass
+            n += _reenlazar_lote(mp, grupo, d)
         perdidos = quedan
         _carpetas_al_dia(movidas, log)
     hay = {}
@@ -1432,16 +1605,31 @@ def reenlazar(project, log=print):
         if nombre.lower() in hay:
             por_carpeta.setdefault(hay[nombre.lower()], []).append((c, nombre))
     for d, grupo in por_carpeta.items():
-        if mp.RelinkClips([c for c, _ in grupo], d):
-            n += len(grupo)
-            continue
-        for c, nombre in grupo:                       # uno por uno si la carpeta completa no se pudo
-            try:
-                n += bool(c.ReplaceClip(os.path.join(d, nombre)))
-            except Exception:
-                pass
-    log("Archivos reenlazados en DaVinci: %d%s" % (n, (" (faltan %d que no estan en las carpetas)" % (total - n))
-                                                         if n < total else ""))
+        n += _reenlazar_lote(mp, grupo, d)
+    log("Archivos reenlazados en DaVinci: %d en %.0f s%s" % (
+        n, time.time() - t0, (" (faltan %d que no estan en las carpetas)" % (total - n)) if n < total else ""))
+    return n
+
+
+def _reenlazar_lote(mp, grupo, carpeta):
+    """(23-nov, VISTO en el registro del 22-nov: 908 clips reenlazados uno por uno = 117 s, 0,13-0,28 s cada
+    ReplaceClip; por lote, 230 en 5 s) Toda la carpeta de un golpe con RelinkClips (busca cada clip por su nombre) y
+    solo lo que DaVinci no haya enlazado ahi (o cambio de nombre), uno por uno. Devuelve cuantos quedaron enlazados."""
+    try:
+        mp.RelinkClips([c for c, _ in grupo], carpeta)
+    except Exception:
+        pass
+    n = 0
+    for c, nombre in grupo:
+        destino = os.path.join(carpeta, nombre)
+        try:
+            ahora = c.GetClipProperty("File Path") or ""
+            if ahora and os.path.normcase(os.path.abspath(ahora)) == os.path.normcase(os.path.abspath(destino)):
+                n += 1                                   # ya quedo con el lote (0,1 ms mirarlo)
+                continue
+            n += bool(c.ReplaceClip(destino))
+        except Exception:
+            pass
     return n
 
 
@@ -2096,27 +2284,109 @@ def renderizar_editado(log, avance=None, evento=None, videos=None):
                 "editado": True}
 
 
-def estimar_segundos(n_videos, gb, versiones=None, verticales=None, render=True, nuevos=None):
-    """(1.5.7, la persona: «que me diga en cuánto tiempo va a estar listo») Cuanto tarda TODO, aproximado, medido en la
-    boda del 7-nov (73 videos, 29 GB, las 4 versiones y el vertical de 1 min: analisis 7 min, IA 5, armado 9, render 25,
-    masterizado y revision 6, proxies y plantillas 6): ~60 min. nuevos = videos sin analizar todavia."""
+def estimar_partes(n_videos, gb, versiones=None, verticales=None, render=True, nuevos=None, plantillas=0,
+                   aprendido=True):
+    """(1.5.7, la persona: «que me diga en cuánto tiempo va a estar listo») Cuanto tarda cada paso de la fila de la
+    pantalla de trabajo (analizar, ia, armar, render, master, revisar), aproximado, medido en la boda del 7-nov (73
+    videos, 29 GB, las 4 versiones y el vertical de 1 min: analisis 7 min, IA 5, armado 9, render 25, masterizado y
+    revision 6, proxies y plantillas 6): ~60 min. nuevos = videos sin analizar todavia. (23-nov) Por paso: la ventana
+    (interfaz/progreso.py) pesa cada paso por su tiempo y calcula lo que falta con el que corre.
+    plantillas = cuantas plantillas de referencia se arman. aprendido: corrige cada paso con lo que de verdad tardaron
+    los ultimos trabajos en ESTA computadora (factores_tiempo); False = la cuenta sola (la que se guarda para aprender)."""
     versiones = list(VERSIONES) if versiones is None else list(versiones)
     verticales = ["1min"] if verticales is None else list(verticales)
     nuevos = n_videos if nuevos is None else nuevos
     parte_nueva = nuevos / float(max(1, n_videos))
-    s = 30.0 + nuevos * 3.0 + gb * 8.0 * parte_nueva                     # analisis (lo ya medido no se repite)
-    s += nuevos * 2.5                             # la IA local mira cada toma (18-nov, XV 8-nov: 129 tomas en 258 s)
-    s += gb * 20.0 * parte_nueva                  # y la revisa cuadro por cuadro, uno cada 3 s (18-nov, XV 8-nov, 45 GB:
-    #                                               14 min con 4 preguntas a la vez y sin lo ya descartado; antes 29)
+    p = {"analizar": 30.0 + nuevos * 3.0 + gb * 8.0 * parte_nueva}        # analisis (lo ya medido no se repite)
+    # la IA local mira cada toma (18-nov, XV 8-nov: 129 tomas en 258 s) y la revisa cuadro por cuadro, uno cada 3 s
+    # (18-nov, XV 8-nov, 45 GB: 14 min con 4 preguntas a la vez y sin lo ya descartado; antes 29)
+    p["ia"] = nuevos * 2.5 + gb * 20.0 * parte_nueva
     # (18-nov) medido con el estabilizador en la GPU: 1 min + 15 min = 186 s la primera vez (antes 328)
-    armado = {"1min": 35, "3min": 45, "15min": 120, "30min": 220}
-    s += sum(armado.get(v, 60) for v in versiones) + 35 * len(verticales) + n_videos * 0.3
+    # (23-nov, MEDIDO: boda de JUTIAPA, 57 videos de GoPro 5,3K, DaVinci ya abierto) el primer video que se arma carga
+    # con el media pool y la escucha de DaVinci (ARMADO_PRIMERO). 1 + 3 min = 265 s (185 + 74); 15 + 30 min = 425 s
+    # (231 + 167). Con estas cuentas: 277 y 422
+    armado = {"1min": 80, "3min": 75, "15min": 130, "30min": 170}
+    p["armar"] = (ARMADO_PRIMERO if versiones or verticales else 0) + sum(armado.get(v, 60) for v in versiones) \
+        + 35 * len(verticales) + n_videos * 0.3 + 26 * max(0, int(plantillas or 0))
+    p["render"] = p["master"] = p["revisar"] = 0.0
     if render:
         dur = sum(SEGUNDOS.get(v, 60) for v in versiones) + sum(SEGUNDOS.get(v, 60) for v in verticales)
         n = len(versiones) + len(verticales)
-        s += dur * 0.5 + n * 40 + dur * 0.05                              # render, masterizado y revision con IA
-        s += gb * 8.0 * parte_nueva + n * 30                              # proxies y una plantilla por video
-    return s
+        p["render"] = dur * RENDER_POR_S + n * RENDER_POR_VIDEO
+        p["master"] = n * 10
+        # revision con IA, proxies y plantillas de DaVinci (.drp): 216 s con 2 videos y 57 tomas
+        p["revisar"] = dur * 0.05 + n * 45 + n_videos * 1.5 + gb * 8.0 * parte_nueva
+    if aprendido:                                # lo que de verdad tardaron los ultimos trabajos en esta computadora
+        f = factores_tiempo()
+        p = {k: v * f.get(k, 1.0) for k, v in p.items()}
+    return p
+
+
+ARMADO_PRIMERO = 105          # s: abrir el proyecto, ordenar el media pool y la escucha de DaVinci (una vez por trabajo)
+RENDER_POR_S = 0.6            # s de render y master por segundo de video (23-nov, 5,3K HEVC con reduccion de ruido:
+#                               15 + 30 min = 45 min de video en 1.752 s; el de 15 se quedo 4,6 min en 98-99 %)
+RENDER_POR_VIDEO = 60         # s fijos por video (la intro en Fusion y arrancar la cola). 1 + 3 min tardaron 543 s con
+#                               42 proxies haciendose a la vez: eso lo corrige lo aprendido (factores_tiempo)
+
+
+def estimar_segundos(n_videos, gb, versiones=None, verticales=None, render=True, nuevos=None):
+    """Cuanto tarda TODO, aproximado (la suma de estimar_partes)."""
+    return sum(estimar_partes(n_videos, gb, versiones, verticales, render, nuevos).values())
+
+
+# ---------------------------------------------------------------- (23-nov) el tiempo REAL de esta computadora
+# La persona (23-nov): «que dé el tiempo real de cuánto va a tardar». VISTO ese dia (boda de JUTIAPA, GoPro 5,3K): el
+# estimado decia 7 min y fueron 17 (armado 97 s -> 265; render 160 s -> 543). Las cuentas de estimar_partes salen de
+# OTRAS bodas y otra camara: cada trabajo que termina bien deja lo que se estimo y lo que tardo de verdad cada paso
+# (tiempos.json, junto al estado; las ultimas TIEMPOS_MAX) y el siguiente estimado se corrige con la mediana de
+# real/estimado de cada paso. Asi sigue a la computadora, a la camara y a lo que la persona suele armar.
+TIEMPOS_MAX = 10
+FACTOR_TIEMPO = (0.4, 6.0)    # lo aprendido no corrige mas alla de esto (una corrida rara no descompone el estimado)
+
+
+def _archivo_tiempos():
+    return os.path.join(os.path.dirname(ESTADO), "tiempos.json")
+
+
+def leer_tiempos():
+    try:
+        with open(_archivo_tiempos(), encoding="utf-8") as f:
+            j = json.load(f)
+        return j if isinstance(j, list) else []
+    except Exception:
+        return []
+
+
+def guardar_tiempos(estimado, real):
+    """Un trabajo que termino bien: estimado = {paso: s} SIN corregir (estimar_partes(..., aprendido=False)); real =
+    {paso: s} lo que tardo de verdad (progreso.Progreso.tiempos). Nunca falla."""
+    try:
+        e = {k: round(float(v), 1) for k, v in (estimado or {}).items() if v}
+        r = {k: round(float(v), 1) for k, v in (real or {}).items() if v}
+        if not e or not r:
+            return False
+        lista = leer_tiempos() + [{"cuando": time.strftime("%Y-%m-%d %H:%M"), "estimado": e, "real": r}]
+        am._guardar_json(_archivo_tiempos(), lista[-TIEMPOS_MAX:])
+        return True
+    except Exception:
+        return False
+
+
+def factores_tiempo(lista=None):
+    """{paso: factor}: la mediana de real/estimado de cada paso en los ultimos trabajos (solo donde el paso corrio de
+    verdad: estimado >= 20 s y real >= 10 s), dentro de FACTOR_TIEMPO. Sin trabajos anteriores: {}."""
+    por = {}
+    for t in (leer_tiempos() if lista is None else lista):
+        for k, e in (t.get("estimado") or {}).items():
+            r = (t.get("real") or {}).get(k)
+            if e and r and e >= 20 and r >= 10:
+                por.setdefault(k, []).append(r / float(e))
+    out = {}
+    for k, xs in por.items():
+        xs.sort()
+        m = xs[len(xs) // 2] if len(xs) % 2 else (xs[len(xs) // 2 - 1] + xs[len(xs) // 2]) / 2.0
+        out[k] = max(FACTOR_TIEMPO[0], min(FACTOR_TIEMPO[1], m))
+    return out
 
 
 def texto_tiempo(segundos):
@@ -2195,7 +2465,8 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
     voz: {"1min": bool, "3min": bool, "15min": bool} = en que versiones va la voz original (None = lo de siempre:
     activada en la de 15 min; en la de 30 min va siempre).
     formato: "horizontal" (16:9; entran los videos horizontales y, con verticales=True, tambien los verticales) o
-    "vertical" (9:16 para celular, con las mismas duraciones: SOLO los videos grabados en vertical)."""
+    "vertical" (9:16 para celular, con las mismas duraciones: lo grabado en vertical y, 1.9.1, lo horizontal
+    recortado a lo importante)."""
     vertical = str(formato or "").lower().startswith("v")
     with CANDADO:
         t0 = time.time()
@@ -2218,8 +2489,6 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
         if not usables:                       # todos dañados, en negro o de menos de 3 s: el trailer saldria en negro
             raise RuntimeError("No hay videos que se puedan usar (dañados, en negro o muy cortos). Revisa los videos que soltaste: "
                                + "; ".join(a for a in analisis.get("avisos", [])[:2]))
-        if vertical and all(i.get("horizontal", True) for i in usables):
-            raise RuntimeError(SIN_VERTICALES)
         if sum(1 for i in analisis["items"] if i["tipo"] == "foto" and not i.get("descartar")) < MINIMOS["foto"]:
             log("Aviso: hay menos de %d fotos que se puedan leer: la intro repetira fotos." % MINIMOS["foto"])
         resumen = _resumen(analisis["items"])
@@ -2229,8 +2498,7 @@ def armar(log, evento="", solo=None, seco=False, nombre_xv="", fecha_lugar="", f
                 # primero las que el armado prefiere (las de la festejada y las mas bonitas segun la IA)
                 orden = sorted(usables, key=lambda i: (not i.get("prota"),
                                                        -float(((i.get("ia") or {}).get("belleza")) or 0)))
-                n_r = ruido_tomas.adelantar([(i["ruta"], i.get("dur")) for i in orden
-                                             if vertical is False or not i.get("horizontal", True)])
+                n_r = ruido_tomas.adelantar([(i["ruta"], i.get("dur")) for i in orden])   # (1.9.1) 9:16 usa todo
                 if n_r:
                     log("Midiendo en segundo plano el ruido de %d videos (para la reducción de ruido)." % n_r)
             except Exception as ex:
@@ -2392,6 +2660,7 @@ def armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, **
     try:                                    # (18-nov) programas pesados fuera (con la X, nunca a la fuerza): la IA y el
         import liberar                      # render iban hasta 4 veces mas lentos con la memoria de video llena
         liberar.cerrar(log)
+        liberar.al_abrir(log)               # (23-nov) Google y Claude fuera del todo + prioridad alta a los motores
     except Exception as ex:
         log("Aviso: no se pudieron cerrar los programas pesados (%s)" % ex)
     return vigia_davinci.reintentar(
@@ -2402,7 +2671,7 @@ def armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, **
 def _armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, **op):
     """El boton Play: analiza, arma las versiones en DaVinci, renderiza, masteriza el audio y mide la imagen.
     op["solo"] = versiones del formato horizontal (None = todas); horizontal=False = ninguna.
-    vertical = ["1min", ...] versiones del formato vertical (9:16, solo videos verticales); None o [] = ninguna.
+    vertical = ["1min", ...] versiones del formato vertical (9:16; lo horizontal, recortado); None o [] = ninguna.
     avance(pct, texto). Devuelve {"evento", "videos": [(nombre, ok, ruta)], "carpeta", "avisos": [lo que el formato
     vertical no pudo armar]}. Las lineas quedan en DaVinci, editables (ver renderizar_editado y guardar_editable)."""
     def paso(pct, texto):
@@ -2410,6 +2679,7 @@ def _armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, *
             avance(pct, texto)
     # (1.8.2, la persona: «solo plantillas 1, 2, 3, 4») ni versiones horizontales ni verticales y si plantillas de
     # referencia elegidas: solo se arman esas (antes salian tambien las 4 versiones del programa)
+    rutas._armado_id = time.time()           # (23-nov) un solo respaldo del proyecto por armado (build_trailers)
     solo_ref = not horizontal and not vertical and bool(leer_estado().get("plantillas_ref"))
     pases = [] if solo_ref else ([("horizontal", op.get("solo"))] if horizontal or not vertical else [])
     if vertical:
@@ -2427,7 +2697,7 @@ def _armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, *
         for n, (formato, solo) in enumerate(pases):
             rutas.revisar_parada()               # (1.6.0) «Cancelar»
             if formato == "vertical":
-                log("== Formato vertical (9:16): solo videos verticales ==")
+                log("== Formato vertical (9:16): lo vertical y lo horizontal recortado a lo importante ==")
                 if n:
                     paso(30, "Armando el formato vertical")
             try:
@@ -2441,7 +2711,7 @@ def _armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, *
             if not rep or not rep.get("versiones"):
                 if formato == "vertical":
                     if etiquetas:
-                        log("AVISO: el formato vertical no se armo: falta video grabado en vertical.")
+                        log("AVISO: el formato vertical no se armo: falta video.")
                         avisos.append(SIN_VERTICALES)
                         continue
                     raise RuntimeError(SIN_VERTICALES)

@@ -167,11 +167,34 @@ def _guardado(ruta, t):
         return None
 
 
+def _archivo_cuadro(ruta, t):
+    """(23-nov) Donde queda guardado el cuadro que ffmpeg saco para medir el color: junto a los de la IA
+    (datos/analisis/cuadros/color; «Borrar caché» los quita). Clave: nombre + tamaño + milisegundo + ancho."""
+    import hashlib
+    try:
+        k = "%s|%d|%.3f|%d" % (os.path.basename(ruta), os.path.getsize(ruta), max(0.0, t), ANCHO)
+    except OSError:
+        return None
+    return os.path.join(rutas.ANALISIS, "cuadros", "color", hashlib.sha1(k.encode("utf-8")).hexdigest()[:20] + ".png")
+
+
 def cuadro(ruta, t):
     import numpy as np
     img = _guardado(ruta, t)
     if img is not None:
         return img
+    # (23-nov, MEDIDO en DaVinci real: sacar estos cuadros era lo mas largo de rearmar, 12-14 s de reloj por version
+    # de 1 min y 58 s la de 15, y el 9:16 y cada plantilla volvian a sacar los mismos) el cuadro ya sacado se guarda
+    # sin perdida (PNG) y la proxima vez no se abre el video: da exactamente los mismos numeros
+    guardado = _archivo_cuadro(ruta, t)
+    if guardado and os.path.exists(guardado):
+        try:
+            from PIL import Image
+            a = np.asarray(Image.open(guardado).convert("RGB"))
+            if a.shape[1] == ANCHO:
+                return a.astype(np.float32) / 255.0
+        except Exception:
+            pass
     try:
         r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-ss", "%.3f" % max(0.0, t), "-i", ruta,
                             "-frames:v", "1", "-vf", "scale=%d:-2:flags=area,format=rgb24" % ANCHO, "-f", "rawvideo",
@@ -181,7 +204,17 @@ def cuadro(ruta, t):
     b = r.stdout
     if not b or len(b) % (ANCHO * 3):
         return None
-    return np.frombuffer(b, np.uint8).reshape(-1, ANCHO, 3).astype(np.float32) / 255.0
+    a = np.frombuffer(b, np.uint8).reshape(-1, ANCHO, 3)
+    if guardado:
+        try:
+            from PIL import Image
+            os.makedirs(os.path.dirname(guardado), exist_ok=True)
+            tmp = "%s.%d.tmp" % (guardado, os.getpid())
+            Image.fromarray(a, "RGB").save(tmp, "PNG", compress_level=1)
+            os.replace(tmp, guardado)
+        except Exception:
+            pass
+    return a.astype(np.float32) / 255.0
 
 
 def cuadros(pedidos, hilos=8):

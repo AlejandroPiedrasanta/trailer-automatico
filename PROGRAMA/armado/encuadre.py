@@ -64,9 +64,9 @@ def _guardar():
         os.makedirs(os.path.dirname(CACHE), exist_ok=True)
         tmp = CACHE + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"v": VERSION, "datos": _cache}, f, ensure_ascii=False)
+            json.dump({"v": VERSION, "datos": _cache}, f, ensure_ascii=False, default=rutas.a_json)
         os.replace(tmp, CACHE)
-    except OSError:
+    except (OSError, TypeError, ValueError):
         pass
 
 
@@ -329,13 +329,19 @@ def quien_habla(ruta, t):
     return res
 
 
-def acercar(fx, fy, zoom, objetivo=(0.5, 0.5), ancho=ANCHO, alto=ALTO):
+def acercar(fx, fy, zoom, objetivo=(0.5, 0.5), ancho=ANCHO, alto=ALTO, prop=None):
     """(pan, tilt) en pixeles para que el punto (fx, fy) (0-1, y hacia abajo) quede en `objetivo` con ese zoom, sin
-    descubrir los bordes (el corrimiento maximo es (zoom - 1) / 2 del cuadro)."""
-    max_x = (zoom - 1.0) * ancho / 2.0
-    max_y = (zoom - 1.0) * alto / 2.0
+    descubrir los bordes. prop: ancho / alto de la toma (1.9.1: una toma 16:9 en una linea 9:16 llena el alto y le
+    sobran los lados, asi que se puede correr aunque no se acerque); sin prop, la de la linea."""
+    prop = float(prop or ancho / float(alto))
+    if prop >= ancho / float(alto):              # llena el alto (sobra a los lados)
+        img_w, img_h = alto * prop * zoom, alto * zoom
+    else:                                        # llena el ancho (sobra arriba y abajo)
+        img_w, img_h = ancho * zoom, ancho / prop * zoom
+    max_x = max(0.0, (img_w - ancho) / 2.0)
+    max_y = max(0.0, (img_h - alto) / 2.0)
     # (1.8.7) el punto queda en 0,5 + (f - 0,5) x zoom + corrimiento: asi cae justo en `objetivo` (antes, con objetivo
     # fuera del centro, el corrimiento se multiplicaba por el zoom y la cara quedaba mas arriba de lo pedido)
-    pan = (objetivo[0] - 0.5 - (fx - 0.5) * zoom) * ancho
-    tilt = ((fy - 0.5) * zoom + 0.5 - objetivo[1]) * alto
+    pan = (objetivo[0] - 0.5) * ancho - (fx - 0.5) * img_w
+    tilt = (fy - 0.5) * img_h - (objetivo[1] - 0.5) * alto
     return (round(max(-max_x, min(max_x, pan)), 1), round(max(-max_y, min(max_y, tilt)), 1))

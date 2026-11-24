@@ -366,7 +366,19 @@ _ff = os.path.join(PROGRAMA, "ffmpeg")
 if os.path.isfile(os.path.join(_ff, "ffmpeg.exe" if ES_WIN else "ffmpeg")):
     os.environ["PATH"] = _ff + os.pathsep + os.environ.get("PATH", "")
 
+def a_json(o):
+    """default= de json.dump: los numeros y arreglos de numpy (float32, int64, ndarray) como los de Python. (23-nov) un
+    float32 de las caras tumbaba el guardado del 9:16 y, con el, las plantillas enteras."""
+    try:
+        return o.tolist()
+    except AttributeError:
+        return str(o)
+
+
 SIN_VENTANA = 0x08000000 if ES_WIN else 0          # que ffmpeg no abra ventanas negras en Windows
+if ES_WIN and os.environ.get("TRAILER_PRIORIDAD") != "0":
+    SIN_VENTANA |= 0x00008000                      # (23-nov) y con prioridad por encima de lo normal (ffmpeg, Ollama):
+#                                                    un hijo NO hereda la prioridad alta del programa (liberar.prioridad)
 
 
 def fuentes():

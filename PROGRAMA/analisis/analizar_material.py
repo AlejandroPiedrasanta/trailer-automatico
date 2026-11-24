@@ -613,6 +613,11 @@ def _info_video(ruta):
         modelo = codificador
     if modelo:
         d["camara"] = modelo[:40]
+    # (1.9.3) video HDR (iPhone y celulares nuevos graban HLG / Dolby Vision de fabrica): el programa arma en Rec.709 y
+    # todavia no lo convierte; se avisa (_clasificar) para que se sepa por que se ve lavado
+    hdr = {"arib-std-b67": "HLG", "smpte2084": "PQ"}.get(str(v.get("color_transfer") or "").lower())
+    if hdr:
+        d["hdr"] = hdr
     # dron aunque el archivo se haya renombrado o este en VIDEOS: DJI lo escribe en el archivo (no las camaras de mano
     # de DJI: Osmo, Pocket, Action, Ronin)
     if codificador.upper().startswith("DJI"):
@@ -690,6 +695,7 @@ def _relojes_basicos(items, ajuste_manual):
         it["hora_camara"] = it.get("hora_camara") or it["hora"]
         it["hora"] = it["hora_camara"]
         it["reloj"] = "ok"
+        it.pop("otro_dia", None)
         for pref, horas in (ajuste_manual or {}).items():
             if it["nombre"].upper().startswith(str(pref).upper()):
                 try:
@@ -714,12 +720,14 @@ def _relojes_basicos(items, ajuste_manual):
     # videos de un iPhone 17 Pro Max con la fecha real, y el evento salio «BODA 2018-12-03». Un telefono (o un dron, que
     # toma la hora del telefono) se pone en hora solo por la red: si hay uno, el dia lo deciden solo esos.
     en_hora = {k for k, g in grupos.items() if _conf(g) >= 3 and any(i["reloj"] != "dudoso" for i in g)}
+    # (1.9.3, boda de JUTIAPA, armado de prueba) solo votaba el dron: 4 aereas de OTRA fiesta (18-nov) contra 3 del
+    # dia (14-nov) y el evento quedo el 18; las 596 fotos y 50 videos del 14 salieron «no es el día del evento». Los
+    # relojes de red dicen QUE DIAS pueden ser; entre esos, votan todas las camaras (la Sony en 2018 sigue sin contar)
+    posibles = {_jornada(_dt(i)) for k in en_hora for i in grupos[k] if i["reloj"] != "dudoso"}
     for k, g in grupos.items():
-        if en_hora and k not in en_hora:
-            continue
         c = _conf(g)
         for i in g:
-            if i["reloj"] != "dudoso":
+            if i["reloj"] != "dudoso" and (not posibles or _jornada(_dt(i)) in posibles):
                 votos[_jornada(_dt(i))] += peso[c]
     if not votos:
         for i in items:
@@ -745,7 +753,8 @@ def _relojes_basicos(items, ajuste_manual):
             m = (t - base).total_seconds() / 60.0
             j = bisect.bisect_left(refmin, m - 20)
             cubre += j < len(refmin) and refmin[j] <= m + 20
-        if len(fuera) >= 3 and len(refmin) >= 8 and cubre >= 0.8 * len(fuera):
+        # (1.9.3) un telefono o un dron toman la fecha de la red: no «se les puso mal»; lo de otro dia es de otro dia
+        if k not in en_hora and len(fuera) >= 3 and len(refmin) >= 8 and cubre >= 0.8 * len(fuera):
             for i, t in zip(fuera, nuevas):
                 i["hora"] = t.isoformat(timespec="seconds")
                 i["reloj"] = "corregido"
@@ -754,7 +763,7 @@ def _relojes_basicos(items, ajuste_manual):
             continue
         # 3b) reloj sin poner (otra fecha Y otra hora) pero que corre bien: sus tomas guardan las pausas reales del dia.
         #     Si hay UN corrimiento con el que caen donde trabajaron las demas camaras, se usa.
-        corrido = _reloj_corrido([_dt(i) for i in fuera], refmin, base)
+        corrido = None if k in en_hora else _reloj_corrido([_dt(i) for i in fuera], refmin, base)
         if corrido is not None:
             for i in fuera:
                 i["hora"] = (_dt(i) + corrido).isoformat(timespec="seconds")
@@ -762,10 +771,23 @@ def _relojes_basicos(items, ajuste_manual):
             avisos.append("%s: el reloj estaba sin poner (marcaba %s) pero corre bien: alineé sus %d archivos con las "
                           "demás cámaras." % (k, d.isoformat(), len(fuera)))
             continue
+        # (1.9.3, boda de JUTIAPA: 4 aereas del 18-nov, de OTRA fiesta, entraron al de 15 min) un telefono o un dron
+        # toman la hora de la red: si dicen que se grabo DESPUES del dia del evento, es de otro evento -> fuera (lo de
+        # antes, una sesion previa, se queda). En Material, «Úsala de todos modos» lo vuelve a meter.
+        despues = [i for i in fuera if k in en_hora and _jornada(_dt(i)) > dia]
         for i in fuera:
             i["reloj"] = "dudoso"
-        avisos.append("%s: %d archivo%s con fecha %s (no es el día del evento): los ordené por contenido."
-                      % (k, len(fuera), "s" if len(fuera) > 1 else "", d.isoformat()))
+        for i in despues:
+            i["otro_dia"] = _jornada(_dt(i)).isoformat()
+        if despues:
+            avisos.append("%s: %d archivo%s grabado%s el %s, DESPUÉS del evento (es de otro evento): queda%s fuera."
+                          % (k, len(despues), "s" if len(despues) > 1 else "", "s" if len(despues) > 1 else "",
+                             max(_jornada(_dt(i)) for i in despues).isoformat(), "n" if len(despues) > 1 else ""))
+        quedan = [i for i in fuera if i not in despues]
+        if quedan:
+            d = Counter(_jornada(_dt(i)) for i in quedan).most_common(1)[0][0]
+            avisos.append("%s: %d archivo%s con fecha %s (no es el día del evento): los ordené por contenido."
+                          % (k, len(quedan), "s" if len(quedan) > 1 else "", d.isoformat()))
     return dia, avisos
 
 
@@ -1080,10 +1102,53 @@ def _auto(items, fecha):
     """Propone la hora de inicio de IGLESIA y FIESTA: por lo que se VE (luz y color de cada toma, en orden) afinado con
     los huecos del dia; si no hay suficiente material medido, solo con los huecos."""
     try:
+        por_ia = _auto_ia(items, fecha)
+    except Exception:
+        por_ia = None
+    if por_ia:
+        return por_ia
+    try:
         por_contenido = _auto_contenido(items, fecha)
     except Exception:
         por_contenido = None
     return por_contenido or _auto_huecos(items, fecha)
+
+
+IA_CORTES_MIN = 3             # videos de cada momento (con hora fiable y momento visto por la IA) para cortar por la IA
+
+
+def _auto_ia(items, fecha):
+    """(1.9.3, boda de JUTIAPA, armado de prueba) Los cortes por luz y color dejaban IGLESIA a las 17:26 y FIESTA a las
+    21:10 (el salon blanco y bien iluminado «parece iglesia») cuando la IA veia, en orden perfecto, MAQUILLAJE hasta
+    las 15:14, la ceremonia de 15:53 a 16:39 y la fiesta desde las 17:32: el cortejo y los votos caian en MAQUILLAJE y
+    el primer baile en IGLESIA. Con al menos IA_CORTES_MIN videos de cada momento (hora fiable), los dos cortes son los
+    que dejan menos videos en el momento equivocado (el dia va MAQUILLAJE -> IGLESIA -> FIESTA); cada momento empieza
+    un minuto antes de su primer video. Si no hay con que, None (lo de siempre)."""
+    vs = sorted((_min(i["hora"], fecha), str((i.get("ia") or {}).get("momento") or "").upper()) for i in items
+                if i.get("tipo") != "foto" and i.get("reloj") in ("ok", "corregido", "manual"))
+    vs = [(m, x) for m, x in vs if x in ("MAQUILLAJE", "IGLESIA", "FIESTA")]
+    if any(sum(1 for _, x in vs if x == mom) < IA_CORTES_MIN for mom in ("MAQUILLAJE", "IGLESIA", "FIESTA")):
+        return None
+    n = len(vs)
+    # errores si [0, a) es MAQUILLAJE, [a, b) IGLESIA y [b, n) FIESTA (sumas acumuladas: O(n^2))
+    acum = {mom: [0] for mom in ("MAQUILLAJE", "IGLESIA", "FIESTA")}
+    for _, x in vs:
+        for mom in acum:
+            acum[mom].append(acum[mom][-1] + (x == mom))
+    mejor = None
+    for a in range(1, n):
+        for b in range(a + 1, n):
+            buenos = acum["MAQUILLAJE"][a] + (acum["IGLESIA"][b] - acum["IGLESIA"][a]) + \
+                (acum["FIESTA"][n] - acum["FIESTA"][b])
+            if mejor is None or buenos > mejor[0]:
+                mejor = (buenos, a, b)
+    if mejor is None or mejor[0] < 0.8 * n:            # la IA no cuenta un dia en orden: que decidan los de siempre
+        return None
+    _, a, b = mejor
+    ini_i, ini_f = vs[a][0] - 1, vs[b][0] - 1
+    if ini_f - ini_i < 10:
+        return None
+    return [["MAQUILLAJE", "00:00"], ["IGLESIA", _hhmm(ini_i)], ["FIESTA", _hhmm(ini_f)]]
 
 
 def _auto_contenido(items, fecha):
@@ -1344,6 +1409,8 @@ def clasificar(items, base, log=print):
                 tramos.append([a, round(it["dur"], 2), mom])
                 it["tramos"] = [t for t in tramos if t[1] - t[0] >= 2.0]
         it["descartar"] = n in fuera
+        if it.get("otro_dia") and n not in excep:        # (1.9.3) grabada despues del evento: de otro evento
+            it["descartar"], it["por_descarte"] = True, "grabada otro día (%s), después del evento" % it["otro_dia"]
         if n in inutil:
             it["oscuros"] = (it.get("oscuros") or []) + inutil[n]
     # (1.5.7) lo que la IA local ve que no sirve (el piso, la pantalla de una camara, borrosa...) queda fuera del montaje
@@ -1390,6 +1457,12 @@ def clasificar(items, base, log=print):
                 len(ladeadas), ", ".join(ladeadas[:4]) + ("…" if len(ladeadas) > 4 else "")))
     except Exception as ex:
         log("Aviso: no se pudo mirar la orientación de las tomas (%s)" % ex)
+    hdr = [it for it in items if it.get("hdr")]
+    if hdr:
+        avisos.append("%d video%s en HDR (%s): el programa arma en color normal (Rec.709) y todavía no los convierte, "
+                      "pueden verse lavados. Para la mejor calidad, graba sin HDR (iPhone: Ajustes > Cámara > Grabar "
+                      "video > Video HDR apagado)." % (len(hdr), "s" if len(hdr) > 1 else "",
+                                                     ", ".join(sorted({it["hdr"] for it in hdr}))))
     inutiles = [(it, _razon(it)) for it in items if it["nombre"].upper() not in excep]
     inutiles = [(it, r) for it, r in inutiles if r is not None]
     if len(inutiles) > PARTE_IA_MAX * len(items):      # si dijera que casi nada sirve: solo las peores
@@ -1563,16 +1636,29 @@ def _metadatos_visibles(cache, items, log, fecha=None):
         recetas = mod.calcular({"items": items, "fecha": fecha}, tipo) if fecha else {}
     except Exception as ex:
         log("Aviso: no se pudo calcular la receta de las tomas para los metadatos (%s)" % ex)
+    # (24-nov) la nitidez tipica de cada camara (videos) y de las fotos del evento: contra eso se nombra el enfoque y
+    # se dan las estrellas (una GoPro gran angular mide la mitad que una camara con tele y no por eso esta desenfocada)
+    def mediana(xs):
+        xs = sorted(x for x in xs if isinstance(x, (int, float)))
+        return xs[len(xs) // 2] if xs else None
+    por_camara = {}
+    for it in items:
+        if it.get("tipo") != "foto":
+            por_camara.setdefault((it.get("camara") or "?", it.get("ancho"), it.get("tipo")), []).extend(
+                (it.get("vista") or {}).get("nit") or [])
+    refs = {k: mediana(v) for k, v in por_camara.items() if len(v) >= 20}
+    ref_fotos = mediana([it.get("nitidez") for it in items if it.get("tipo") == "foto"])
     for it in items:
         ruta = it.get("ruta") or ""
         if not (it.get("ia") or it.get("momento")) or not os.path.exists(ruta):
             continue
         try:
             k = _clave(ruta)
-            campos = metadatos.campos_de(it, voces.get(k), personas.get(k), recetas.get(os.path.normcase(ruta)))
+            ref = {"nitidez": ref_fotos} if it.get("tipo") == "foto" else {
+                "nit": refs.get((it.get("camara") or "?", it.get("ancho"), it.get("tipo")))}
+            campos = metadatos.campos_de(it, voces.get(k), personas.get(k), recetas.get(os.path.normcase(ruta)), ref)
             ya = metadatos.leer(ruta)
-            if " ".join((ya.get("comentario") or "").split()) == " ".join(campos["comentario"].split()) \
-                    and (ya.get("titulo") or "") == " ".join(campos["titulo"].split()):
+            if metadatos.al_dia(ruta, campos, ya):   # (ya lo lleva: titulo, comentario, etiquetas y estrellas)
                 continue
             antes = os.stat(ruta).st_size
             if not metadatos.escribir(ruta, campos):
@@ -1876,7 +1962,7 @@ def _ver_con_ia(cache, lista, log):
     import time
     vision_ia.en_gpu()                           # (17-nov) si el modelo quedo cargado en el procesador, lo recarga en la GPU
     log("Viendo cada toma con la IA local (%s): %d archivos..." % (vision_ia.modelo(), len(falta)))
-    t0 = time.time()
+    t0 = dicho = time.time()
 
     def una(par):
         rutas.revisar_parada()                    # (1.6.0) «Cancelar»
@@ -1903,7 +1989,8 @@ def _ver_con_ia(cache, lista, log):
                 d["ia"] = ia
                 _incrustar(d)
             _punto_de_guardado(cache)
-            if n % 10 == 0 or n == len(falta):
+            if n % 10 == 0 or n == len(falta) or time.time() - dicho >= AVISAR_CADA_S:
+                dicho = time.time()
                 log("  IA %d/%d  %s: %s" % (n, len(falta), d["nombre"], (ia or {}).get("escena", "?")))
     log("La IA local vio %d tomas en %.0f s." % (len(falta), time.time() - t0))
     largos = [(t, r) for t, r in largos if (cache[_clave(r)].get("ia") or {}).get("instantes_v", 0) < vision_ia.INSTANTES_V]
@@ -1994,7 +2081,50 @@ def _oir(cache, lista, log):
     return hilo
 
 
-def _instantes_con_ia(cache, largos, log, vision_ia):
+AVISAR_CADA_S = 6.0           # (23-nov) las cuentas largas (IA, revision) dicen por donde van al menos cada tanto
+MEDIDAS_V = 3                 # (23-nov) version de las medidas que deciden que cuadros NO se le preguntan a la IA
+
+
+def _repasar_saltados(cache, lista, log):
+    """(23-nov) Con las personas YA reconocidas (las medidas las usan: build_trailers._enfoque_evento): la IA mira los
+    cuadros que se salto y que ya no quedan fuera. Va despues de guardar las personas; lo ya contestado no se repite."""
+    import vision_ia
+    pend = _saltados_por_mirar(cache, lista, vision_ia)
+    if pend and vision_ia.modelo(log):
+        _instantes_con_ia(cache, pend, log, vision_ia, repaso=True)
+        _punto_de_guardado(cache, True)
+
+
+def _saltados_por_mirar(cache, lista, vision_ia):
+    """(23-nov, boda de JUTIAPA) Las tomas con cuadros que la IA se salto «por las medidas» (desenfocado, movido...) y
+    que con las medidas de HOY ya no quedan fuera: 513 de 1.104 cuadros eran de la GoPro, que se media contra el
+    enfoque de otra camara (build_trailers._enfoque_evento) y nunca llegaron a la IA. Se mira una vez por toma (queda
+    «medidas_v»); las que siguen fuera no se tocan."""
+    def saltado(x):
+        return len(x) > 3 and x[2] is None and x[3] == vision_ia.SIN_MIRAR
+    cand = [(t, r) for t, r in lista if t != "foto" and _clave(r) in cache and not cache[_clave(r)].get("error")
+            and (cache[_clave(r)].get("ia") or {}).get("instantes_v", 0) >= vision_ia.INSTANTES_V
+            and (cache[_clave(r)]["ia"].get("medidas_v", 0) < MEDIDAS_V)
+            and any(saltado(x) for x in cache[_clave(r)]["ia"].get("instantes") or [])]
+    if not cand:
+        return []
+    mod, tipo = _receta()
+    fuera, _ = mod.tramos_fuera([d for d in cache.values() if d.get("tipo") != "foto" and not d.get("error")], tipo)
+    out = []
+    for t, r in cand:
+        d = cache[_clave(r)]
+        dur, inst = d.get("dur", 0.0), d["ia"]["instantes"]
+        ts = sorted(x[0] for x in inst)
+        margen = (sorted(b - a for a, b in zip(ts, ts[1:]))[(len(ts) - 1) // 2] if len(ts) > 1 else 3.0) / 2.0
+        if any(saltado(x) and not any(a <= max(0.0, x[0] - margen) and min(dur, x[0] + margen) <= b
+                                      for a, b in fuera.get(r) or ()) for x in inst):
+            out.append((t, r))
+        else:
+            d["ia"]["medidas_v"] = MEDIDAS_V
+    return out
+
+
+def _instantes_con_ia(cache, largos, log, vision_ia, repaso=False):
     """(1.5.7) La IA mira cada toma cuadro por cuadro (uno cada 3 s): hacia donde apunta la camara, si esta de cabeza,
     si se ve la cara de la gente (la regla de la persona) y en que segundo esta cada momento clave."""
     largos = [(t, r) for t, r in largos if cache[_clave(r)].get("ia")]
@@ -2023,15 +2153,35 @@ def _instantes_con_ia(cache, largos, log, vision_ia):
                                     % (ya / 60.0) if ya >= 30 else ""))
     vision_ia.aviso_memoria(log)                  # (18-nov) memoria de video llena = 4 veces mas lento: que se sepa
 
+    # (23-nov, la persona: «que no se quede parado»; MEDIDO: la cuenta iba por TOMA y en orden, con las largas primero:
+    # 409 s sin decir nada en la boda de JUTIAPA, 258 s la noche anterior) La cuenta va por CUADRO resuelto, que avanza
+    # parejo (~1 por segundo), y se dice al menos cada AVISAR_CADA_S
+    import threading
+    n_cuadros = sum(1 if t == "foto" else vision_ia.cuantos_instantes(cache[_clave(r)].get("dur", 0.0)) for t, r in largos)
+    hechos, dicho, candado = [0], [t0], threading.Lock()
+
+    def cuadro():
+        with candado:
+            hechos[0] += 1
+            if time.time() - dicho[0] < AVISAR_CADA_S or hechos[0] >= n_cuadros:
+                return
+            dicho[0], van = time.time(), hechos[0]
+        log("  IA revisión %d/%d  cuadros" % (van, n_cuadros))
+
     def una(par):
         rutas.revisar_parada()                    # (1.6.0) «Cancelar»
         d = cache[_clave(par[1])]
         if par[0] == "foto":                    # la foto entera es un solo cuadro (la misma regla de la cara)
-            return d, vision_ia.revisar_foto(par[1], log)
+            try:
+                return d, vision_ia.revisar_foto(par[1], log)
+            finally:
+                cuadro()
         # el limite de «la toma entera fuera» (_organizar): si los cuadros saltados pueden cambiarlo, se miran tambien
         limite = None if par[1] in accidentales else (
             PARTE_MALA_TOMA if d.get("dur", 0.0) <= TOMA_CORTA_S else PARTE_MALA_LARGA)
-        return d, vision_ia.instantes(par[1], d.get("dur", 0.0), log, fuera.get(par[1]), limite, par[0] == "dron")
+        previos = d["ia"].get("instantes") if d["ia"].get("instantes_v", 0) >= vision_ia.INSTANTES_V else None
+        return d, vision_ia.instantes(par[1], d.get("dur", 0.0), log, fuera.get(par[1]), limite, par[0] == "dron",
+                                      previos, cuadro)
     # las largas primero: asi no queda una sola al final mientras las demas ya terminaron
     largos = sorted(largos, key=lambda p: -cache[_clave(p[1])].get("dur", 0.0))
     with ThreadPoolExecutor(vision_ia.TOMAS_A_LA_VEZ) as ex:
@@ -2039,13 +2189,11 @@ def _instantes_con_ia(cache, largos, log, vision_ia):
             if inst is not None:
                 d["ia"]["instantes"] = inst
                 d["ia"]["instantes_v"] = vision_ia.INSTANTES_V
+                if repaso:                           # (las personas ya se sabian: no hace falta volver)
+                    d["ia"]["medidas_v"] = MEDIDAS_V
                 _incrustar(d)
             _punto_de_guardado(cache)
-            if n % 10 == 0 or n == len(largos):
-                parte, motivo = vision_ia.parte_mala(d.get("ia"))
-                log("  IA revisión %d/%d  %s: %.0f%% no sirve%s" % (
-                    n, len(largos), d["nombre"], 100 * parte,
-                    " (%s)" % vision_ia.MOTIVOS.get(motivo, motivo) if motivo else ""))
+    log("  IA revisión %d/%d  cuadros" % (n_cuadros, n_cuadros))
     cuadros = [x for _, r in largos for x in (cache[_clave(r)]["ia"].get("instantes") or [])]
     saltados = sum(1 for x in cuadros if len(x) > 3 and x[2] is None and x[3] == vision_ia.SIN_MIRAR)
     cuadros = [x for x in cuadros if len(x) < 3 or x[2] is not None]
@@ -2312,6 +2460,12 @@ def analizar(base=DEF_BASE, log=print, hilos=4):
                 caras.guardar_personas(ver_caras["items"], ver_caras["personas"])
         except Exception as ex:
             log("Aviso: no se pudieron guardar las personas reconocidas (%s): las reconocerá DaVinci." % ex)
+    try:                                        # (23-nov) con las personas ya sabidas: lo que la IA se salto y ya cuenta
+        _repasar_saltados(cache, lista, log)
+    except rutas.Detenido:
+        raise
+    except Exception as ex:
+        log("Aviso: no se pudieron repasar los cuadros que la IA se saltó (%s)." % ex)
     _punto_de_guardado(cache, True)             # por si lo que sigue falla: lo analizado ya esta a salvo
     cache, res = _organizar(cache, lista, base, log)
     try:                                        # (18-nov) lo entendido de cada video, escrito dentro del archivo

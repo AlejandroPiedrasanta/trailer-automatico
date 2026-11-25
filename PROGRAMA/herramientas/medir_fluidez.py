@@ -178,9 +178,25 @@ class Guion:
             t += dur
             QTimer.singleShot(int(t * 1000), lambda n=nombre, a=accion: self._fase(n, a))
 
+    def _programar_trailers(self):
+        """(1.9.6) «trailers»: la pagina Tráilers con la Plantilla 1 y con la 2 (fotos trailers_1 / trailers_2)."""
+        w = self.w
+        pasos = [(5.0, "a Tráilers", lambda: w._ir("Tráilers")),
+                 (2.0, "foto 1", lambda: self._grab("trailers_1")),
+                 (0.5, "plantilla 2", lambda: w._paginas_accion("plantilla", 2)),
+                 (1.5, "foto 2", lambda: self._grab("trailers_2")),
+                 (0.5, "plantilla 1", lambda: w._paginas_accion("plantilla", 1)),
+                 (1.5, "fin", self._terminar)]
+        t = 0.0
+        for dur, nombre, accion in pasos:
+            t += dur
+            QTimer.singleShot(int(t * 1000), lambda n=nombre, a=accion: self._fase(n, a))
+
     def _programar(self):
         if os.environ.get("TRAILER_MEDIR_FLUIDEZ_RECORRIDO") == "musica":
             return self._programar_musica()
+        if os.environ.get("TRAILER_MEDIR_FLUIDEZ_RECORRIDO") == "trailers":
+            return self._programar_trailers()
         w = self.w
         g0 = w.geometry()
         pasos = [
@@ -276,6 +292,15 @@ def main():
     os.makedirs(os.path.join(datos, "analisis"), exist_ok=True)
     if os.path.exists(rutas.ESTADO):
         shutil.copy2(rutas.ESTADO, os.path.join(datos, "analisis"))
+    try:                                         # (1.9.6) las plantillas (solo su info y portada: sin videos)
+        for n in os.listdir(os.path.join(rutas.DATOS, "plantillas_ref")):
+            o = os.path.join(rutas.DATOS, "plantillas_ref", n)
+            os.makedirs(os.path.join(datos, "plantillas_ref", n), exist_ok=True)
+            for f in ("info.json", "portada.jpg"):
+                if os.path.exists(os.path.join(o, f)):
+                    shutil.copy2(os.path.join(o, f), os.path.join(datos, "plantillas_ref", n, f))
+    except OSError:
+        pass
     env = dict(os.environ, TRAILER_DATOS=datos, TRAILER_MEDIR_FLUIDEZ=base, TRAILER_VISION_MODELO="ninguno",
                TRAILER_MEDIR_FLUIDEZ_RECORRIDO=(sys.argv[1] if len(sys.argv) > 1 else "recorrido"),
                PYTHONIOENCODING="utf-8")

@@ -2604,11 +2604,29 @@ def plantillas_a_mp4(videos, log=print):
     return out
 
 
+PLANTILLA_TRAILER_2 = "TRAILER PLANTILLA 2"   # (1.9.6) la plantilla del tráiler hecha de «denis y iris» (plantillas_ref)
+
+
+def plantilla_trailer():
+    """(1.9.6, la persona: «Plantilla 1 la que haces actualmente y Plantilla 2» = como «denis y iris») 1 = el tráiler
+    de siempre (1, 3, 15 y 30 min con las plantillas de DaVinci); 2 = UN tráiler de 2:55 con la música, los cortes,
+    los fundidos y las franjas de cine de esa referencia (armar_ref). Solo 2 si la plantilla esta importada."""
+    if leer_estado().get("plantilla_trailer") != 2:
+        return 1
+    try:
+        import plantilla_ref
+        return 2 if any(p["nombre"] == PLANTILLA_TRAILER_2 for p in plantilla_ref.lista(todas=True)) else 1
+    except Exception:
+        return 1
+
+
 def armar_plantillas_ref(evento, tipo_evento, log=print):
     """(18-nov) Las plantillas de referencia elegidas en Material (estado plantillas_ref): una linea por cada una
     (armar_ref.armar), con su render en cola. Devuelve sus etiquetas («PLANTILLA 1»...) para renderizar."""
     est_ = leer_estado()
     elegidas = [n for n in est_.get("plantillas_ref") or []]
+    if plantilla_trailer() == 2:             # (1.9.6) Tráilers > Plantilla 2: el tráiler como «denis y iris»
+        elegidas.insert(0, PLANTILLA_TRAILER_2)
     if not elegidas or not evento:
         return []
     import plantilla_ref
@@ -2617,7 +2635,7 @@ def armar_plantillas_ref(evento, tipo_evento, log=print):
         armar_ref.reiniciar_variedad()
     except Exception:
         pass
-    infos = {p["nombre"]: p for p in plantilla_ref.lista()}
+    infos = {p["nombre"]: p for p in plantilla_ref.lista(todas=True)}
     # (19-nov, visto en la Plantilla 1: un plano de suelo y sillas) am.leer_ultimo() es el RESUMEN de la ventana: sin la
     # «vista» de cada medio segundo el planificador no aplicaba NINGUN filtro por tramo (enfoque, temblor, lo que vio
     # la IA): las 45 tomas de la boda salian sin medidas. El analisis completo, como el resto del armado.
@@ -2644,6 +2662,7 @@ def armar_plantillas_ref(evento, tipo_evento, log=print):
                 destino = rutas.videos_terminados(evento)
                 etiquetas.append(rutas.etiqueta_de(armar_ref.armar(
                     r, p, infos[n], evento, analisis, destino, tipo_evento, log,
+                    nombre_archivo="VIDEO FINAL PLANTILLA 2" if n == PLANTILLA_TRAILER_2 else None,   # (1.9.6)
                     nombre_xv=est_.get("nombre_xv") or "", frase=est_.get("frase") or "",
                     con_texto=est_.get("plantillas_texto", True) is not False,
                     con_destellos=est_.get("plantillas_destellos", True) is not False,
@@ -2680,7 +2699,11 @@ def _armar_todo(log, avance=None, render=True, vertical=None, horizontal=True, *
     # (1.8.2, la persona: «solo plantillas 1, 2, 3, 4») ni versiones horizontales ni verticales y si plantillas de
     # referencia elegidas: solo se arman esas (antes salian tambien las 4 versiones del programa)
     rutas._armado_id = time.time()           # (23-nov) un solo respaldo del proyecto por armado (build_trailers)
-    solo_ref = not horizontal and not vertical and bool(leer_estado().get("plantillas_ref"))
+    trailer_2 = plantilla_trailer() == 2     # (1.9.6) Tráilers > Plantilla 2: ese tráiler EN LUGAR de 1/3/15/30 min
+    if trailer_2:
+        horizontal = False
+        log("Tráiler con la Plantilla 2 (como «denis y iris»: su música, cortes, fundidos y franjas de cine).")
+    solo_ref = not horizontal and not vertical and (bool(leer_estado().get("plantillas_ref")) or trailer_2)
     pases = [] if solo_ref else ([("horizontal", op.get("solo"))] if horizontal or not vertical else [])
     if vertical:
         pases.append(("vertical", [v for v in VERSIONES if v in vertical]))

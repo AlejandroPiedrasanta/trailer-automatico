@@ -39,12 +39,17 @@ def _archivo(tipo, efecto, vertical):
     return None
 
 
-def poner(resolve, tl, mp, carpeta_mp, fps, tipo, vertical, cambios, log=print):
+def poner(resolve, tl, mp, carpeta_mp, fps, tipo, vertical, cambios, log=print, calido=False):
     """cambios: cuadros (desde el inicio de la linea) donde empieza cada momento nuevo (sin el primero).
-    Devuelve [(efecto, segundo)] de lo que puso."""
+    calido=True: (1.9.6, «denis y iris») el destello es una mancha de LUZ CALIDA que cruza (LUZ_CALIDA_H/V), uno de
+    cada dos volteado para que entre por el otro lado, en vez de la raya de lente. Devuelve [(efecto, segundo)]."""
     if not activos():
         return []
     rutas_ov = {e: _archivo(tipo, e, vertical) for e in ("DESTELLO", "BRILLOS")}
+    if calido:
+        r = os.path.join(CARPETA, "LUZ_CALIDA_%s.mp4" % ("V" if vertical else "H"))
+        if os.path.exists(r):
+            rutas_ov["DESTELLO"] = r
     hay = {os.path.normcase(c.GetClipProperty("File Path") or ""): c for c in carpeta_mp.GetClipList() or []}
     faltan = [r for r in rutas_ov.values() if r and os.path.normcase(r) not in hay]
     if faltan:
@@ -85,6 +90,8 @@ def poner(resolve, tl, mp, carpeta_mp, fps, tipo, vertical, cambios, log=print):
             nuevo[0].SetProperty("CompositeMode", resolve.COMPOSITE_SCREEN)
             if efecto == "BRILLOS":
                 nuevo[0].SetProperty("Opacity", 85.0)
+            elif calido and sum(1 for e, _s in puestos if e == "DESTELLO") % 2:
+                nuevo[0].SetProperty("FlipX", True)          # entra por la derecha
         except Exception:
             pass
         ocupado.append((ini, ini + largo))

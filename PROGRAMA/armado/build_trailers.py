@@ -4967,7 +4967,8 @@ def main():
     ruidos = {}                                  # ruta -> ruido medido (el mismo proceso para cualquier video)
     drx_ruido = rd.drx_activo(ruido_n)           # el ruido de DaVinci que la persona dejo guardado (o None)
     if drx_ruido:
-        print("Ruido: se usa el ajuste de DaVinci guardado en todas las tomas.")
+        print("Ruido: el ajuste de DaVinci guardado (temporal) en las tomas con ruido medio o más; las limpias, el filtro "
+              "del programa.")
     try:
         rt = _modulo("ruido_tomas")
     except Exception as ex:
@@ -5145,7 +5146,8 @@ def main():
         try:                                    # ruido de cada video de esta version (cada video se mide una sola vez)
             sin_medir = [(p["item"]["ruta"], p["item"].get("dur")) for p, _ in puestos
                          if p["tipo"] != "foto" and os.path.normcase(p["item"]["ruta"]) not in ruidos]
-            if rt and sin_medir and ruido_n > 0 and not drx_ruido:
+            # (1.9.6) se mide tambien con el ruido de DaVinci guardado: va solo a las tomas con ruido medio o mas
+            if rt and sin_medir and ruido_n > 0:
                 ruidos.update(rt.medir_varios(sin_medir, print))
         except Exception as ex:
             aviso("No se pudo medir el ruido de los videos (%s); van con el nivel normal." % ex)

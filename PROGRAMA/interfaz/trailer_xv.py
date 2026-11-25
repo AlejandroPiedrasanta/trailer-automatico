@@ -1666,14 +1666,41 @@ def app():
             m = getattr(self, "seg_musica", None)
             return {"estilos": [b.text() for b in m.botones] if m else [], "estilo": m.actual() if m else -1,
                     "intros": [b.text() for b in self.seg_intro.botones], "intro": self.seg_intro.actual(),
-                    "speed_ramp": bool(self.est.get("speed_ramp", False))}
+                    "speed_ramp": bool(self.est.get("speed_ramp", False)),
+                    # (1.9.6) Plantilla 1 (la de siempre) o 2 (como «denis y iris»; solo si esta importada)
+                    "plantilla": 2 if self.est.get("plantilla_trailer") == 2 else 1,
+                    "plantilla2": self._hay_plantilla_2()}
+
+        def _hay_plantilla_2(self):
+            """Si la plantilla 2 del tráiler está importada (su info.json; sin leer nada pesado)."""
+            if not hasattr(self, "_plantilla2"):
+                import plantilla_ref
+                self._plantilla2 = os.path.isfile(os.path.join(plantilla_ref.carpeta(), motor.PLANTILLA_TRAILER_2,
+                                                               "info.json"))
+            return self._plantilla2
 
         def _acciones_trailers(self):
             return {"estilo": lambda i: self.seg_musica.botones[int(i)].click(),
                     "intro": lambda i: self.seg_intro.botones[int(i)].click(),
                     "oir": lambda i: self._ver_canciones(int(i)),
                     "ver_intro": lambda i: self._ver_intro(int(i)),
-                    "speed_ramp": lambda si: self._speed_ramp(bool(si))}
+                    "speed_ramp": lambda si: self._speed_ramp(bool(si)),
+                    "plantilla": lambda n: self._plantilla_trailer(int(n))}
+
+        def _paginas_accion(self, nombre, valor):
+            """(1.9.6, para medir_fluidez) Hace una accion de una pagina QML como si se pulsara en ella."""
+            for p in (getattr(self, "paginas_qml", None) or {}).values():
+                if nombre in getattr(p, "acciones", {}):
+                    p._accion(nombre, valor)
+                    return
+
+        def _plantilla_trailer(self, n):
+            """(1.9.6) Tráilers > Plantilla 1 / 2: estado «plantilla_trailer» (lo lee motor.plantilla_trailer)."""
+            est = motor.leer_estado()
+            est["plantilla_trailer"] = self.est["plantilla_trailer"] = 2 if n == 2 else 1
+            motor.guardar_estado(est)                # (PaginaQML._accion vuelve a leer la pagina despues del clic)
+            self._avisar("Listo: %s." % ("Plantilla 2, un tráiler de 2:55 como «Denis e Iris»" if n == 2
+                                         else "Plantilla 1, los tráilers de 1, 3, 15 y 30 min"))
 
         def _speed_ramp(self, si):
             """(1.9.1, la persona: «agrega la opción en Tráiler de speed ramp») Lo lee build_trailers (SPEED_RAMP)."""

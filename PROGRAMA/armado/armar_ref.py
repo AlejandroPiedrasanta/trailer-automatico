@@ -16,6 +16,7 @@ musica y su forma de cambiar de plano; las tomas, las del evento.
   5. RENDER en cola como las demas (VIDEO FINAL PLANTILLA N.mov): renderizar.py lo saca y lo masteriza a -14 LUFS.
 """
 import os
+import re
 import time
 
 import rutas
@@ -32,6 +33,7 @@ TITULO_INI_S, TITULO_MAX_S, TITULO_PARTE = 0.3, 3.6, 0.22   # el titulo con los 
 LENTO_VEL = 0.5                        # camara lenta al 50 % con Speed Warp
 LENTO_MIN_S = 1.4                      # solo en huecos largos (en uno corto no se nota y se pierde el ritmo)
 DESTELLO_OPACIDAD = 60.0               # % de los destellos blancos en las plantillas
+DESTELLO_CALIDO_OPACIDAD = 90.0        # (1.9.6) la luz calida de «denis y iris» se ve como en la referencia
 LENTO_PARTE = 0.25                     # como mucho 1 de cada 4 planos, los mas firmes
 _POR_RUTA = {}                         # (1.9.3) {ruta: clip} del media pool, uno por armado (rutas._armado_id)
 
@@ -541,6 +543,19 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
         # 0,5) y la llamada SIGUIENTE, sea cual sea, espera ~0,3 s a que la linea se asiente (probado: 16,7 s contra 14,3)
         tl.SetSetting(k, v)
     fps = float(tl.GetSetting("timelineFrameRate") or fps)
+    try:                                          # (1.9.6) las franjas de cine de la referencia («denis y iris»)
+        m = re.match(r"crop=(\d+):(\d+):(\d+):(\d+)", info.get("franjas") or "")
+        if m and info.get("alto"):
+            _w, h_c, _x, y_c = (int(v) for v in m.groups())
+            k = alto / float(info["alto"])
+            arriba, abajo = int(round(y_c * k)), int(round((info["alto"] - h_c - y_c) * k))
+            # (MEDIDO) la API pide los BORDES de lo que se ve, no margenes: sin franjas da {Top 0, Bottom 1080,
+            # Left 0, Right 1920}; {Bottom 118, Right 0} dejaba la imagen vacia y el video salia NEGRO entero
+            if arriba + abajo >= 8 and tl.SetOutputBlanking({"Top": arriba, "Bottom": alto - abajo, "Left": 0,
+                                                             "Right": ancho}):
+                log("  plantilla: franjas de cine como la referencia (%d px arriba, %d abajo)." % (arriba, abajo))
+    except Exception as ex:
+        log("  plantilla: no se pudieron poner las franjas (%s)" % ex)
     st = tl.GetStartFrame()
     # los clips del evento que hacen falta (ya estan en el media pool; si no, se importan)
     # (1.9.3, MEDIDO: el pool entero en cada plantilla, 3 s de GetClipProperty al rearmar) un recorrido por armado
@@ -700,14 +715,23 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
     for it, hueco in puestos[1:]:
         entra = hueco.get("entra")
         if entra == "fundido" and con_fundidos:   # (19-nov) apagado en Material: corte seco
-            for al in ("center", "right", "left"):
-                try:
-                    if it.AddTransition({"type": "Cross Dissolve", "category": "simple", "position": "start",
-                                         "alignment": al, "duration": FUNDIDO_F}):
-                        fundidos += 1
-                        break
-                except Exception:
-                    pass
+            # (1.9.6) lo que dura el fundido en la referencia («trans», s); si no cabe en el material, el de siempre
+            largo = int(round(float(hueco.get("trans") or 0) * fps)) or FUNDIDO_F
+            hecho = False
+            for dur_t in dict.fromkeys((largo, max(FUNDIDO_F, largo // 2), FUNDIDO_F)):
+                for al in ("center", "right", "left"):
+                    try:
+                        if it.AddTransition({"type": "Cross Dissolve", "category": "simple", "position": "start",
+                                             "alignment": al, "duration": dur_t}):
+                            fundidos += 1
+                            hecho = True
+                            break
+                    except Exception:
+                        pass
+                if hecho:
+                    break
+            if hueco.get("luz") and con_destellos:     # (1.9.6) la luz entra DURANTE el fundido, como la referencia
+                cortes_destello.append(it.GetStart() - st)
         elif entra == "destello" and con_destellos:     # apagado en Material: corte seco
             cortes_destello.append(it.GetStart() - st)
     # (19-nov, la persona: «satura mucho en el inicio... solo un caption elegante, sin tanto brillo») el titulo va
@@ -723,14 +747,16 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
             import overlays
             efe = _carpeta(mp, root, "06 EFECTOS")
             dir_ov = _carpeta(mp, efe, "OVERLAYS")
+            # (1.9.6) la referencia con luz en los fundidos («denis y iris»): luz calida que cruza, no la raya de lente
+            calido = any(p.get("luz") for p in info.get("planos") or [])
             destellos = sum(1 for e, _s in overlays.poner(resolve, tl, mp, dir_ov, fps, tipo_evento, info.get("vertical", True),
-                                           cortes_destello, log) if e == "DESTELLO")
+                                           cortes_destello, log, calido=calido) if e == "DESTELLO")
             # (19-nov, la persona: «sin tanto brillo») los destellos de la plantilla, mas suaves que en las versiones
             for v in range(1, tl.GetTrackCount("video") + 1):
                 if (tl.GetTrackName("video", v) or "").strip().upper() == overlays.PISTA:
                     for it_ in tl.GetItemListInTrack("video", v) or []:
                         try:
-                            it_.SetProperty("Opacity", DESTELLO_OPACIDAD)
+                            it_.SetProperty("Opacity", DESTELLO_CALIDO_OPACIDAD if calido else DESTELLO_OPACIDAD)
                         except Exception:
                             pass
         except Exception as ex:
@@ -739,7 +765,8 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
     # que no sature o exponga demasiado») lo mismo que las versiones: el ruido medido de cada toma con su nivel y el
     # CDL por plano de build_trailers.cdl_para (exposicion hacia la luz de su momento con topes, negros limpios,
     # balance con los grises; la saturacion SOLO baja, nunca pasa la de camara)
-    n_ruido = n_color = 0
+    n_ruido = n_color = n_bn = 0
+    look_ref_lut, look_bn_lut, imgs = None, None, {}
     try:
         import ruido as rd
         import motor
@@ -749,7 +776,7 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
         project.RefreshLUTList()
         drx = rd.drx_activo(intensidad)
         medidas = {}
-        if intensidad > 0 and not drx:
+        if intensidad > 0:                       # (1.9.6) tambien con el de DaVinci: decide a que tomas va
             try:
                 import ruido_tomas
                 medidas = ruido_tomas.medir_varios(sorted({(it_.get("ruta"), None) for _x, it_, _a, _d in con_toma
@@ -782,32 +809,92 @@ def armar(resolve, project, info, evento, analisis, salida, tipo_evento="xv", lo
                     vigilados[k] = f
         except Exception as ex:
             log("  plantilla: color sin medir (%s); va el calculado." % ex)
+        hueco_de = {id(it): h for it, h in puestos}
         for x, it_, a_s, d_s in con_toma:
             if it_.get("tipo") == "foto":
                 continue
             try:
-                if rd.aplicar(x, intensidad, medidas.get(os.path.normcase(it_.get("ruta") or "")), drx) is not None:
+                # (1.9.6) la plantilla del tráiler: filtro «nítido» (mas nitidez y claridad, como las fotos del evento)
+                if rd.aplicar(x, intensidad, medidas.get(os.path.normcase(it_.get("ruta") or "")), drx,
+                              nitido=bool(info.get("color_ref"))) is not None:
                     n_ruido += 1
                 cdl = cdls.get(id(x))
+                if (hueco_de.get(id(x)) or {}).get("bn"):     # (1.9.6) en blanco y negro como la referencia
+                    cdl = dict(cdl or {"NodeIndex": "1", "Slope": "1 1 1", "Offset": "0 0 0", "Power": "1 1 1"},
+                               Saturation="0")
+                    n_bn += 1
                 if cdl and x.SetCDL(cdl):
                     n_color += 1
             except Exception:
                 pass
+        # (1.9.6, «pule más, no es igual al ejemplo») el COLOR de la referencia: una LUT que lleva la luz, el contraste
+        # y el tono de estas tomas (con su CDL) a los de la referencia (look_ref), en el grupo de ESTA plantilla
+        if info.get("color_ref"):
+            try:
+                import look_ref
+                fotos = [look_ref.aplicar_cdl(imgs[(it_.get("ruta"), round(a_s + d_s / 2.0, 1))], cdls.get(id(x)) or {})
+                         for x, it_, a_s, d_s in con_toma
+                         if imgs.get((it_.get("ruta"), round(a_s + d_s / 2.0, 1))) is not None
+                         and not (hueco_de.get(id(x)) or {}).get("bn")]
+                ev = look_ref.estadisticas(fotos)
+                # (1.9.6, la persona: «mejora el color COMO LA FOTO DEL EVENTO, con esa claridad y nitidez») el
+                # objetivo son las FOTOS de este evento (editadas, claras y limpias); si no hay, el de la referencia
+                meta, de_que = look_ref.de_fotos(analisis.get("items") or []), "las fotos del evento"
+                if not meta:
+                    meta, de_que = info["color_ref"], "la referencia"
+                # (1.9.6, la persona: «mejora el blanco y negro») los planos en blanco y negro con SU LUT: neutra, con la
+                # luz y el contraste de los de la referencia (antes: CDL sin color + la LUT de color = gris plano teñido)
+                fotos_bn = [look_ref.aplicar_cdl(imgs[(it_.get("ruta"), round(a_s + d_s / 2.0, 1))], cdls.get(id(x)) or {})
+                            for x, it_, a_s, d_s in con_toma
+                            if imgs.get((it_.get("ruta"), round(a_s + d_s / 2.0, 1))) is not None
+                            and (hueco_de.get(id(x)) or {}).get("bn")]
+                ev_bn = look_ref.estadisticas(fotos_bn) if fotos_bn else None
+                if ev_bn:
+                    ref_bn = info["color_ref"].get("bn") or {"media": [40.0, 0, 0], "desv": [26.0, 0, 0]}
+                    nombre_bn = "REF_%s_BN.cube" % re.sub(r"[^\w]+", "_", "%s %s" % (info.get("nombre"), evento)).strip("_")
+                    look_ref.escribir_lut_bn(ev_bn, ref_bn, os.path.join(rutas.DIR_LUT_MCP, nombre_bn))
+                    look_bn_lut = "MCP/" + nombre_bn
+                    log("  plantilla: blanco y negro de cine (luz %.0f -> %.0f, contraste %.0f -> %.0f, neutro)." % (
+                        ev_bn["media"][0], ref_bn["media"][0], ev_bn["desv"][0], ref_bn["desv"][0]))
+                if ev:
+                    nombre_lut = "REF_%s.cube" % re.sub(r"[^\w]+", "_", "%s %s" % (info.get("nombre"), evento)).strip("_")
+                    look_ref.escribir_lut(ev, meta, os.path.join(rutas.DIR_LUT_MCP, nombre_lut))
+                    project.RefreshLUTList()
+                    look_ref_lut = "MCP/" + nombre_lut
+                    log("  plantilla: color como %s (luz %.0f -> %.0f, contraste %.0f -> %.0f, tono %+.0f/%+.0f -> "
+                        "%+.0f/%+.0f)." % (de_que, ev["media"][0], meta["media"][0], ev["desv"][0], meta["desv"][0],
+                                           ev["media"][1], ev["media"][2], meta["media"][1], meta["media"][2]))
+            except Exception as ex:
+                log("  plantilla: sin el color de la referencia (%s)" % ex)
         if vigilados:
             log("  plantilla: color medido plano por plano, %d con la corrección suavizada." % len(vigilados))
     except Exception as ex:
         log("  plantilla: sin ruido ni color por toma (%s)" % ex)
     # 5) color: correccion por plano y look suave, en su grupo
     try:
-        grupo = next((g for g in project.GetColorGroupsList() or [] if g.GetName() == GRUPO), None) or \
-            project.AddColorGroup(GRUPO)
+        # (1.9.6) con el color de la referencia, un grupo PROPIO de esta plantilla y evento (el grupo «PLANTILLA» lo
+        # comparten todas las lineas de plantilla del proyecto: cambiarle el look cambiaria las de Reels)
+        nombre_g = GRUPO if not look_ref_lut else "%s %s - %s" % (GRUPO, info.get("nombre"), evento)
+        grupo = next((g for g in project.GetColorGroupsList() or [] if g.GetName() == nombre_g), None) or \
+            project.AddColorGroup(nombre_g)
         pre, post = grupo.GetPreClipNodeGraph(), grupo.GetPostClipNodeGraph()
         pre.SetLUT(1, DCTL_COLOR)
-        post.SetLUT(1, LOOK)
+        post.SetLUT(1, look_ref_lut or LOOK)
         pre.SetNodeLabel(1, "1 BASE (TODAS LAS TOMAS)")         # (1.8.2) como las versiones: el orden de la cadena
-        post.SetNodeLabel(1, "3 LOOK CINE TEAL ORANGE (SIN QUEMAR NI SATURAR)")
-        for it, _h in puestos:
-            it.AssignToColorGroup(grupo)
+        post.SetNodeLabel(1, "3 COLOR DE LA REFERENCIA" if look_ref_lut else "3 LOOK CINE TEAL ORANGE (SIN QUEMAR NI SATURAR)")
+        if n_bn:
+            log("  plantilla: %d planos en blanco y negro como la referencia." % n_bn)
+        grupo_bn = None
+        if look_bn_lut:                                  # (1.9.6) los de blanco y negro, en su grupo con su LUT
+            nombre_bn = nombre_g + " BN"
+            grupo_bn = next((g for g in project.GetColorGroupsList() or [] if g.GetName() == nombre_bn), None) or \
+                project.AddColorGroup(nombre_bn)
+            grupo_bn.GetPreClipNodeGraph().SetLUT(1, DCTL_COLOR)
+            grupo_bn.GetPostClipNodeGraph().SetLUT(1, look_bn_lut)
+            grupo_bn.GetPreClipNodeGraph().SetNodeLabel(1, "1 BASE (TODAS LAS TOMAS)")
+            grupo_bn.GetPostClipNodeGraph().SetNodeLabel(1, "3 BLANCO Y NEGRO DE LA REFERENCIA")
+        for it, h in puestos:
+            it.AssignToColorGroup(grupo_bn if grupo_bn is not None and h.get("bn") else grupo)
     except Exception as ex:
         log("  plantilla: color sin grupo (%s)" % ex)
     # 6) render en cola, como las demas lineas

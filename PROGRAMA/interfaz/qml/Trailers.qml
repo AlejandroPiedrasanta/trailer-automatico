@@ -68,6 +68,54 @@ Item {
             font.family: raiz.familia; font.pixelSize: px(30) }
         Item { width: 1; height: px(4) }
 
+        // ---------------------------------------------------------------- (1.9.6) la plantilla del tráiler
+        // La persona: «Plantilla 1 la que haces actualmente y Plantilla 2» (como el video «denis y iris»). d.plantilla =
+        // 1 | 2, d.plantilla2 = si esta importada; accion("plantilla", n)
+        Item { width: col.width; height: px(84)
+            Seccion { anchors.verticalCenter: parent.verticalCenter; texto: "Plantilla"; icono: "claqueta" } }
+        Row {
+            id: filaPlantilla
+            spacing: px(22)
+            readonly property real ancho: (col.width - spacing) / 2
+            Repeater {
+                model: [["1", "Plantilla 1", "La de siempre: 1, 3, 15 y 30 min", "pelicula"],
+                        ["2", "Plantilla 2", "Como «Denis e Iris»: 2:55 de cine, su música y sus fundidos", "claqueta"]]
+                Rectangle {
+                    id: tarjetaP
+                    readonly property int n: parseInt(modelData[0])
+                    readonly property bool elegida: (raiz.d.plantilla || 1) === n
+                    readonly property bool hay: n === 1 || !!raiz.d.plantilla2
+                    width: filaPlantilla.ancho; height: px(150); radius: px(28)
+                    opacity: hay ? 1 : 0.4
+                    color: elegida ? Qt.rgba(0.17, 0.82, 0.55, 0.16) : (zonaP.containsMouse ? Qt.rgba(1, 1, 1, 0.07)
+                                                                                           : Qt.rgba(1, 1, 1, 0.04))
+                    border.width: elegida ? px(4) : px(2)
+                    border.color: elegida ? "#3BEE9F" : Qt.rgba(0.85, 0.69, 0.36, 0.45)
+                    scale: zonaP.pressed ? 0.98 : 1
+                    Behavior on color { ColorAnimation { duration: 220 } }
+                    Behavior on border.color { ColorAnimation { duration: 220 } }
+                    Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                    Row {
+                        anchors.verticalCenter: parent.verticalCenter; x: px(36); spacing: px(26)
+                        Image { anchors.verticalCenter: parent.verticalCenter; width: px(58); height: width
+                            source: "image://icono/" + modelData[3] + "/" + (tarjetaP.elegida ? "3BEE9F" : "E2B04F") + "/" + width
+                            sourceSize: Qt.size(width * 4, height * 4) }
+                        Column {
+                            anchors.verticalCenter: parent.verticalCenter
+                            Text { text: modelData[1]; color: "white"; font.family: raiz.familia; font.pixelSize: px(38)
+                                font.weight: Font.Bold }
+                            Text { text: tarjetaP.hay ? modelData[2] : "Falta importar el video de referencia"
+                                color: "#9DB0B6"; font.family: raiz.familia; font.pixelSize: px(24)
+                                width: tarjetaP.width - px(160); elide: Text.ElideRight }
+                        }
+                    }
+                    MouseArea { id: zonaP; anchors.fill: parent; hoverEnabled: true
+                        cursorShape: tarjetaP.hay ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: if (tarjetaP.hay && !tarjetaP.elegida) raiz.accion("plantilla", tarjetaP.n) }
+                }
+            }
+        }
+
         Item { width: col.width; height: px(84)      // (1.7.9) misma altura que «TUS PLANTILLAS»
             Seccion { anchors.verticalCenter: parent.verticalCenter; texto: "Música"; icono: "nota" } }
 

@@ -45,14 +45,20 @@ NITIDEZ = {1: (0.55, 0.004), 2: (0.45, 0.005), 3: (0.32, 0.007), 4: (0.20, 0.010
 TOPE_NITIDEZ = 0.035
 NIVEL_SIN_MEDIDA = 2                        # si un video no se pudo medir
 DRX_DESDE = 3                               # (1.9.3) el ajuste de DaVinci guardado, desde «ruido medio» (N3)
+# (1.9.6, «como la foto del evento, con esa claridad y nitidez») las variantes «nítidas» (plantilla del tráiler)
+NITIDO_X, NITIDO_TOPE_X, CLARIDAD_NITIDO = 1.8, 1.6, 0.45
+NITIDO_POR_NIVEL = {1: 1.0, 2: 0.85, 3: 0.6, 4: 0.35, 5: 0.2}     # cuanto de lo «nítido» en cada nivel de ruido
+# (1.9.6, «mejora quitar el ruido») en las tomas con ruido alto / muy alto (GoPro de noche) los medios tonos se limpian
+# mas (LUMA_MEDIOS 0,32 dejaba el grano en la ropa oscura y las paredes); en las limpias, igual que antes
+MEDIOS_POR_NIVEL = {4: 0.45, 5: 0.55}
 
 
-def archivo(n):
-    return "XV_RUIDO_N%d.dctl" % int(n)
+def archivo(n, nitido=False):
+    return "XV_RUIDO_N%d%s.dctl" % (int(n), "_NITIDO" if nitido and int(n) > 0 else "")
 
 
-def ruta_resolve(n):
-    return "MCP/" + archivo(n) if int(n) > 0 else RUTA_RESOLVE
+def ruta_resolve(n, nitido=False):
+    return "MCP/" + archivo(n, nitido) if int(n) > 0 else RUTA_RESOLVE
 
 
 def drx_activo(intensidad=DEFECTO):
@@ -184,6 +190,7 @@ __CONSTANT__ float LUMA_MEDIOS = @MEDIOS@f;
 __CONSTANT__ float NITIDEZ = @NITIDEZ@f;
 __CONSTANT__ float UMBRAL_NITIDEZ = @UMBRAL@f;
 __CONSTANT__ float TOPE_NITIDEZ = @TOPE@f;
+__CONSTANT__ float CLARIDAD = @CLARIDAD@f;
 
 __DEVICE__ float luma(float r, float g, float b)
 {
@@ -264,6 +271,25 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     det = det * _saturatef((mag - UMBRAL_NITIDEZ) / UMBRAL_NITIDEZ);
     float realce = NITIDEZ * (1.0f - 0.5f * sombra) * det;
     yf = yf + _clampf(realce, -TOPE_NITIDEZ, TOPE_NITIDEZ);
+    // (1.9.6, la persona: «como la foto del evento, con esa claridad y nitidez») CLARIDAD: contraste local de los
+    // tonos medios (la luz contra la de su alrededor, a 12 pixeles de la escala que se ve), como en Lightroom; nada en
+    // sombras ni altas luces (no ensucia ni quema) y con tope. 0 en los niveles de siempre.
+    if (CLARIDAD > 0.0f)
+    {
+        int rr = 12 * esc;
+        float sl = 0.0f;
+        for (int k = 0; k < 8; k++)
+        {
+            float ang = 0.785398f * (float)k;
+            int xa = p_X + (int)(rr * _cosf(ang));
+            int ya = p_Y + (int)(rr * _sinf(ang));
+            xa = xa < 0 ? 0 : (xa >= p_Width ? p_Width - 1 : xa);
+            ya = ya < 0 ? 0 : (ya >= p_Height ? p_Height - 1 : ya);
+            sl += luma(_tex2D(p_TexR, xa, ya), _tex2D(p_TexG, xa, ya), _tex2D(p_TexB, xa, ya));
+        }
+        float medio = _saturatef(1.0f - _fabs(yf - 0.45f) / 0.35f);
+        yf = yf + _clampf(CLARIDAD * medio * (yf - sl / 8.0f), -0.06f, 0.06f);
+    }
     float cb = (b0 - y0) + FUERZA_CROMA * (scb / wc - (b0 - y0));
     float cr = (r0 - y0) + FUERZA_CROMA * (scr / wc - (r0 - y0));
     float r1 = cr + yf;
@@ -274,17 +300,27 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
 """
 
 
-def fuente(n):
-    """Texto del DCTL del nivel n (0 = transparente)."""
+def fuente(n, nitido=False):
+    """Texto del DCTL del nivel n (0 = transparente). nitido: (1.9.6) mas nitidez y CLARIDAD (contraste local)."""
     n = int(n)
     if n <= 0:
         return TRANSPARENTE
     n = max(1, min(5, n))
     borde, luma, croma, paso, grueso = NIVELES[n]
     nitidez, umbral = NITIDEZ[n]
-    cambios = {"@N@": str(n), "@NOMBRE@": NOMBRES[n], "@BORDE@": "%.4f" % borde, "@LUMA@": "%.3f" % luma,
-               "@CROMA@": "%.3f" % croma, "@PASO@": str(int(paso)), "@GRUESO@": "%.3f" % grueso, "@MEDIOS@": "%.3f" % LUMA_MEDIOS,
-               "@NITIDEZ@": "%.3f" % nitidez, "@UMBRAL@": "%.4f" % umbral, "@TOPE@": "%.3f" % TOPE_NITIDEZ}
+    tope, claridad = TOPE_NITIDEZ, 0.0
+    if nitido:
+        # (1.9.6, la persona: «mejora quitar el ruido») lo «nítido» entero solo en las tomas limpias: en las ruidosas
+        # realzaba el grano que el filtro acababa de quitar
+        k = NITIDO_POR_NIVEL.get(n, 1.0)
+        nitidez = nitidez * (1.0 + (NITIDO_X - 1.0) * k)
+        tope = TOPE_NITIDEZ * (1.0 + (NITIDO_TOPE_X - 1.0) * k)
+        claridad = CLARIDAD_NITIDO * k
+    cambios = {"@N@": str(n), "@NOMBRE@": NOMBRES[n] + (", nítido" if nitido else ""), "@BORDE@": "%.4f" % borde,
+               "@LUMA@": "%.3f" % luma, "@CROMA@": "%.3f" % croma, "@PASO@": str(int(paso)), "@GRUESO@": "%.3f" % grueso,
+               "@MEDIOS@": "%.3f" % MEDIOS_POR_NIVEL.get(n, LUMA_MEDIOS), "@NITIDEZ@": "%.3f" % nitidez,
+               "@UMBRAL@": "%.4f" % umbral,
+               "@TOPE@": "%.3f" % tope, "@CLARIDAD@": "%.3f" % claridad}
     texto = PLANTILLA
     for clave, valor in cambios.items():
         texto = texto.replace(clave, valor)
@@ -295,6 +331,7 @@ def escribir(intensidad, copia_en=None):
     """Escribe los DCTL de los 5 niveles (y el de siempre) en la carpeta de LUTs de Resolve, y una copia opcional.
     Devuelve la ruta del de siempre."""
     textos = {archivo(n): fuente(n) for n in NIVELES}
+    textos.update({archivo(n, True): fuente(n, True) for n in NIVELES})      # (1.9.6) las «nítidas»
     textos[archivo(0)] = TRANSPARENTE                            # cuando el ruido lo quita DaVinci (ajuste guardado)
     textos[ARCHIVO] = fuente(nivel_para(None, intensidad))       # lineas de versiones anteriores: nivel 2 +- el control
     for d in [DIR_LUT_MCP] + ([copia_en] if copia_en else []):
@@ -313,7 +350,7 @@ def es_video(item):
     return not ruta.endswith((".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".heic", ".webp"))
 
 
-def aplicar(item, intensidad, medida=None, drx=None):
+def aplicar(item, intensidad, medida=None, drx=None, nitido=False):
     """Pone la reduccion de ruido de un clip. Devuelve como quedo: "davinci", el nivel (0 a 5) o None si no se pudo.
     Con `drx` (el ajuste de DaVinci guardado) se aplica ese grado y el DCTL del nodo 1 queda transparente; si DaVinci
     no lo acepta, el clip sigue con el filtro del programa. El nodo 1 lleva tambien la igualacion de color (CDL), que
@@ -335,7 +372,7 @@ def aplicar(item, intensidad, medida=None, drx=None):
             g.SetNodeEnabled(1, True)
             return "davinci"
     n = nivel_para(medida, intensidad)
-    ok = g.SetLUT(1, ruta_resolve(n))
+    ok = g.SetLUT(1, ruta_resolve(n, nitido))
     # (1.8.1) el nombre dice el ORDEN de la cadena: 1 base del grupo -> 2 este nodo (balance/exposicion del CDL y el
     # ruido de la toma) -> 3 look del grupo
     g.SetNodeLabel(1, "2 BALANCE Y EXPOSICION + RUIDO" + (" N%d" % n if n else ""))

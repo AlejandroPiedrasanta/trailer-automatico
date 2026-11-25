@@ -39,6 +39,12 @@ NEGRO = 0.09                   # brillo medio de un cuadro «negro con logo»
 FINAL_MIN_S = 1.5
 FORMA_PESO = 1.0               # peso del cambio de forma frente al de color
 FUNDIDO_MIN_S = 0.9            # un plano que entra en fundido dura al menos esto
+BN_CROMA = 0.012               # (1.9.6) color medio por debajo de esto: plano en blanco y negro
+LUZ_DESTELLO = 0.11            # (1.9.6) pico de brillo (0-1) en un cambio de plano: entra con luz
+CALIDO_DESTELLO = 0.07         # o pico de calidez (rojo - azul): luz naranja
+TRANS_MIN_S, TRANS_MAX_S = 0.2, 1.5    # lo que puede durar un fundido medido
+PLANO_LARGO_S = 6.0            # (1.9.6) un hueco mas largo se parte...
+PARTE_LARGA_S = 3.5            # ...en partes de unos 3,5 s que entran en fundido
 
 
 def carpeta():
@@ -66,23 +72,54 @@ def _probe(ruta):
     return float((j.get("format") or {}).get("duration") or 0), fps, ancho, alto, a
 
 
-def _cuadros(ruta, fps):
+def _franjas(ruta, dur):
+    """(1.9.6, «denis y iris»: tráiler de cine 2.39:1 dentro de 16:9) 'crop=w:h:x:y' de las franjas negras que el
+    video trae fijas (cropdetect a 1 cuadro por segundo, el recorte que mas se repite), o '' si no tiene."""
+    from collections import Counter
+    p = subprocess.run(["ffmpeg", "-v", "info", "-i", ruta, "-vf", "fps=1,cropdetect=24:2:0", "-f", "null", "-"],
+                       capture_output=True, text=True, timeout=600, creationflags=rutas.SIN_VENTANA)
+    vistos = Counter(re.findall(r"crop=(\d+:\d+:\d+:\d+)", p.stderr or ""))
+    if not vistos:
+        return ""
+    w, h, x, y = (int(v) for v in vistos.most_common(1)[0][0].split(":"))
+    # el mas grande de los que se repiten (en una escena oscura cropdetect recorta de mas)
+    comunes = [tuple(int(v) for v in k.split(":")) for k, c in vistos.items() if c >= 0.1 * sum(vistos.values())]
+    w, h, x, y = max(comunes, key=lambda c: c[0] * c[1]) if comunes else (w, h, x, y)
+    return "crop=%d:%d:%d:%d" % (w, h, x, y) if w >= 16 and h >= 16 else ""
+
+
+def _cuadros(ruta, fps, vertical=True, recorte=""):
     """[(histograma normalizado (48), brillo 0-1)] de cada cuadro."""
     import numpy as np
+    # (1.9.6) el cuadro de analisis va en la orientacion del video y lleno de imagen (sin relleno ni franjas negras):
+    # un video horizontal en 64 x 112 era 1/3 imagen y 2/3 negro, y con franjas de cine menos de 1/4; los cambios de
+    # plano no llegaban al UMBRAL y el brillo medio parecia «final en negro» (denis y iris: 2 planos en 2:55)
+    w, h = (W, H) if vertical else (H, W)
     p = subprocess.run(["ffmpeg", "-v", "error", "-i", ruta, "-vf",
-                        "fps=%g,scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:-1:-1" % (fps, W, H, W, H),
+                        "fps=%g,%sscale=%d:%d" % (fps, recorte + "," if recorte else "", w, h),
                         "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
-                       capture_output=True, timeout=600, creationflags=rutas.SIN_VENTANA)
-    n = len(p.stdout) // (W * H * 3)
+                       capture_output=True, timeout=900, creationflags=rutas.SIN_VENTANA)
+    n = len(p.stdout) // (w * h * 3)
     if n < 2:
         return np.zeros((0, 48)), np.zeros(0), np.zeros((0, 112))
-    a = np.frombuffer(p.stdout[:n * W * H * 3], np.uint8).reshape(n, H * W, 3)
+    a = np.frombuffer(p.stdout[:n * w * h * 3], np.uint8).reshape(n, h * w, 3)
     hist = np.concatenate([np.stack([np.bincount(c, minlength=16) for c in (a[:, :, k] >> 4)]) for k in range(3)], 1)
-    hist = hist.astype(np.float32) / float(H * W * 3)
+    hist = hist.astype(np.float32) / float(h * w * 3)
     brillo = a.mean(axis=(1, 2)) / 255.0
+    _cuadros.calido = (a[:, :, 0].astype(np.float32) - a[:, :, 2]).mean(axis=1) / 255.0   # (1.9.6) rojo - azul
+    # (1.9.6) cuanto color tiene cada cuadro (Cb y Cr de video, 0-1; un cuadro en blanco y negro da ~0) y una muestra
+    # cada medio segundo para medir el color de la referencia (look_ref)
+    croma = np.zeros(n, np.float32)
+    for i in range(0, n, 400):
+        x = a[i:i + 400].astype(np.float32) / 255.0
+        y = x @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+        croma[i:i + 400] = np.sqrt(((x[..., 2] - y) * 0.5389) ** 2 + ((x[..., 0] - y) * 0.6350) ** 2).mean(axis=1)
+    _cuadros.croma = croma
+    _cuadros.muestra = a[::max(1, int(round(fps / 2.0)))].astype(np.float32) / 255.0
     # (18-nov, plantilla 1: fundidos lentos entre planos del mismo color rosa) la FORMA de la imagen: gris de 8 x 14,
     # sin su brillo medio (un destello no cuenta como otra forma)
-    g = a.reshape(n, H, W, 3).mean(axis=3).reshape(n, 14, H // 14, 8, W // 8).mean(axis=(2, 4))
+    filas, cols = (14, 8) if vertical else (8, 14)
+    g = a.reshape(n, h, w, 3).mean(axis=3).reshape(n, filas, h // filas, cols, w // cols).mean(axis=(2, 4))
     g = g.reshape(n, -1) - g.reshape(n, -1).mean(axis=1, keepdims=True)
     g /= (np.linalg.norm(g, axis=1, keepdims=True) + 1e-6)
     return hist, brillo, g
@@ -97,7 +134,8 @@ def detectar(ruta):
     """(info sin guardar). Los planos del video con su forma de entrar y el final con logo."""
     import numpy as np
     dur, fps, ancho, alto, con_audio = _probe(ruta)
-    hist, brillo, forma = _cuadros(ruta, fps)
+    recorte = _franjas(ruta, dur)
+    hist, brillo, forma = _cuadros(ruta, fps, alto > ancho, recorte)
     n = len(brillo)
     if n < 4:
         raise RuntimeError("no se pudieron leer los cuadros de %s" % os.path.basename(ruta))
@@ -144,25 +182,85 @@ def detectar(ruta):
         exactos.append(f)
         formas.append(entra)
         ini = f
+    # (1.9.6, la persona: «las transiciones y destellos TAL CUAL como el video») en «denis y iris» la luz (blanca o
+    # naranja) entra DURANTE el fundido: un pico de luz o de calidez que sube sobre lo de antes Y lo de despues
+    # (un fundido de una toma oscura a una clara solo sube: no cuenta). Medido mirando los cuadros: 20,5 24,5 40,9 52,9
+    # 92,9 125,7 134 s eran destellos; con LUZ_DESTELLO 0,11 / CALIDO_DESTELLO 0,07 salen esos y pocos de mas.
+    calido = getattr(_cuadros, "calido", np.zeros(n))
+    luz_en, durs = {}, {}
+    wl = max(2, int(round(0.6 * fps)))               # la luz se busca a +-0,6 s y se compara con 0,6-2,4 s antes/despues
+    for f in exactos:
+        def pico(serie):
+            antes = np.median(serie[max(0, f - 4 * wl):max(1, f - wl)])
+            despues = np.median(serie[f + wl:f + 4 * wl + 1]) if f + wl < n else antes
+            return float(serie[max(0, f - wl):f + wl + 1].max() - max(antes, despues))
+        luz_en[f] = pico(brillo) >= LUZ_DESTELLO or pico(calido) >= CALIDO_DESTELLO
+        # lo que dura el fundido: donde el cambio sigue en la mitad de su pico (menos la ventana de medida)
+        a0 = b0 = f
+        while a0 > 0 and cambio[a0 - 1] >= 0.5 * cambio[f]:
+            a0 -= 1
+        while b0 < n - 1 and cambio[b0 + 1] >= 0.5 * cambio[f]:
+            b0 += 1
+        durs[f] = min(TRANS_MAX_S, max(TRANS_MIN_S, (b0 - a0 - 2 * w) / fps))
     limites = [0] + exactos + [util]
     lista = []
     for k in range(len(limites) - 1):
         a, b = limites[k], limites[k + 1]
         if b - a < 1:
             continue
-        lista.append({"ini": round(a / fps, 3), "fin": round(b / fps, 3), "dur": round((b - a) / fps, 3),
-                      "entra": formas[k] if k < len(formas) else "corte"})
+        # (1.9.6, «denis y iris»: 1:16-1:31 eran fundidos tan suaves entre tomas parecidas que no se ven: un hueco de
+        # 15,7 s salia como UNA toma quieta del evento) un hueco de mas de PLANO_LARGO_S se parte en partes iguales de
+        # unos PARTE_LARGA_S que entran en fundido (con tomas del evento queda vivo, como la referencia)
+        partes = max(1, int(round((b - a) / fps / PARTE_LARGA_S))) if (b - a) / fps > PLANO_LARGO_S else 1
+        for j in range(partes):
+            a2, b2 = a + (b - a) * j // partes, a + (b - a) * (j + 1) // partes
+            pl = {"ini": round(a2 / fps, 3), "fin": round(b2 / fps, 3), "dur": round((b2 - a2) / fps, 3),
+                  "entra": (formas[k] if k < len(formas) else "corte") if j == 0 else "fundido"}
+            if j == 0 and a in durs:
+                pl["trans"] = round(durs[a], 2)          # segundos del fundido del original
+                if luz_en.get(a) and pl["entra"] != "destello":
+                    pl["luz"] = True                     # y entra con luz (destello encima del fundido)
+            lista.append(pl)
+    # (1.9.6, «pule más, no es igual al ejemplo») los planos en BLANCO Y NEGRO de la referencia (casi sin color en
+    # su mitad central) y el COLOR del resto (look_ref: luz, contraste y tono en Lab) para llevarlo a las tomas
+    croma = getattr(_cuadros, "croma", None)
+    color_ref = None
+    if croma is not None and len(croma) == n:
+        for pl in lista:
+            i0, i1 = int(pl["ini"] * fps), int(pl["fin"] * fps)
+            m = croma[i0 + (i1 - i0) // 4:i1 - (i1 - i0) // 4 + 1]
+            if len(m) and float(np.median(m)) < BN_CROMA:
+                pl["bn"] = True
+        try:
+            import look_ref
+            muestra = getattr(_cuadros, "muestra", None)
+            paso = max(1, int(round(fps / 2.0)))
+            if muestra is not None:
+                color = [muestra[k] for k in range(len(muestra))
+                         if k * paso < util and croma[min(n - 1, k * paso)] >= BN_CROMA]
+                color_ref = look_ref.estadisticas(color)
+                # (1.9.6, «mejora el blanco y negro») la luz y el contraste de SUS planos en blanco y negro
+                bn = [muestra[k] for k in range(len(muestra))
+                      if k * paso < util and croma[min(n - 1, k * paso)] < BN_CROMA]
+                if color_ref is not None and len(bn) >= 6:
+                    color_ref["bn"] = look_ref.estadisticas(bn)
+        except Exception:
+            color_ref = None
     return {"dur": round(dur, 3), "fps": round(fps, 3), "ancho": ancho, "alto": alto, "vertical": alto > ancho,
-            "con_audio": con_audio, "planos": lista, "final": round(final_f / fps, 2)}
+            "con_audio": con_audio, "planos": lista, "final": round(final_f / fps, 2), "franjas": recorte,
+            "color_ref": color_ref}
 
 
-def importar(ruta, nombre=None, log=print):
-    """Convierte el video en plantilla (musica + cortes + portada). Devuelve el info.json guardado."""
+def importar(ruta, nombre=None, log=print, seccion=None):
+    """Convierte el video en plantilla (musica + cortes + portada). Devuelve el info.json guardado. seccion="trailer":
+    una plantilla del TRÁILER (se elige en Tráilers, no en Plantillas)."""
     info = detectar(ruta)
     nombre = _nombre_limpio(nombre or ruta)
     dest = os.path.join(carpeta(), nombre)
     os.makedirs(dest, exist_ok=True)
     info.update({"nombre": nombre, "origen": os.path.abspath(ruta)})
+    if seccion:
+        info["seccion"] = seccion
     if info["con_audio"]:
         musica = os.path.join(dest, "musica.m4a")
         r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", ruta, "-vn", "-c:a", "copy", musica],
@@ -193,8 +291,9 @@ def importar(ruta, nombre=None, log=print):
     return info
 
 
-def lista():
-    """[info] de las plantillas importadas, por nombre."""
+def lista(todas=False):
+    """[info] de las plantillas importadas, por nombre. (1.9.6) Las de Tráilers (info «seccion» = «trailer», p. ej. la
+    PLANTILLA 2 del tráiler hecha de «denis y iris») no salen en la página Plantillas: solo con todas=True (el armado)."""
     out = []
     base = carpeta()
     if not os.path.isdir(base):
@@ -204,7 +303,8 @@ def lista():
             with open(os.path.join(base, n, "info.json"), encoding="utf-8") as f:
                 d = json.load(f)
             d["carpeta"] = os.path.join(base, n)
-            out.append(d)
+            if todas or d.get("seccion") != "trailer":
+                out.append(d)
         except (OSError, ValueError):
             pass
     return out
